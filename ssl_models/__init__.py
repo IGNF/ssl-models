@@ -1,7 +1,7 @@
 from odeon.core import OdnPlugin, PluginMaturity  # type: ignore
 from odeon.models import MODEL_REGISTRY  # type: ignore
 
-from .ssl_module import SSLModule
+from .mae_module import MAEModule
 
 ssl_plugin = OdnPlugin(
     name="input",
@@ -9,7 +9,7 @@ ssl_plugin = OdnPlugin(
     version="0.1",
     elements={
         "ssl_module": {
-            "class": SSLModule,
+            "class": MAEModule,
             "registry": MODEL_REGISTRY,
             "aliases": ["sslm"],
         }
