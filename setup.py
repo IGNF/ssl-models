@@ -2,9 +2,9 @@ from pathlib import Path
 
 from setuptools import find_packages, setup  # type: ignore #
 
-with open(str(Path(__file__).parent / "README.md"), "r") as fh:
+with open(str(Path(__file__).parent / "README.md")) as fh:
     long_description = fh.read()
-with open(str(Path(__file__).parent / "VERSION"), "r") as fh:
+with open(str(Path(__file__).parent / "VERSION")) as fh:
     version = fh.read().strip()
 setup(
     name="ssl-models",
