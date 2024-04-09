@@ -16,7 +16,6 @@ from ssl_models.utils import posemb_sincos_1d, posemb_sincos_2d
 torch.set_float32_matmul_precision(precision="medium")
 
 
-# %%
 class Patchify(nn.Module):
     """
     Patchify the input cube & create embeddings per patch

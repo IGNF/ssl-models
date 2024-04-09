@@ -1,5 +1,5 @@
-from odeon.core import OdnPlugin, PluginMaturity  # type: ignore
-from odeon.models import MODEL_REGISTRY  # type: ignore
+from odeon.core import OdnPlugin, PluginMaturity
+from odeon.models import MODEL_REGISTRY
 
 from .mae_module import MAEModule
 
