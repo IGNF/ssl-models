@@ -1,62 +1,17 @@
-model_name: ssl_module
-model_params:
-  model_name: unet
-  in_channels: 3
-input_name: 'input'
-input_params:
-  fit_params:
-    input_fields:
-      image:
-        name: image
-        type: raster
-        dtype: uint8
-        dtype_max: 255.0
-        band_indices: [1, 2, 3]
-      mask:
-        name: mask
-        type: mask
-        one_hot_encoding: true
-    input_file: ${oc.env:HOME}/data/ssl/rel_train.csv
-    root_dir: ${oc.env:HOME}/data/ssl
-  validate_params:
-    input_fields:
-      image:
-        name: image
-        type: raster
-        dtype: uint8
-        dtype_max: 255.0
-        band_indices: [ 1, 2, 3 ]
-      mask:
-        name: mask
-        type: mask
-        one_hot_encoding: true
-    input_file: ${oc.env:HOME}/data/ssl/rel_validate.csv
-    root_dir: ${oc.env:HOME}/data/ssl
-  test_params:
-    input_fields:
-      image:
-        name: image
-        type: raster
-        dtype: uint8
-        dtype_max: 255.0
-        band_indices: [ 1, 2, 3 ]
-      mask:
-        name: mask
-        type: mask
-        one_hot_encoding: true
-    input_file: ${oc.env:HOME}/data/ssl/rel_test.csv
-    root_dir: ${oc.env:HOME}/data/ssl
-stages: ['fit']
-# process_position: int = 0
-num_nodes: 1  # number of nodes
-# number of devices, can be auto (lets accelerator finds it), an integer or a list of integer
-devices: 1
-# strategy: none  # ddp, ddp_spawn, or deepspeed ...,etc.
-# TODO custom accelerator to implement
-accelerator: cpu  # cpu or gpu or tpu or ...,etc.
-deterministic: true
-# loggers: Dict[str, PARAMS] | OdnLogger | List[OdnLogger] | bool = False
-# extra_callbacks: Optional[Dict[str, PARAMS]] = None
-seed: 42
-seed_worker: true
-# extra_params: Optional[PARAMS] = None
+data:
+  root_dir: /home/ALabatie/Bureau/ssl-models/tests/data
+  train_dataset: /home/ALabatie/Bureau/ssl-models/tests/data/train.csv
+  val_dataset: /home/ALabatie/Bureau/ssl-models/tests/data/val.csv
+
+model:
+  image_size: 256
+  patch_size: 16
+  mask_ratio: 0.5
+  model_size: "tiny"
+  band_groups:
+    rgb: [0, 1, 2]
+
+trainer:
+  precision: "32"
+  exp_dir: /home/ALabatie/Bureau/
+  exp_name: ssl_logs
