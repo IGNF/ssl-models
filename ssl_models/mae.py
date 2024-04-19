@@ -200,15 +200,12 @@ class Encoder(nn.Module):
             GL == self.num_patches
         ), f"Expected {self.num_patches} patches, got {GL} patches."
 
-        # if self.training:  # Shuffle the patches
-        #     noise = torch.randn((B, GL), device=patches.device)  # [B GL]
-        # else:  # Don't shuffle useful for interpolation & inspection of embeddings
-        #     noise = rearrange(
-        #         torch.arange(B * GL, device=patches.device), "(B GL) -> B GL", B=B
-        #     )
-        noise = rearrange(
-            torch.arange(B * GL, device=patches.device), "(B GL) -> B GL", B=B
-        )
+        if self.training:  # Shuffle the patches
+            noise = torch.randn((B, GL), device=patches.device)  # [B GL]
+        else:  # Don't shuffle useful for interpolation & inspection of embeddings
+            noise = rearrange(
+                torch.arange(B * GL, device=patches.device), "(B GL) -> B GL", B=B
+            )
 
         random_indices = torch.argsort(noise, dim=-1)  # [B GL]
         reverse_indices = torch.argsort(random_indices, dim=-1)  # [B GL]
@@ -355,31 +352,40 @@ class Decoder(nn.Module):
                 for name, bands in self.band_groups.items()
             }
         )
+        self.norm1 = nn.BatchNorm1d(dim)
+        self.norm2 = nn.BatchNorm1d(dim)
 
     def reconstruct_and_add_encoding(
         self, unmasked_patches, unmasked_indices, masked_indices
     ):
         """
-        Reconstruct the input patches from the random mask patch & add position
-        & band encoding to them.
+            Reconstruct the input patches from the random mask patch & add position
+            & band encoding to them.
 
-        Parameters
-        ----------
-        unmasked_patches : torch.Tensor
-            A tensor of shape (B, GL:(1 - mask_ratio), D) containing the
-            embeddings of the unmasked patches.
-        unmasked_indices : torch.Tensor
-            A tensor of shape (B, (1 - mask_ratio)) containing the indices of
-            the unmasked patches.
-        masked_indices : torch.Tensor
-            A tensor of shape (B, mask_ratio) containing the indices of the
-            masked patches.
+            Parameters
+            ----------
+            unmasked_patches : torch.Tensor
+                A tensor of shape (B, GL:(1 - mask_ratio), D) containing the
+                embeddings of the unmasked patches.
+            unmasked_indices : torch.Tensor
+                A tensor of shape (B, (1 - mask_ratio)) containing the indices ofg every 10 batches
+                 self.log_tb_images(cube["image"], pred, batch_idx)
 
-        Returns
-        -------
-        decoder_patches : torch.Tensor
-            A tensor of shape (B, GL, D) containing the embeddings for the
-            decoder part of the model.
+            return loss
+
+        def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
+            return self.shared_step(batch, batch_idx, phase="train")
+
+        def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
+            masked_indices : torch.Tensor
+                A tensor of shape (B, mask_ratio) containing the indices of the
+                masked patches.
+
+            Returns
+            -------
+            decoder_patches : torch.Tensor
+                A tensor of shape (B, GL, D) containing the embeddings for the
+                decoder part of the model.
         """
         B, *_ = unmasked_patches.shape
 
@@ -430,12 +436,12 @@ class Decoder(nn.Module):
         decoder_patches = torch.zeros(
             (B, self.num_patches, self.dim), device=unmasked_patches.device
         )  # [B GL D]
-        decoder_patches[
-            batch_indices, unmasked_indices, :
-        ] = unmasked_patches  # [B GL:(1 - mask_ratio) D]
-        decoder_patches[
-            batch_indices, masked_indices, :
-        ] = masked_patches  # [B GL:mask_ratio D]
+        decoder_patches[batch_indices, unmasked_indices, :] = (
+            unmasked_patches  # [B GL:(1 - mask_ratio) D]
+        )
+        decoder_patches[batch_indices, masked_indices, :] = (
+            masked_patches  # [B GL:mask_ratio D]
+        )
 
         return decoder_patches  # [B GL D]
 
@@ -461,7 +467,6 @@ class Decoder(nn.Module):
         pixels = []
         for i, (name, bands) in enumerate(self.band_groups.items()):
             group_embeddings = patches[:, i, :, :]  # [B L D]
-            print(group_embeddings.std(dim=(0, 1)).mean())
             group_pixels = self.embed_to_pixels[name](group_embeddings)  # [B L (P P C)]
             group_pixels = rearrange(
                 group_pixels,
@@ -482,29 +487,16 @@ class Decoder(nn.Module):
             encoded_unmasked_patches, unmasked_indices, masked_indices
         )  # [B GL D]
 
-        # Align position & band embeddings across patches
-        pos_encoding = repeat(
-            self.pos_encoding, "L D -> 1 repeat L D", repeat=self.num_group_patches
-        )  # [1 G L D/2]
-        band_encoding = repeat(
-            self.band_encoding, "G D -> 1 G repeat D", repeat=self.num_spatial_patches
-        )  # [1 G L D/2]
-
-        pos_band_encoding = torch.cat(
-            (pos_encoding, band_encoding), dim=-1
-        )  # [1 G L D]
-        pos_band_encoding = rearrange(
-            pos_band_encoding, "1 G L D -> 1 (G L) D"
-        )  # [1 (GL) D]
-        pos_band_encoding = repeat(
-            pos_band_encoding, "1 (GL) D -> B (GL) D", B=decoder_patches.shape[0]
-        )  # [B (GL) D]
+        decoder_patches = self.norm1(torch.transpose(decoder_patches, 1, 2))
+        decoder_patches = torch.transpose(decoder_patches, 1, 2)
 
         # Pass the decoder patches through the transformer
         decoded_patches = self.transformer(decoder_patches)  # [B GL D]
 
         # Pixelify the decoded patches
-        pixels = self.pixelify(decoded_patches + 0 * pos_band_encoding)  # [B C L PP]
+        decoded_patches = self.norm2(torch.transpose(decoded_patches, 1, 2))
+        decoded_patches = torch.transpose(decoded_patches, 1, 2)
+        pixels = self.pixelify(decoded_patches)  # [B C L PP]
         return pixels
 
 
@@ -612,9 +604,9 @@ class MAE(nn.Module):
 
         pred = torch.zeros(patches.shape, device=patches.device)
         for i, (_, group) in enumerate(self.band_groups.items()):
-            pred[:, group, :, :] = pixels * masked_matrix[
+            pred[:, group, :, :] = pixels[:, group, :, :] * masked_matrix[
                 :, None, i, :, None
-            ] + patches * (1 - masked_matrix[:, None, i, :, None])
+            ] + patches[:, group, :, :] * (1 - masked_matrix[:, None, i, :, None])
 
         pred = rearrange(
             pred,
@@ -650,7 +642,7 @@ class MAE(nn.Module):
 def mae_tiny(**kwargs):
     args = {
         # encoder
-        "dim": 256,
+        "dim": 512,
         "depth": 4,
         "heads": 4,
         "dim_head": 64,
@@ -658,7 +650,7 @@ def mae_tiny(**kwargs):
         "dropout": 0.0,
         "emb_dropout": 0.0,
         # decoder
-        "decoder_dim": 256,
+        "decoder_dim": 512,
         "decoder_depth": 2,
         "decoder_heads": 2,
         "decoder_dim_head": 64,

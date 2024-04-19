@@ -1,6 +1,10 @@
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
-from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger
+from pytorch_lightning.callbacks import (
+    LearningRateMonitor,
+    ModelCheckpoint,
+    TQDMProgressBar,
+)
+from pytorch_lightning.loggers import TensorBoardLogger
 
 
 class SSLTrainer(pl.Trainer):
@@ -15,9 +19,17 @@ class SSLTrainer(pl.Trainer):
         precision: str = "bf16-mixed",
         log_every_n_steps: int = 1,
         max_epochs: int = 1000,
+        logger: list = [],
+        callbacks: list = [],
         *args,
         **kwargs,
     ) -> None:
+        self.exp_dir = exp_dir
+        self.exp_name = exp_name
+        self.exp_version = exp_version
+
+        self.loggers = logger + self.configure_loggers()
+        self.callbacks = callbacks + self.configure_callbacks()
         super().__init__(
             accelerator=accelerator,
             devices=devices,
@@ -25,24 +37,13 @@ class SSLTrainer(pl.Trainer):
             precision=precision,
             log_every_n_steps=log_every_n_steps,
             max_epochs=max_epochs,
+            logger=self.loggers,
+            callbacks=self.callbacks,
             *args,
             **kwargs,
         )
 
-        self.exp_dir = exp_dir
-        self.exp_name = exp_name
-        self.exp_version = exp_version
-
-        self.loggers = self.configure_loggers()
-        self.callbacks = self.configure_callbacks()
-
     def configure_loggers(self):
-        # csv logger
-        self.csv_logger = CSVLogger(
-            save_dir=self.exp_dir, name=self.exp_name, version=self.exp_version
-        )
-
-        # tensorboard logger
         self.tb_logger = TensorBoardLogger(
             save_dir=self.exp_dir,
             name=self.exp_name,
@@ -50,17 +51,17 @@ class SSLTrainer(pl.Trainer):
             default_hp_metric=False,
         )
 
-        return [self.csv_logger, self.tb_logger]
+        return [self.tb_logger]
 
     def configure_callbacks(self):
         callbacks = []
-
-        # Progress bar
         callbacks.append(TQDMProgressBar(refresh_rate=10))
-
-        # Sauvegarde des checkpoints pour la meilleure mIoU
+        callbacks.append(
+            LearningRateMonitor(
+                logging_interval="epoch",
+            )
+        )
         callbacks.append(ModelCheckpoint(filename="{epoch}"))
-
         return callbacks
 
     def fit(

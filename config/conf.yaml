@@ -1,12 +1,14 @@
 data:
-  root_dir: /home/ALabatie/Bureau/ssl-models/tests/data
-  train_dataset: /home/ALabatie/Bureau/ssl-models/tests/data/train.csv
-  val_dataset: /home/ALabatie/Bureau/ssl-models/tests/data/val.csv
+  root_dir: /home/ALabatie/Bureau/GeoPileV0
+  train_dataset: /home/ALabatie/Bureau/GeoPileV0/patternnet.csv
+  val_dataset: /home/ALabatie/Bureau/GeoPileV0/patternnet_val.csv
+  batch_size: 32
+  num_workers: 11
 
 model:
   image_size: 256
-  patch_size: 16
-  mask_ratio: 0.5
+  patch_size: 64
+  mask_ratio: 0.1
   model_size: "tiny"
   band_groups:
     rgb: [0, 1, 2]
@@ -14,4 +16,4 @@ model:
 trainer:
   precision: "32"
   exp_dir: /home/ALabatie/Bureau/
-  exp_name: ssl_logs
+  exp_name: ssl_logs/0p1

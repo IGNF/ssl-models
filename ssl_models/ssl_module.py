@@ -1,13 +1,12 @@
 """
 Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model
 """
-import numpy as np
 
+import numpy as np
 import torch
 from pytorch_lightning import LightningModule
 
 from ssl_models.mae import mae_large, mae_medium, mae_small, mae_tiny
-from ssl_models import COUNT
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -19,14 +18,17 @@ class SSLModule(LightningModule):
         mask_ratio=0.75,
         image_size=512,
         patch_size=64,
-        lr=1e-2,
-        wd=0.0,
+        lr=1e-4,
+        wd=0.01,
         b1=0.9,
         b2=0.999,
         band_groups=None,
     ):
         super().__init__()
-        self.save_hyperparameters(logger=True)
+        self.lr = lr
+        self.wd = wd
+        self.b1 = b1
+        self.b2 = b2
         model_map = {
             "tiny": mae_tiny,
             "small": mae_small,
@@ -54,37 +56,41 @@ class SSLModule(LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
             self.model.parameters(),
-            lr=self.hparams.lr,
-            weight_decay=self.hparams.wd,
-            betas=(self.hparams.b1, self.hparams.b2),
+            lr=self.lr,
+            weight_decay=self.wd,
+            betas=(self.b1, self.b2),
         )
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(
-            optimizer, 0.99, last_epoch=-1
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="min",
+            factor=0.8,
+            patience=1,
+            min_lr=1e-7,
         )
 
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "interval": "step",
+                "interval": "epoch",
+                "monitor": "train/loss",
             },
         }
 
     def log_tb_images(self, images, preds, batch_idx) -> None:
         global COUNT
         COUNT += 1
-        for img_idx, (image, pred) in enumerate(zip(images, preds)):
-            print(torch.nn.functional.l1_loss(image, pred))
-            self.tb_logger._experiment.add_image(
-                f"image_{batch_idx}_{img_idx}",
-                image.detach().cpu().numpy().astype(np.float32),
-                COUNT,
-            )
-            self.tb_logger._experiment.add_image(
-                f"pred_{batch_idx}_{img_idx}",
-                pred.detach().cpu().numpy().astype(np.float32),
-                COUNT,
-            )
+        print(torch.nn.functional.l1_loss(images, preds))
+        self.tb_logger._experiment.add_image(
+            f"images/{COUNT % 50}_image",
+            images[0].detach().cpu().numpy().astype(np.float32),
+            COUNT,
+        )
+        self.tb_logger._experiment.add_image(
+            f"images/{COUNT % 50}_pred",
+            preds[0].detach().cpu().numpy().astype(np.float32),
+            COUNT,
+        )
 
     def shared_step(self, batch: dict[str, torch.Tensor], batch_idx: int, phase: str):
         cube = batch
@@ -93,14 +99,15 @@ class SSLModule(LightningModule):
             name=f"{phase}/loss",
             value=loss,
             on_step=True,
+            on_epoch=True,
             prog_bar=True,
             logger=True,
             sync_dist=True,
         )
-        if batch_idx % 10 == 0:  # Log every 10 batches
+        if batch_idx % 10 == 0 and phase == "train":  # Log every 10 batches
             self.log_tb_images(cube["image"], pred, batch_idx)
 
-        return loss
+        return {"loss": loss}
 
     def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
         return self.shared_step(batch, batch_idx, phase="train")
