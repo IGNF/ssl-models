@@ -1,0 +1,21 @@
+data:
+  root_dir: "..."
+  train_dataset: "..."
+  val_dataset: "..."
+  batch_size: 16
+  num_workers: 11
+
+model:
+  image_size: 256
+  patch_size: 16
+  mask_ratio: 0.75
+  model_size: "tiny"
+  band_groups:
+    rgb: [0, 1, 2]
+
+trainer:
+  precision: "32"
+  exp_dir: "..."
+  exp_name: "..."
+  lr: 1e-3
+  max_epochs: 20

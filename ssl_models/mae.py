@@ -2,18 +2,13 @@
 Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model
 """
 
-from typing import Literal
-
 import torch
 import torch.nn.functional as F
 from einops import rearrange, reduce, repeat
-from pytorch_lightning import LightningModule
 from torch import nn
 from vit_pytorch.vit import Transformer
 
 from ssl_models.utils import posemb_sincos_1d, posemb_sincos_2d
-
-torch.set_float32_matmul_precision(precision="medium")
 
 
 class Patchify(nn.Module):
@@ -48,7 +43,7 @@ class Patchify(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         mask_ratio,
         image_size,
@@ -61,6 +56,7 @@ class Encoder(nn.Module):
         band_groups,
         dropout,
         emb_dropout,
+        pretraining: bool = True,
     ):
         super().__init__()
         assert (
@@ -74,12 +70,10 @@ class Encoder(nn.Module):
         self.num_spatial_patches = (image_size // patch_size) ** 2
         self.num_group_patches = len(band_groups)
         self.num_patches = self.num_spatial_patches * self.num_group_patches
+        self.pretraining = pretraining
 
         # Split the embedding dimensions between spatial & band patches equally
         pos_dim = band_dim = dim // 2
-
-        self.latlon_embedding = nn.Linear(2, dim)
-        self.time_embedding = nn.Linear(3, dim)
         self.patch_embedding = nn.ModuleDict(
             {
                 name: Patchify(len(bands), dim, patch_size)
@@ -126,7 +120,7 @@ class Encoder(nn.Module):
         ----------
         cube : torch.Tensor
             A tensor of shape (B, C, H, W) containing the pixels of the
-            datacube.
+            cube.
 
         Returns
         -------
@@ -178,37 +172,6 @@ class Encoder(nn.Module):
         patches = self.dropout(patches)  # [B G L D]
         return patches  # [B G L D]
 
-    def embed_metadata(self, patches, latlon, time):
-        """
-        Add timestep & latlon embedding to the patches
-
-        Parameters
-        ----------
-        patches : torch.Tensor
-            A tensor of shape (B, GL, D) containing the embeddings of the
-            patches + position & band encoding.
-        latlon : torch.Tensor
-            A tensor of shape (B, 2) containing the latlon of the datacube.
-        time : torch.Tensor
-            A tensor of shape (B, 2) containing the timestep of the datacube.
-
-        Returns
-        -------
-        patches : torch.Tensor
-            A tensor of shape (B, GL, D) containing the embeddings of the
-            patches + position & band encoding + timestep & latlon embedding.
-        """
-        latlon_embedding = rearrange(
-            self.latlon_embedding(latlon), "B D -> B 1 D"
-        )  # [B D] -> [B 1 D]
-        time_embedding = rearrange(
-            self.time_embedding(time), "B D -> B 1 D"
-        )  # [B D] -> [B 1 D]
-        patches = torch.cat(
-            [patches, latlon_embedding, time_embedding], dim=1
-        )  # [B GL D] + [B 1 D] + [B 1 D] -> [B (GL + 2) D]
-        return patches  # [B (GL + 2) D]
-
     def mask_out(self, patches):
         """
         Mask out patches randomly by shuffling the patches & masking out the
@@ -218,7 +181,7 @@ class Encoder(nn.Module):
         ----------
         patches : torch.Tensor
             A tensor of shape (B, GL, D) containing the embeddings of the
-            patches + position & band encoding + timestep & latlon embedding.
+            patches.
 
         Returns
         -------
@@ -239,19 +202,17 @@ class Encoder(nn.Module):
             GL == self.num_patches
         ), f"Expected {self.num_patches} patches, got {GL} patches."
 
-        if self.training:  # Shuffle the patches
-            noise = torch.randn((B, GL), device=patches.device)  # [B GL]
-        else:  # Don't shuffle useful for interpolation & inspection of embeddings
-            noise = rearrange(
-                torch.arange(B * GL, device=patches.device), "(B GL) -> B GL", B=B
-            )
+        # Shuffle the patches
+        noise = torch.randn((B, GL), device=patches.device)  # [B GL]
 
         random_indices = torch.argsort(noise, dim=-1)  # [B GL]
         reverse_indices = torch.argsort(random_indices, dim=-1)  # [B GL]
-
-        num_masked_patches = int(
-            self.mask_ratio * self.num_patches
-        )  # Number of patches to be masked out
+        if self.pretraining:
+            num_masked_patches = int(
+                self.mask_ratio * self.num_patches
+            )  # Number of patches to be masked out
+        else:
+            num_masked_patches = 0
         masked_indices, unmasked_indices = (
             random_indices[:, :num_masked_patches],  # [B mask_ratio * GL]
             random_indices[:, num_masked_patches:],  # [B (1 - mask_ratio) * GL]
@@ -286,17 +247,11 @@ class Encoder(nn.Module):
             masked_matrix,
         )  # [B GL:(1 - mask_ratio) D], [(1-mask_ratio)], [mask_ratio], [B G L]
 
-    def forward(self, datacube):
-        cube, time, latlon = (
-            datacube["pixels"],
-            datacube["timestep"],
-            datacube["latlon"],
-        )  # [B C H W]
-
-        B, C, H, W = cube.shape
+    def forward(self, cube):
+        B, C, H, W = cube["image"].shape
 
         patches = self.to_patch_embed(
-            cube
+            cube["image"]
         )  # [B G L D] - patchify & create embeddings per patch
 
         patches = self.add_encodings(
@@ -316,26 +271,21 @@ class Encoder(nn.Module):
             patches
         )  # [B GL:(1 - mask_ratio) D], [(1-mask_ratio)], [mask_ratio], [B G L]
 
-        # add timestep & latlon embedding to only the unmasked patches
-        unmasked_patches = self.embed_metadata(
-            unmasked_patches, latlon, time
-        )  # [B (GL:(1 - mask_ratio) + 2) D]
-
         # pass the unmasked patches through the transformer
         encoded_unmasked_patches = self.transformer(
             unmasked_patches
-        )  # [B (GL:(1 - mask_ratio) + 2) D]
+        )  # [B (GL:(1 - mask_ratio)) D]
 
         return (
             encoded_unmasked_patches,
             unmasked_indices,
             masked_indices,
             masked_matrix,
-        )  # [B (GL:(1 - mask_ratio) + 2) D], [(1-mask_ratio)], [mask_ratio], [B G L]
+        )  # [B (GL:(1 - mask_ratio)) D], [(1-mask_ratio)], [mask_ratio], [B G L]
 
 
 class Decoder(nn.Module):
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         mask_ratio,
         image_size,
@@ -500,7 +450,7 @@ class Decoder(nn.Module):
         -------
         pixels : torch.Tensor
             A tensor of shape (B, C, L, PP) containing the pixels of the
-            datacube.
+            cube.
         """
         patches = rearrange(
             patches, "B (G L) D -> B G L D", G=len(self.band_groups)
@@ -523,40 +473,26 @@ class Decoder(nn.Module):
         # Change the embedding dimension from encoder to decoder
         encoded_unmasked_patches = self.enc_to_dec(encoded_unmasked_patches)
 
-        # Split the patches into encoded unmasked patches & meta patches
-        encoded_unmasked_patches, encoded_unmasked_meta_patches = (
-            encoded_unmasked_patches[:, :-2, :],
-            encoded_unmasked_patches[:, -2:, :],
-        )  # [B (GL:(1 - mask_ratio)) D], [B 2 D]
-
         # Reconstruct the patches to feed into the decoder transformer
         decoder_patches = self.reconstruct_and_add_encoding(
             encoded_unmasked_patches, unmasked_indices, masked_indices
         )  # [B GL D]
 
-        # Add the metadata patches back to the decoder patches
-        decoder_patches = torch.cat(
-            [decoder_patches, encoded_unmasked_meta_patches], dim=1
-        )  # [B (GL + 2) D]
-
         # Pass the decoder patches through the transformer
-        decoded_patches = self.transformer(decoder_patches)  # [B (GL + 2) D]
+        decoded_patches = self.transformer(decoder_patches)  # [B GL D]
 
-        # Remove the metadata patches from the decoded patches
-        decoded_patches = decoded_patches[:, :-2, :]  # [B GL D]
-
-        # Piixelify the decoded patches
+        # Pixelify the decoded patches
         pixels = self.pixelify(decoded_patches)  # [B C L PP]
         return pixels
 
 
-class CLAY(nn.Module):
+class MAE(nn.Module):
     def __init__(  # noqa: PLR0913
         self,
         mask_ratio,
         image_size,
         patch_size,
-        # ENCODER
+        # encoder
         dim,
         depth,
         heads,
@@ -564,21 +500,16 @@ class CLAY(nn.Module):
         mlp_ratio,
         dropout,
         emb_dropout,
-        # DECODER
+        # decoder
         decoder_dim,
         decoder_depth,
         decoder_heads,
         decoder_dim_head,
         decoder_mlp_ratio,
         decoder_dropout,
-        # EO
+        # band groups
         band_groups={
             "rgb": (2, 1, 0),
-            "rededge": (3, 4, 5, 7),
-            "nir": (6,),
-            "swir": (8, 9),
-            "sar": (10, 11),
-            "dem": (12,),
         },
         **kwargs,
     ):
@@ -624,10 +555,10 @@ class CLAY(nn.Module):
         ----------
         cube : torch.Tensor
             A tensor of shape (B, C, H, W) containing the pixels of the
-            datacube.
+            cube.
         pixels : torch.Tensor
             A tensor of shape (B, C, L, PP) containing the pixels per patch of
-            the datacube.
+            the cube.
         masked_matrix : torch.Tensor
             A tensor of shape (B, G, L) containing the mask matrix.
 
@@ -643,49 +574,70 @@ class CLAY(nn.Module):
         )  # [B C L PP]
 
         # loss = (patches - pixels) ** 2  # loss per pixel
-        loss = F.mse_loss(patches, pixels, reduction="none")  # loss per pixel
+        loss = F.l1_loss(patches, pixels, reduction="none")  # loss per pixel
         loss = reduce(loss, "B C L PP -> B C L", reduction="mean")  # loss per patch
 
         # mask out the loss for unmasked patches
-        actual_loss, masked_patches_in_group = 0.0, 0.0
-        for i, (name, group) in enumerate(self.band_groups.items()):
+        actual_loss, masked_patches = 0.0, 0.0
+        for i, (_, group) in enumerate(self.band_groups.items()):
             group_loss = reduce(
                 loss[:, group, :], "B G L -> B L", "mean"
             )  # (B, L) - loss per group
             actual_loss += (
                 group_loss * masked_matrix[:, i]
             ).sum()  # (B, L) * (B, L) -> (B, L) -> (B) -> scalar
-            masked_patches_in_group += masked_matrix[
-                :, i
-            ].sum()  # (B, L) -> (B) -> scalar
+            masked_patches += masked_matrix[:, i].sum()  # (B, L) -> (B) -> scalar
 
-        return actual_loss / masked_patches_in_group
+        masked = torch.zeros(patches.shape, device=patches.device)
+        pred = torch.zeros(patches.shape, device=patches.device)
+        for i, (_, group) in enumerate(self.band_groups.items()):
+            masked[:, group, :, :] = 1 * masked_matrix[:, None, i, :, None] + patches[
+                :, group, :, :
+            ] * (1 - masked_matrix[:, None, i, :, None])
+            pred[:, group, :, :] = pixels[:, group, :, :] * masked_matrix[
+                :, None, i, :, None
+            ] + patches[:, group, :, :] * (1 - masked_matrix[:, None, i, :, None])
 
-    def forward(self, datacube):
-        # ENCODER
+        masked = rearrange(
+            masked,
+            "b c (h w) (p1 p2) -> b c (h p1) (w p2)",
+            h=self.image_size // self.patch_size,
+            p1=self.patch_size,
+        )
+        pred = rearrange(
+            pred,
+            "b c (h w) (p1 p2) -> b c (h p1) (w p2)",
+            h=self.image_size // self.patch_size,
+            p1=self.patch_size,
+        )
+
+        return actual_loss / masked_patches, masked, pred
+
+    def forward(self, cube):
+        # encoder
         (
             encoded_unmasked_patches,
             unmasked_indices,
             masked_indices,
             masked_matrix,
         ) = self.encoder(
-            datacube
-        )  # [B (GL:(1 - mask_ratio) + 2) D], [(1-mask_ratio)], [mask_ratio], [B G L]
+            cube
+        )  # [B (GL:(1 - mask_ratio)) D], [(1-mask_ratio)], [mask_ratio], [B G L]
 
-        # DECODER
+        # decoder
         pixels = self.decoder(
             encoded_unmasked_patches, unmasked_indices, masked_indices
         )  # [B C L PP]
 
-        # LOSS
-        loss = self.per_pixel_loss(datacube["pixels"], pixels, masked_matrix)
+        # loss
+        loss, masked, pred = self.per_pixel_loss(cube["image"], pixels, masked_matrix)
 
-        return loss
+        return loss, masked, pred
 
 
-def clay_tiny(**kwargs):
+def mae_tiny(**kwargs):
     args = {
-        # ENCODER
+        # encoder
         "dim": 256,
         "depth": 4,
         "heads": 4,
@@ -693,7 +645,7 @@ def clay_tiny(**kwargs):
         "mlp_ratio": 2,
         "dropout": 0.0,
         "emb_dropout": 0.0,
-        # DECODER
+        # decoder
         "decoder_dim": 128,
         "decoder_depth": 2,
         "decoder_heads": 2,
@@ -702,13 +654,12 @@ def clay_tiny(**kwargs):
         "decoder_dropout": 0.0,
     }
     args.update(kwargs)
-    model = CLAY(**args)
-    return model
+    return MAE(**args)
 
 
-def clay_small(**kwargs):
+def mae_small(**kwargs):
     args = {
-        # ENCODER
+        # encoder
         "dim": 768,
         "depth": 12,
         "heads": 12,
@@ -716,7 +667,7 @@ def clay_small(**kwargs):
         "mlp_ratio": 4,
         "dropout": 0.0,
         "emb_dropout": 0.0,
-        # DECODER
+        # decoder
         "decoder_dim": 512,
         "decoder_depth": 8,
         "decoder_heads": 8,
@@ -725,13 +676,12 @@ def clay_small(**kwargs):
         "decoder_dropout": 0.0,
     }
     args.update(kwargs)
-    model = CLAY(**args)
-    return model
+    return MAE(**args)
 
 
-def clay_medium(**kwargs):
+def mae_medium(**kwargs):
     args = {
-        # ENCODER
+        # encoder
         "dim": 1024,
         "depth": 24,
         "heads": 16,
@@ -739,7 +689,7 @@ def clay_medium(**kwargs):
         "mlp_ratio": 4,
         "dropout": 0.0,
         "emb_dropout": 0.0,
-        # DECODER
+        # decoder
         "decoder_dim": 512,
         "decoder_depth": 8,
         "decoder_heads": 16,
@@ -748,13 +698,12 @@ def clay_medium(**kwargs):
         "decoder_dropout": 0.0,
     }
     args.update(kwargs)
-    model = CLAY(**args)
-    return model
+    return MAE(**args)
 
 
-def clay_large(**kwargs):
+def mae_large(**kwargs):
     args = {
-        # ENCODER
+        # encoder
         "dim": 1280,
         "depth": 32,
         "heads": 16,
@@ -762,7 +711,7 @@ def clay_large(**kwargs):
         "mlp_ratio": 4,
         "dropout": 0.0,
         "emb_dropout": 0.0,
-        # DECODER
+        # decoder
         "decoder_dim": 512,
         "decoder_depth": 8,
         "decoder_heads": 16,
@@ -771,87 +720,4 @@ def clay_large(**kwargs):
         "decoder_dropout": 0.0,
     }
     args.update(kwargs)
-    model = CLAY(**args)
-    return model
-
-
-class MAEModule(LightningModule):
-    def __init__(  # noqa: PLR0913
-        self,
-        model_size="small",
-        mask_ratio=0.75,
-        image_size=512,
-        patch_size=32,
-        lr=1e-4,
-        wd=0.05,
-        b1=0.9,
-        b2=0.95,
-        embeddings_level: Literal["mean", "patch", "group"] = "mean",
-        band_groups=None,
-    ):
-        super().__init__()
-        self.save_hyperparameters(logger=True)
-        model_map = {
-            "tiny": clay_tiny,
-            "small": clay_small,
-            "medium": clay_medium,
-            "large": clay_large,
-        }
-        if model_size in model_map:
-            model_args = {
-                "mask_ratio": mask_ratio,
-                "image_size": image_size,
-                "patch_size": patch_size,
-            }
-            if band_groups:
-                model_args["band_groups"] = band_groups
-            self.model = model_map[model_size](**model_args)
-        else:
-            raise ValueError(
-                f"Invalid model size {model_size}. Expected one of {model_map.keys()}"
-            )
-
-    def forward(self, cube: dict[str, torch.Tensor]):
-        return self.model(cube)
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(
-            self.parameters(),
-            lr=self.hparams.lr,
-            weight_decay=self.hparams.wd,
-            betas=(self.hparams.b1, self.hparams.b2),
-        )
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer, T_0=1000, T_mult=2, eta_min=self.hparams.lr * 10, last_epoch=-1
-        )
-
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "step",
-            },
-        }
-
-    def shared_step(self, batch: dict[str, torch.Tensor], batch_idx: int, phase: str):
-        cube = batch
-        loss = self(cube)
-        self.log(
-            name=f"{phase}/loss",
-            value=loss,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
-        return loss
-
-    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
-        return self.shared_step(batch, batch_idx, phase="train")
-
-    def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
-        return self.shared_step(batch, batch_idx, phase="val")
-
-    def test_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
-        return self.shared_step(batch, batch_idx, phase="test")
+    return MAE(**args)
