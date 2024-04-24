@@ -639,16 +639,16 @@ def mae_tiny(**kwargs):
     args = {
         # encoder
         "dim": 256,
-        "depth": 4,
+        "depth": 8,
         "heads": 4,
         "dim_head": 64,
         "mlp_ratio": 2,
         "dropout": 0.0,
         "emb_dropout": 0.0,
         # decoder
-        "decoder_dim": 128,
-        "decoder_depth": 2,
-        "decoder_heads": 2,
+        "decoder_dim": 256,
+        "decoder_depth": 4,
+        "decoder_heads": 4,
         "decoder_dim_head": 64,
         "decoder_mlp_ratio": 2,
         "decoder_dropout": 0.0,

@@ -70,8 +70,7 @@ class SSLModule(LightningModule):
         }
 
     def shared_step(self, batch: dict[str, torch.Tensor], batch_idx: int, phase: str):
-        cube = batch
-        loss, masked, pred = self(cube)
+        loss, masked, pred = self(batch)
         self.log(
             name=f"{phase}/loss",
             value=loss,
@@ -81,7 +80,6 @@ class SSLModule(LightningModule):
             logger=True,
             sync_dist=True,
         )
-
         return {"loss": loss, "masked": masked, "pred": pred}
 
     def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
