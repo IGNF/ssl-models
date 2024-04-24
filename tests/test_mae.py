@@ -17,13 +17,11 @@ def model_map():
 
 @pytest.mark.parametrize(
     "model_size, mask_ratio, image_size, patch_size",
-    list(
-        itertools.product(
-            ("tiny",),
-            (0, 0.75),
-            (128, 256),
-            (16, 32),
-        )
+    itertools.product(
+        ("tiny",),
+        (0, 0.75),
+        (128, 256),
+        (16, 32),
     ),
 )
 def test_mae(model_map, model_size, mask_ratio, image_size, patch_size):

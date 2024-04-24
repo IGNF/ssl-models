@@ -33,7 +33,6 @@ class SSLTrainer(pl.Trainer):
         self.exp_dir = exp_dir
         self.exp_name = exp_name
         self.exp_version = exp_version
-
         self.lr = lr
         self.wd = wd
         self.b1 = b1
@@ -74,15 +73,3 @@ class SSLTrainer(pl.Trainer):
         callbacks.append(ModelCheckpoint(filename="{epoch}"))
         callbacks.append(ImageLogger())
         return callbacks
-
-    def fit(
-        self,
-        model: pl.LightningModule,
-        *args,
-        **kwargs,
-    ) -> None:
-        super().fit(
-            model,
-            *args,
-            **kwargs,
-        )

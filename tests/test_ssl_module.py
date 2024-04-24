@@ -1,6 +1,9 @@
+import pytest
+
 from ssl_models.ssl_module import SSLModule
 
 
-def test_mae():
+@pytest.mark.parametrize("stage", ["train", "val", "test", "predict"])
+def test_mae(stage):
     ssl_module = SSLModule()
-    ssl_module.setup(stage="fit")
+    ssl_module.setup(stage=stage)
