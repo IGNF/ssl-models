@@ -6,13 +6,19 @@ from pytorch_lightning.callbacks import (
 )
 from pytorch_lightning.loggers import TensorBoardLogger
 
+from ssl_models.image_logger import ImageLogger
+
 
 class SSLTrainer(pl.Trainer):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         exp_dir: str,
         exp_name: str,
         exp_version: int | None = None,
+        lr: float = 1e-3,
+        wd: float = 0.01,
+        b1: float = 0.9,
+        b2: float = 0.99,
         accelerator: str = "auto",
         devices: str = "auto",
         strategy: str = "ddp",
@@ -27,6 +33,11 @@ class SSLTrainer(pl.Trainer):
         self.exp_dir = exp_dir
         self.exp_name = exp_name
         self.exp_version = exp_version
+
+        self.lr = lr
+        self.wd = wd
+        self.b1 = b1
+        self.b2 = b2
 
         self.loggers = logger + self.configure_loggers()
         self.callbacks = callbacks + self.configure_callbacks()
@@ -50,7 +61,6 @@ class SSLTrainer(pl.Trainer):
             version=self.exp_version,
             default_hp_metric=False,
         )
-
         return [self.tb_logger]
 
     def configure_callbacks(self):
@@ -58,10 +68,11 @@ class SSLTrainer(pl.Trainer):
         callbacks.append(TQDMProgressBar(refresh_rate=10))
         callbacks.append(
             LearningRateMonitor(
-                logging_interval="epoch",
+                logging_interval="step",
             )
         )
         callbacks.append(ModelCheckpoint(filename="{epoch}"))
+        callbacks.append(ImageLogger())
         return callbacks
 
     def fit(
@@ -70,7 +81,6 @@ class SSLTrainer(pl.Trainer):
         *args,
         **kwargs,
     ) -> None:
-        model.tb_logger = self.tb_logger
         super().fit(
             model,
             *args,

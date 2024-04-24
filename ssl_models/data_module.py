@@ -37,22 +37,17 @@ class SSLDataModule(Input):
             ]
         else:
             transform = None
-
-        fit_params = {
+        params = {
             **DEFAULT_PARAMS,
             "dataloader_options": {
                 "batch_size": batch_size,
+                "shuffle": True,
                 "num_workers": num_workers,
             },
-            "input_file": train_dataset,
             "root_dir": root_dir,
             "transform": transform,
         }
-        validate_params = {
-            **DEFAULT_PARAMS,
-            "dataloader_options": {"batch_size": batch_size},
-            "input_file": val_dataset,
-            "root_dir": root_dir,
-            "transform": transform,
-        }
-        super().__init__(fit_params=fit_params, validate_params=validate_params)
+        super().__init__(
+            fit_params={**params, "input_file": train_dataset},
+            validate_params={**params, "input_file": val_dataset},
+        )

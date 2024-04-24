@@ -43,7 +43,7 @@ class Patchify(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         mask_ratio,
         image_size,
@@ -56,6 +56,7 @@ class Encoder(nn.Module):
         band_groups,
         dropout,
         emb_dropout,
+        pretraining: bool = True,
     ):
         super().__init__()
         assert (
@@ -69,6 +70,7 @@ class Encoder(nn.Module):
         self.num_spatial_patches = (image_size // patch_size) ** 2
         self.num_group_patches = len(band_groups)
         self.num_patches = self.num_spatial_patches * self.num_group_patches
+        self.pretraining = pretraining
 
         # Split the embedding dimensions between spatial & band patches equally
         pos_dim = band_dim = dim // 2
@@ -200,19 +202,17 @@ class Encoder(nn.Module):
             GL == self.num_patches
         ), f"Expected {self.num_patches} patches, got {GL} patches."
 
-        if self.training:  # Shuffle the patches
-            noise = torch.randn((B, GL), device=patches.device)  # [B GL]
-        else:  # Don't shuffle useful for interpolation & inspection of embeddings
-            noise = rearrange(
-                torch.arange(B * GL, device=patches.device), "(B GL) -> B GL", B=B
-            )
+        # Shuffle the patches
+        noise = torch.randn((B, GL), device=patches.device)  # [B GL]
 
         random_indices = torch.argsort(noise, dim=-1)  # [B GL]
         reverse_indices = torch.argsort(random_indices, dim=-1)  # [B GL]
-
-        num_masked_patches = int(
-            self.mask_ratio * self.num_patches
-        )  # Number of patches to be masked out
+        if self.pretraining:
+            num_masked_patches = int(
+                self.mask_ratio * self.num_patches
+            )  # Number of patches to be masked out
+        else:
+            num_masked_patches = 0
         masked_indices, unmasked_indices = (
             random_indices[:, :num_masked_patches],  # [B mask_ratio * GL]
             random_indices[:, num_masked_patches:],  # [B (1 - mask_ratio) * GL]
@@ -285,7 +285,7 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         mask_ratio,
         image_size,
@@ -348,44 +348,35 @@ class Decoder(nn.Module):
 
         self.embed_to_pixels = nn.ModuleDict(
             {
-                name: nn.Linear(dim, (patch_size**2) * len(bands), bias=False)
+                name: nn.Linear(dim, (patch_size**2) * len(bands))
                 for name, bands in self.band_groups.items()
             }
         )
-        self.norm1 = nn.BatchNorm1d(dim)
-        self.norm2 = nn.BatchNorm1d(dim)
 
     def reconstruct_and_add_encoding(
         self, unmasked_patches, unmasked_indices, masked_indices
     ):
         """
-            Reconstruct the input patches from the random mask patch & add position
-            & band encoding to them.
+        Reconstruct the input patches from the random mask patch & add position
+        & band encoding to them.
 
-            Parameters
-            ----------
-            unmasked_patches : torch.Tensor
-                A tensor of shape (B, GL:(1 - mask_ratio), D) containing the
-                embeddings of the unmasked patches.
-            unmasked_indices : torch.Tensor
-                A tensor of shape (B, (1 - mask_ratio)) containing the indices ofg every 10 batches
-                 self.log_tb_images(cube["image"], pred, batch_idx)
+        Parameters
+        ----------
+        unmasked_patches : torch.Tensor
+            A tensor of shape (B, GL:(1 - mask_ratio), D) containing the
+            embeddings of the unmasked patches.
+        unmasked_indices : torch.Tensor
+            A tensor of shape (B, (1 - mask_ratio)) containing the indices of
+            the unmasked patches.
+        masked_indices : torch.Tensor
+            A tensor of shape (B, mask_ratio) containing the indices of the
+            masked patches.
 
-            return loss
-
-        def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
-            return self.shared_step(batch, batch_idx, phase="train")
-
-        def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
-            masked_indices : torch.Tensor
-                A tensor of shape (B, mask_ratio) containing the indices of the
-                masked patches.
-
-            Returns
-            -------
-            decoder_patches : torch.Tensor
-                A tensor of shape (B, GL, D) containing the embeddings for the
-                decoder part of the model.
+        Returns
+        -------
+        decoder_patches : torch.Tensor
+            A tensor of shape (B, GL, D) containing the embeddings for the
+            decoder part of the model.
         """
         B, *_ = unmasked_patches.shape
 
@@ -487,15 +478,10 @@ class Decoder(nn.Module):
             encoded_unmasked_patches, unmasked_indices, masked_indices
         )  # [B GL D]
 
-        decoder_patches = self.norm1(torch.transpose(decoder_patches, 1, 2))
-        decoder_patches = torch.transpose(decoder_patches, 1, 2)
-
         # Pass the decoder patches through the transformer
         decoded_patches = self.transformer(decoder_patches)  # [B GL D]
 
         # Pixelify the decoded patches
-        decoded_patches = self.norm2(torch.transpose(decoded_patches, 1, 2))
-        decoded_patches = torch.transpose(decoded_patches, 1, 2)
         pixels = self.pixelify(decoded_patches)  # [B C L PP]
         return pixels
 
@@ -506,7 +492,7 @@ class MAE(nn.Module):
         mask_ratio,
         image_size,
         patch_size,
-        # ENCODER
+        # encoder
         dim,
         depth,
         heads,
@@ -514,14 +500,14 @@ class MAE(nn.Module):
         mlp_ratio,
         dropout,
         emb_dropout,
-        # DECODER
+        # decoder
         decoder_dim,
         decoder_depth,
         decoder_heads,
         decoder_dim_head,
         decoder_mlp_ratio,
         decoder_dropout,
-        # EO
+        # band groups
         band_groups={
             "rgb": (2, 1, 0),
         },
@@ -602,12 +588,22 @@ class MAE(nn.Module):
             ).sum()  # (B, L) * (B, L) -> (B, L) -> (B) -> scalar
             masked_patches += masked_matrix[:, i].sum()  # (B, L) -> (B) -> scalar
 
+        masked = torch.zeros(patches.shape, device=patches.device)
         pred = torch.zeros(patches.shape, device=patches.device)
         for i, (_, group) in enumerate(self.band_groups.items()):
+            masked[:, group, :, :] = 1 * masked_matrix[:, None, i, :, None] + patches[
+                :, group, :, :
+            ] * (1 - masked_matrix[:, None, i, :, None])
             pred[:, group, :, :] = pixels[:, group, :, :] * masked_matrix[
                 :, None, i, :, None
             ] + patches[:, group, :, :] * (1 - masked_matrix[:, None, i, :, None])
 
+        masked = rearrange(
+            masked,
+            "b c (h w) (p1 p2) -> b c (h p1) (w p2)",
+            h=self.image_size // self.patch_size,
+            p1=self.patch_size,
+        )
         pred = rearrange(
             pred,
             "b c (h w) (p1 p2) -> b c (h p1) (w p2)",
@@ -615,7 +611,7 @@ class MAE(nn.Module):
             p1=self.patch_size,
         )
 
-        return actual_loss / masked_patches, pred
+        return actual_loss / masked_patches, masked, pred
 
     def forward(self, cube):
         # encoder
@@ -634,15 +630,15 @@ class MAE(nn.Module):
         )  # [B C L PP]
 
         # loss
-        loss, pred = self.per_pixel_loss(cube["image"], pixels, masked_matrix)
+        loss, masked, pred = self.per_pixel_loss(cube["image"], pixels, masked_matrix)
 
-        return loss, pred
+        return loss, masked, pred
 
 
 def mae_tiny(**kwargs):
     args = {
         # encoder
-        "dim": 512,
+        "dim": 256,
         "depth": 4,
         "heads": 4,
         "dim_head": 64,
@@ -650,7 +646,7 @@ def mae_tiny(**kwargs):
         "dropout": 0.0,
         "emb_dropout": 0.0,
         # decoder
-        "decoder_dim": 512,
+        "decoder_dim": 128,
         "decoder_depth": 2,
         "decoder_heads": 2,
         "decoder_dim_head": 64,
