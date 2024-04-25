@@ -30,7 +30,5 @@ jobs:
       - name: Install project
         run: |
             poetry install
-            git clone https://github.com/IGNF/odeon.git ../odeon
-            poetry run pip install --no-deps --no-cache-dir ../odeon
       - name: Run tests
         run: poetry run python -m pytest tests/
