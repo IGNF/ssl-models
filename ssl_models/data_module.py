@@ -25,6 +25,7 @@ class SSLDataModule(Input):
         root_dir: str,
         train_dataset: str,
         val_dataset: str,
+        shuffle_val: bool = True,
         use_tranform: bool = True,
         batch_size: int = 32,
         num_workers: int = 0,
@@ -37,17 +38,31 @@ class SSLDataModule(Input):
             ]
         else:
             transform = None
+
         params = {
             **DEFAULT_PARAMS,
-            "dataloader_options": {
-                "batch_size": batch_size,
-                "shuffle": True,
-                "num_workers": num_workers,
-            },
             "root_dir": root_dir,
             "transform": transform,
         }
+        fit_params = {
+            **params,
+            "dataloader_options": {
+                "batch_size": batch_size,
+                "num_workers": num_workers,
+                "shuffle": True,
+            },
+            "input_file": train_dataset,
+        }
+        validate_params = {
+            **params,
+            "dataloader_options": {
+                "batch_size": batch_size,
+                "num_workers": num_workers,
+                "shuffle": shuffle_val,
+            },
+            "input_file": val_dataset,
+        }
         super().__init__(
-            fit_params={**params, "input_file": train_dataset},
-            validate_params={**params, "input_file": val_dataset},
+            fit_params=fit_params,
+            validate_params=validate_params,
         )
