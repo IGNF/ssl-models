@@ -17,5 +17,6 @@ trainer:
   precision: "32"
   exp_dir: "..."
   exp_name: "..."
-  lr: 1e-3
+  logged_images_per_epoch: 50
+  base_lr: 1e-4
   max_epochs: 20

@@ -15,7 +15,8 @@ class SSLTrainer(pl.Trainer):
         exp_dir: str,
         exp_name: str,
         exp_version: int | None = None,
-        lr: float = 1e-3,
+        logged_images_per_epoch: int = 50,
+        base_lr: float = 1e-3,
         wd: float = 0.01,
         b1: float = 0.9,
         b2: float = 0.99,
@@ -33,7 +34,8 @@ class SSLTrainer(pl.Trainer):
         self.exp_dir = exp_dir
         self.exp_name = exp_name
         self.exp_version = exp_version
-        self.lr = lr
+        self.logged_images_per_epoch = logged_images_per_epoch
+        self.base_lr = base_lr
         self.wd = wd
         self.b1 = b1
         self.b2 = b2

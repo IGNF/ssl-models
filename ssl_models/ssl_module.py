@@ -45,17 +45,18 @@ class SSLModule(LightningModule):
         return self.model(cube)
 
     def configure_optimizers(self):
+        total_steps = self.trainer.estimated_stepping_batches
+        lr = self.trainer.base_lr * self.trainer.train_dataloader.batch_size
         optimizer = torch.optim.AdamW(
             self.model.parameters(),
-            lr=self.trainer.lr,
+            lr=lr,
             weight_decay=self.trainer.wd,
             betas=(self.trainer.b1, self.trainer.b2),
         )
-
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,
-            max_lr=self.trainer.lr,
-            total_steps=self.trainer.estimated_stepping_batches,
+            max_lr=lr,
+            total_steps=total_steps,
             pct_start=0.1,
             cycle_momentum=False,
             div_factor=1000,
