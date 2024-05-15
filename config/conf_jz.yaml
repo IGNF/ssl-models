@@ -1,7 +1,5 @@
 data:
   root_dir: /var/tmp/GeoPileV0
-  train_dataset: /var/tmp/GeoPileV0/train.csv
-  val_dataset: /var/tmp/GeoPileV0/val.csv
   batch_size: 64
   num_workers: 64
 

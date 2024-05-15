@@ -2,6 +2,8 @@
 LightningDataModule for SSL.
 """
 
+from pathlib import Path
+
 import albumentations as A
 from odeon.data import Input
 
@@ -23,8 +25,6 @@ class SSLDataModule(Input):
     def __init__(
         self,
         root_dir: str,
-        train_dataset: str,
-        val_dataset: str,
         shuffle_val: bool = True,
         use_tranform: bool = True,
         batch_size: int = 32,
@@ -38,6 +38,9 @@ class SSLDataModule(Input):
             ]
         else:
             transform = None
+
+        train_dataset = Path(root_dir) / "train.csv"
+        val_dataset = Path(root_dir) / "val.csv"
 
         params = {
             **DEFAULT_PARAMS,
