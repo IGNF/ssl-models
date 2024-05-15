@@ -1,7 +1,10 @@
 import pytorch_lightning as pl
 from clearml import Task
-from pytorch_lightning.callbacks import (LearningRateMonitor, ModelCheckpoint,
-                                         TQDMProgressBar)
+from pytorch_lightning.callbacks import (
+    LearningRateMonitor,
+    ModelCheckpoint,
+    TQDMProgressBar,
+)
 from pytorch_lightning.loggers import TensorBoardLogger
 
 from ssl_models.image_logger import ImageLogger
