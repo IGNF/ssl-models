@@ -1,9 +1,7 @@
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import (
-    LearningRateMonitor,
-    ModelCheckpoint,
-    TQDMProgressBar,
-)
+from clearml import Task
+from pytorch_lightning.callbacks import (LearningRateMonitor, ModelCheckpoint,
+                                         TQDMProgressBar)
 from pytorch_lightning.loggers import TensorBoardLogger
 
 from ssl_models.image_logger import ImageLogger
@@ -15,6 +13,8 @@ class SSLTrainer(pl.Trainer):
         exp_dir: str,
         exp_name: str,
         exp_version: int | None = None,
+        use_clearml: bool = False,
+        clearml_project_name: str = "ssl",
         logged_images_per_epoch: int = 50,
         base_lr: float = 1e-3,
         wd: float = 0.01,
@@ -54,6 +54,12 @@ class SSLTrainer(pl.Trainer):
             *args,
             **kwargs,
         )
+        if use_clearml and self.global_rank == 0:
+            Task.init(
+                project_name=clearml_project_name,
+                task_name=self.exp_name,
+                tags=[],
+            )
 
     def configure_loggers(self):
         self.tb_logger = TensorBoardLogger(
