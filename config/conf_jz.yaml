@@ -1,0 +1,21 @@
+data:
+  root_dir: /var/tmp/GeoPileV0
+  train_dataset: /var/tmp/GeoPileV0/train.csv
+  val_dataset: /var/tmp/GeoPileV0/val.csv
+  batch_size: 64
+  num_workers: 64
+
+model:
+  image_size: 256
+  patch_size: 16
+  mask_ratio: 0.75
+  model_size: "small"
+  band_groups:
+    rgb: [0, 1, 2]
+
+trainer:
+  precision: "bf16-mixed"
+  logged_images_per_epoch: 10
+  max_epochs: 20
+  b2: 0.99
+
