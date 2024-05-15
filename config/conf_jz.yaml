@@ -18,4 +18,3 @@ trainer:
   logged_images_per_epoch: 10
   max_epochs: 20
   b2: 0.99
-
