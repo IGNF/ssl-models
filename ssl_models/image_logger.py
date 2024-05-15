@@ -18,6 +18,8 @@ class ImageLogger(Callback):
         batch_idx,
         phase: str,
     ) -> None:
+        if trainer.global_rank != 0:
+            return
         match phase:
             case "train":
                 num_batches_per_epoch = len(trainer.train_dataloader)
@@ -30,26 +32,24 @@ class ImageLogger(Callback):
         )
         if batch_idx % log_every_n_batches:
             return
-        for masked, pred, cube in zip(
-            outputs["masked"], outputs["pred"], batch["image"]
-        ):
-            epoch = trainer.current_epoch
-            prefix_idx = batch_idx // log_every_n_batches
-            trainer.tb_logger._experiment.add_image(
-                f"{phase}/{prefix_idx}_input",
-                ImageLogger.to_numpy(masked),
-                epoch,
-            )
-            trainer.tb_logger._experiment.add_image(
-                f"{phase}/{prefix_idx}_pred",
-                ImageLogger.to_numpy(pred),
-                epoch,
-            )
-            trainer.tb_logger._experiment.add_image(
-                f"{phase}/{prefix_idx}_target",
-                ImageLogger.to_numpy(cube),
-                epoch,
-            )
+
+        epoch = trainer.current_epoch
+        prefix_idx = batch_idx // log_every_n_batches
+        trainer.tb_logger._experiment.add_image(
+            f"{phase}/{prefix_idx}_input",
+            ImageLogger.to_numpy(outputs["masked"][0]),
+            epoch,
+        )
+        trainer.tb_logger._experiment.add_image(
+            f"{phase}/{prefix_idx}_pred",
+            ImageLogger.to_numpy(outputs["pred"][0]),
+            epoch,
+        )
+        trainer.tb_logger._experiment.add_image(
+            f"{phase}/{prefix_idx}_target",
+            ImageLogger.to_numpy(batch["image"][0]),
+            epoch,
+        )
 
     def on_train_batch_end(
         self,
