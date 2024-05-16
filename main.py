@@ -10,7 +10,7 @@ References:
 - https://pytorch-lightning.medium.com/introducing-lightningcli-v2-supercharge-your-training-c070d43c7dd6
 """
 
-from pytorch_lightning.cli import LightningCLI
+from pytorch_lightning.cli import LightningCLI, SaveConfigCallback
 
 from ssl_models.data_module import SSLDataModule
 from ssl_models.ssl_module import SSLModule
@@ -19,5 +19,8 @@ from ssl_models.trainer import SSLTrainer
 # %%
 if __name__ == "__main__":
     cli = LightningCLI(
-        datamodule_class=SSLDataModule, model_class=SSLModule, trainer_class=SSLTrainer
+        datamodule_class=SSLDataModule,
+        model_class=SSLModule,
+        trainer_class=SSLTrainer,
+        save_config_callback=SaveConfigCallback,
     )

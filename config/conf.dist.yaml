@@ -1,7 +1,5 @@
 data:
   root_dir: "..."
-  train_dataset: "..."
-  val_dataset: "..."
   batch_size: 16
   num_workers: 11
 
