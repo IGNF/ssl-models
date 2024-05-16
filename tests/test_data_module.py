@@ -1,12 +1,9 @@
-from logging import getLogger
-
 from odeon.core.app_utils import Stages
 from odeon.data import Input
 
+from ssl_models import LOGGER
 from ssl_models.data_module import DEFAULT_PARAMS
 from tests import TEST_DATA_DIR
-
-logger = getLogger(__name__)
 
 TRAIN_DATASET = TEST_DATA_DIR / "train.csv"
 VAL_DATASET = TEST_DATA_DIR / "val.csv"
@@ -25,11 +22,11 @@ def test_train_data_module():
     n_cycle = 2
     for _ in range(n_cycle):
         for idx, batch in enumerate(data_loader):
-            logger.info(idx)
+            LOGGER.info(idx)
             if int(idx) > n_cycle:
-                logger.info("exit")
+                LOGGER.info("exit")
                 break
-            logger.info(f"id: {idx}, batch: {batch.keys()}")
+            LOGGER.info(f"id: {idx}, batch: {batch.keys()}")
 
 
 def test_val_data():
@@ -45,8 +42,8 @@ def test_val_data():
     n_cycle = 2
     for _ in range(n_cycle):
         for idx, batch in enumerate(data_loader):
-            logger.info(idx)
+            LOGGER.info(idx)
             if int(idx) > n_cycle:
-                logger.info("exit")
+                LOGGER.info("exit")
                 break
-            logger.info(f"id: {idx}, batch: {batch.keys()}")
+            LOGGER.info(f"id: {idx}, batch: {batch.keys()}")

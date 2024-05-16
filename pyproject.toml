@@ -23,6 +23,8 @@ tensorboard = "^2.16.2"
 odeon = {git = "https://github.com/IGNF/odeon", tag = "0.5.0"}
 segmentation-models-pytorch = "^0.3.3"
 omegaconf = "^2.3.0"
+clearml = "^1.15.1"
+python-dotenv = "^1.0.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.1.1"
