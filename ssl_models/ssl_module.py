@@ -2,6 +2,8 @@
 Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model
 """
 
+import math
+
 import torch
 from pytorch_lightning import LightningModule
 
@@ -17,6 +19,7 @@ class SSLModule(LightningModule):
         mask_ratio=0.75,
         image_size=512,
         patch_size=64,
+        unpool=False,
         band_groups=None,
     ):
         super().__init__()
@@ -26,11 +29,19 @@ class SSLModule(LightningModule):
             "medium": mae_medium,
             "large": mae_large,
         }
+        if unpool:
+            num_downsampling = round(math.log2(patch_size))
+            if 2**num_downsampling != patch_size:
+                raise ValueError("Patch size must be a power of 2")
+        else:
+            num_downsampling = None
         if model_size in model_map:
             model_args = {
                 "mask_ratio": mask_ratio,
                 "image_size": image_size,
                 "patch_size": patch_size,
+                "num_downsampling": num_downsampling,
+                "unpool": unpool,
             }
             if band_groups:
                 model_args["band_groups"] = band_groups

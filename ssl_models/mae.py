@@ -16,7 +16,7 @@ class Patchify(nn.Module):
     Patchify the input cube & create embeddings per patch
     """
 
-    def __init__(self, in_chans, embed_dim, patch_size):
+    def __init__(self, in_chans, embed_dim, patch_size, num_downsampling, unpool):
         """
         Define layers of patch stem.
 
@@ -30,16 +30,174 @@ class Patchify(nn.Module):
             Patch size
         """
         super().__init__()
-        self.proj = nn.Conv2d(
-            in_chans, embed_dim, kernel_size=patch_size, stride=patch_size
+        self.patch_size = patch_size
+        self.num_downsampling = num_downsampling
+        self.unpool = unpool
+
+        self.conv_skip = nn.Conv2d(
+            in_chans,
+            embed_dim,
+            kernel_size=self.patch_size,
+            stride=self.patch_size,
         )
-        self.norm = nn.LayerNorm(embed_dim)
+        self.norm_skip = nn.GroupNorm(1, embed_dim)
+        if self.unpool:
+            channels = []
+            for idx in range(self.num_downsampling):
+                pow_in = idx
+                pow_out = idx + 1
+                channels_in = 4 * 2**pow_in if idx > 0 else in_chans
+                channels_out = 4 * 2**pow_out
+                channels.append((channels_in, channels_out))
+
+            self.convs = nn.ModuleDict(
+                [
+                    [
+                        f"conv_{idx}",
+                        nn.Conv2d(
+                            channels_in,
+                            channels_out,
+                            kernel_size=2,
+                            padding_mode="reflect",
+                            padding="same",
+                        ),
+                    ]
+                    for idx, (channels_in, channels_out) in enumerate(channels)
+                ]
+            )
+            self.norms = nn.ModuleDict(
+                [
+                    [f"norm_{idx}", nn.GroupNorm(1, channels_out)]
+                    for idx, (_, channels_out) in enumerate(channels)
+                ]
+            )
+            self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)
+            self.conv = nn.Conv2d(
+                4 * 2**self.num_downsampling,
+                embed_dim,
+                kernel_size=1,
+            )
+            self.norm = nn.GroupNorm(1, embed_dim)
 
     def forward(self, xb):
-        b, c, h, w = xb.shape
-        xb = self.proj(xb)
-        xb = rearrange(xb, "b d p1 p2 -> b (p1 p2) d")
-        return self.norm(xb)
+        _, _, h, w = xb.shape
+        skip = xb
+        skip = self.conv_skip(skip)
+        skip = self.norm_skip(skip)
+        skip = rearrange(
+            skip,
+            "b c h w -> (b h w) c 1 1",
+        )
+
+        inds = []
+        if self.unpool:
+            xb = rearrange(
+                xb,
+                "b c (h p1) (w p2) -> (b h w) c p1 p2",
+                p1=self.patch_size,
+                p2=self.patch_size,
+            )
+            for idx in range(self.num_downsampling):
+                xb = self.convs[f"conv_{idx}"](xb)
+                xb = self.norms[f"norm_{idx}"](xb)
+                xb, ind = self.max_pool(xb)
+                inds.append(ind)
+
+            xb = self.conv(xb)
+            xb = self.norm(xb)
+            xb = xb + skip
+        else:
+            xb = skip
+        xb = rearrange(
+            xb,
+            "(b h w) d 1 1 -> b (h w) d",
+            h=h // self.patch_size,
+            w=w // self.patch_size,
+        )
+        return xb, inds
+
+
+class Pixelify(nn.Module):
+    """
+    Pixelify the patches
+    """
+
+    def __init__(self, embed_dim, out_chans, patch_size, num_downsampling, unpool):
+        """ """
+        super().__init__()
+        self.patch_size = patch_size
+        self.num_downsampling = num_downsampling
+        self.unpool = unpool
+
+        self.conv_skip = nn.Conv2d(
+            embed_dim,
+            out_chans * self.patch_size**2,
+            kernel_size=1,
+        )
+        if self.unpool:
+            channels = []
+            for idx in range(self.num_downsampling):
+                pow_in = self.num_downsampling - idx
+                pow_out = self.num_downsampling - (idx + 1)
+                channels_in = 4 * 2**pow_in
+                channels_out = 4 * 2**pow_out
+                channels.append((channels_in, channels_out))
+
+            self.conv = nn.Conv2d(
+                embed_dim,
+                4 * 2**num_downsampling,
+                kernel_size=1,
+            )
+            self.norm = nn.GroupNorm(1, 4 * 2**num_downsampling)
+            self.max_unpool = nn.MaxUnpool2d(kernel_size=2, stride=2)
+            self.convs = nn.ModuleDict(
+                [
+                    [
+                        f"conv_{idx}",
+                        nn.Conv2d(
+                            channels_in,
+                            channels_out,
+                            kernel_size=2,
+                            padding_mode="reflect",
+                            padding="same",
+                        ),
+                    ]
+                    for idx, (channels_in, channels_out) in enumerate(channels)
+                ]
+            )
+            self.norms = nn.ModuleDict(
+                [
+                    [f"norm_{idx}", nn.GroupNorm(1, channels_out)]
+                    for idx, (_, channels_out) in enumerate(channels)
+                ]
+            )
+            self.fc = nn.Conv2d(4, out_chans, kernel_size=1)
+
+    def forward(self, xb, inds):
+        b, _, _ = xb.shape
+        xb = rearrange(
+            xb,
+            "b l c -> (b l) c 1 1",
+        )
+        skip = xb
+        skip = self.conv_skip(skip)
+        skip = rearrange(
+            skip, "b (p1 p2 c) 1 1 -> b c p1 p2", p1=self.patch_size, p2=self.patch_size
+        )
+        if self.unpool:
+            xb = self.conv(xb)
+            xb = self.norm(xb)
+            for idx, ind in enumerate(inds[::-1]):
+                xb = self.max_unpool(xb, ind)
+                xb = self.convs[f"conv_{idx}"](xb)
+                xb = self.norms[f"norm_{idx}"](xb)
+            xb = self.fc(xb)
+            xb = xb + skip
+        else:
+            xb = skip
+
+        xb = rearrange(xb, "(b l) c p1 p2 -> b l (p1 p2 c)", b=b)
+        return xb
 
 
 class Encoder(nn.Module):
@@ -48,6 +206,8 @@ class Encoder(nn.Module):
         mask_ratio,
         image_size,
         patch_size,
+        num_downsampling,
+        unpool,
         dim,
         depth,
         heads,
@@ -76,7 +236,7 @@ class Encoder(nn.Module):
         pos_dim = band_dim = dim // 2
         self.patch_embedding = nn.ModuleDict(
             {
-                name: Patchify(len(bands), dim, patch_size)
+                name: Patchify(len(bands), dim, patch_size, num_downsampling, unpool)
                 for name, bands in self.band_groups.items()
             }
         )
@@ -129,12 +289,14 @@ class Encoder(nn.Module):
             patches.
         """
         patches = []
+        embed_inds = {}
         for name, bands in self.band_groups.items():
-            cubeslice = cube[:, bands, :, :]  # [B C H W] -> [B C[slice[...]] H W]
-            patches.append(self.patch_embedding[name](cubeslice))
+            cube_slice = cube[:, bands, :, :]  # [B C H W] -> [B C[slice[...]] H W]
+            embed_slice, embed_inds[name] = self.patch_embedding[name](cube_slice)
+            patches.append(embed_slice)
 
         patches = rearrange(patches, "G B L D -> B G L D")  # [B G L D]
-        return patches  # [B G L D]
+        return patches, embed_inds  # [B G L D]
 
     def add_encodings(self, patches):
         """
@@ -250,7 +412,7 @@ class Encoder(nn.Module):
     def forward(self, cube):
         B, C, H, W = cube["image"].shape
 
-        patches = self.to_patch_embed(
+        patches, embed_inds = self.to_patch_embed(
             cube["image"]
         )  # [B G L D] - patchify & create embeddings per patch
 
@@ -278,6 +440,7 @@ class Encoder(nn.Module):
 
         return (
             encoded_unmasked_patches,
+            embed_inds,
             unmasked_indices,
             masked_indices,
             masked_matrix,
@@ -290,6 +453,8 @@ class Decoder(nn.Module):
         mask_ratio,
         image_size,
         patch_size,
+        num_downsampling,
+        unpool,
         encoder_dim,
         dim,
         depth,
@@ -348,7 +513,7 @@ class Decoder(nn.Module):
 
         self.embed_to_pixels = nn.ModuleDict(
             {
-                name: nn.Linear(dim, (patch_size**2) * len(bands))
+                name: Pixelify(dim, len(bands), patch_size, num_downsampling, unpool)
                 for name, bands in self.band_groups.items()
             }
         )
@@ -436,7 +601,7 @@ class Decoder(nn.Module):
 
         return decoder_patches  # [B GL D]
 
-    def pixelify(self, patches):
+    def pixelify(self, patches, embed_inds):
         """
         Convert the patches into pixel space to compute the loss
 
@@ -458,7 +623,9 @@ class Decoder(nn.Module):
         pixels = []
         for i, (name, bands) in enumerate(self.band_groups.items()):
             group_embeddings = patches[:, i, :, :]  # [B L D]
-            group_pixels = self.embed_to_pixels[name](group_embeddings)  # [B L (P P C)]
+            group_pixels = self.embed_to_pixels[name](
+                group_embeddings, embed_inds[name]
+            )  # [B L (P P C)]
             group_pixels = rearrange(
                 group_pixels,
                 "B L (PP C) -> B C L PP",
@@ -469,7 +636,9 @@ class Decoder(nn.Module):
         pixels = torch.cat(pixels, dim=1)  # [B C L PP]
         return pixels  # [B C L PP]
 
-    def forward(self, encoded_unmasked_patches, unmasked_indices, masked_indices):
+    def forward(
+        self, encoded_unmasked_patches, embed_inds, unmasked_indices, masked_indices
+    ):
         # Change the embedding dimension from encoder to decoder
         encoded_unmasked_patches = self.enc_to_dec(encoded_unmasked_patches)
 
@@ -482,7 +651,7 @@ class Decoder(nn.Module):
         decoded_patches = self.transformer(decoder_patches)  # [B GL D]
 
         # Pixelify the decoded patches
-        pixels = self.pixelify(decoded_patches)  # [B C L PP]
+        pixels = self.pixelify(decoded_patches, embed_inds)  # [B C L PP]
         return pixels
 
 
@@ -492,6 +661,8 @@ class MAE(nn.Module):
         mask_ratio,
         image_size,
         patch_size,
+        num_downsampling,
+        unpool,
         # encoder
         dim,
         depth,
@@ -523,6 +694,8 @@ class MAE(nn.Module):
             mask_ratio=mask_ratio,
             image_size=image_size,
             patch_size=patch_size,
+            num_downsampling=num_downsampling,
+            unpool=unpool,
             dim=dim,
             depth=depth,
             heads=heads,
@@ -537,6 +710,8 @@ class MAE(nn.Module):
             mask_ratio=mask_ratio,
             image_size=image_size,
             patch_size=patch_size,
+            num_downsampling=num_downsampling,
+            unpool=unpool,
             encoder_dim=dim,
             dim=decoder_dim,
             depth=decoder_depth,
@@ -617,6 +792,7 @@ class MAE(nn.Module):
         # encoder
         (
             encoded_unmasked_patches,
+            embed_inds,
             unmasked_indices,
             masked_indices,
             masked_matrix,
@@ -626,7 +802,7 @@ class MAE(nn.Module):
 
         # decoder
         pixels = self.decoder(
-            encoded_unmasked_patches, unmasked_indices, masked_indices
+            encoded_unmasked_patches, embed_inds, unmasked_indices, masked_indices
         )  # [B C L PP]
 
         # loss
