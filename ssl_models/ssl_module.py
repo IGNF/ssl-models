@@ -12,6 +12,16 @@ from ssl_models.mae import mae_large, mae_medium, mae_small, mae_tiny
 torch.set_float32_matmul_precision(precision="medium")
 
 
+def downsampling_from_patch_size(unpool, patch_size):
+    if unpool:
+        num_downsampling = round(math.log2(patch_size))
+        if 2**num_downsampling != patch_size:
+            raise ValueError("Patch size must be a power of 2")
+    else:
+        num_downsampling = None
+    return num_downsampling
+
+
 class SSLModule(LightningModule):
     def __init__(
         self,
@@ -29,12 +39,7 @@ class SSLModule(LightningModule):
             "medium": mae_medium,
             "large": mae_large,
         }
-        if unpool:
-            num_downsampling = round(math.log2(patch_size))
-            if 2**num_downsampling != patch_size:
-                raise ValueError("Patch size must be a power of 2")
-        else:
-            num_downsampling = None
+        num_downsampling = downsampling_from_patch_size(unpool, patch_size)
         if model_size in model_map:
             model_args = {
                 "mask_ratio": mask_ratio,
