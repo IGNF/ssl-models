@@ -8,6 +8,7 @@ import torch
 from pytorch_lightning import LightningModule
 
 from ssl_models.mae import mae_large, mae_medium, mae_small, mae_tiny
+from ssl_models.mixmae import mixmim_base, mixmim_large, mixmim_huge
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -33,11 +34,16 @@ class SSLModule(LightningModule):
         band_groups=None,
     ):
         super().__init__()
+        # model_map = {
+        #     "tiny": mae_tiny,
+        #     "small": mae_small,
+        #     "medium": mae_medium,
+        #     "large": mae_large,
+        # }
         model_map = {
-            "tiny": mae_tiny,
-            "small": mae_small,
-            "medium": mae_medium,
-            "large": mae_large,
+            "base": mixmim_base,
+            "large": mixmim_large,
+            "huge": mixmim_huge,
         }
         num_downsampling = downsampling_from_patch_size(unpool, patch_size)
         if model_size in model_map:
