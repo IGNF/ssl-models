@@ -589,7 +589,7 @@ class MixMIM(nn.Module):
             p1=x_rec_h,
             p2=x_rec_w,
         )
-        pred = x1_rec * (1 - mask_output) + x["image"] * (mask_output)
+        pred = x1_rec * mask_output + x["image"] * (1 - mask_output)
 
         return loss, masked, pred
 
