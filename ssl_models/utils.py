@@ -2,6 +2,7 @@
 Code from https://github.com/lucidrains/vit-pytorch/blob/main/vit_pytorch/simple_vit.py
 Code from: https://github.com/Sense-X/MixMIM/blob/master/util/pos_embed.py
 """
+
 import numpy as np
 import torch
 
@@ -32,6 +33,7 @@ def posemb_sincos_1d(length, dim, temperature: int = 10000, dtype=torch.float32)
 
     return pe.type(dtype)
 
+
 # --------------------------------------------------------
 # 2D sine-cosine position embedding
 # References:
@@ -61,10 +63,14 @@ def get_2d_sincos_pos_embed_from_grid(embed_dim, grid, cossin=False):
     assert embed_dim % 2 == 0
 
     # use half of dimensions to encode grid_h
-    emb_h = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[0], cossin=cossin)  # (H*W, D/2)
-    emb_w = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[1], cossin=cossin)  # (H*W, D/2)
+    emb_h = get_1d_sincos_pos_embed_from_grid(
+        embed_dim // 2, grid[0], cossin=cossin
+    )  # (H*W, D/2)
+    emb_w = get_1d_sincos_pos_embed_from_grid(
+        embed_dim // 2, grid[1], cossin=cossin
+    )  # (H*W, D/2)
 
-    emb = np.concatenate([emb_h, emb_w], axis=1) # (H*W, D)
+    emb = np.concatenate([emb_h, emb_w], axis=1)  # (H*W, D)
     return emb
 
 
@@ -76,14 +82,14 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos, cossin=False):
     """
     assert embed_dim % 2 == 0
     omega = np.arange(embed_dim // 2, dtype=np.float32)
-    omega /= embed_dim / 2.
-    omega = 1. / 10000**omega  # (D/2,)
+    omega /= embed_dim / 2.0
+    omega = 1.0 / 10000**omega  # (D/2,)
 
     pos = pos.reshape(-1)  # (M,)
-    out = np.einsum('m,d->md', pos, omega)  # (M, D/2), outer product
+    out = np.einsum("m,d->md", pos, omega)  # (M, D/2), outer product
 
-    emb_sin = np.sin(out) # (M, D/2)
-    emb_cos = np.cos(out) # (M, D/2)
+    emb_sin = np.sin(out)  # (M, D/2)
+    emb_cos = np.cos(out)  # (M, D/2)
 
     if cossin:
         emb = np.concatenate([emb_cos, emb_sin], axis=1)  # (M, D)

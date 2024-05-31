@@ -7,8 +7,13 @@ import math
 import torch
 from pytorch_lightning import LightningModule
 
-from ssl_models.mae import mae_large, mae_medium, mae_small, mae_tiny
-from ssl_models.mixmae import mixmim_base, mixmim_large, mixmim_huge
+from ssl_models.mixmae import (
+    mixmim_base,
+    mixmim_huge,
+    mixmim_large,
+    mixmim_small,
+    mixmim_tiny,
+)
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -41,6 +46,8 @@ class SSLModule(LightningModule):
         #     "large": mae_large,
         # }
         model_map = {
+            "tiny": mixmim_tiny,
+            "small": mixmim_small,
             "base": mixmim_base,
             "large": mixmim_large,
             "huge": mixmim_huge,

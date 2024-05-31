@@ -7,150 +7,48 @@ Code from https://github.com/Sense-X/MixMIM/tree/master
 # MAE:  https://github.com/facebookresearch/mae
 # --------------------------------------------------------
 """
+
 import math
 import random
+
 import torch
+from einops import rearrange
+from timm.models.layers import to_2tuple, trunc_normal_
+from timm.models.swin_transformer import PatchMerging, window_partition, window_reverse
+from timm.models.vision_transformer import Block, DropPath, Mlp, PatchEmbed
 from torch import nn
 from torch.utils.checkpoint import checkpoint
-
-from timm.models.layers import trunc_normal_, to_2tuple
-from timm.models.swin_transformer import PatchMerging
-from timm.models.swin_transformer import window_partition, window_reverse
-from timm.models.vision_transformer import Block, Mlp, DropPath, PatchEmbed
-from timm.models.registry import register_model
 
 from ssl_models.utils import get_2d_sincos_pos_embed
 
 
-# class PatchEmbed(nn.Module):
-#     """ 2D Image to Patch Embedding
-#     """
-#     def __init__(
-#             self,
-#             img_size=224,
-#             patch_size=16,
-#             in_chans=3,
-#             embed_dim=768,
-#             norm_layer=None,
-#             flatten=True,
-#             bias=True,
-#     ):
-#         super().__init__()
-#         img_size = to_2tuple(img_size)
-#         patch_size = to_2tuple(patch_size)
-#         self.img_size = img_size
-#         self.patch_size = patch_size
-#         self.grid_size = (img_size[0] // patch_size[0], img_size[1] // patch_size[1])
-#         self.num_patches = self.grid_size[0] * self.grid_size[1]
-#         self.flatten = flatten
-
-#         self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size, bias=bias)
-#         self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
-
-#     def forward(self, x):
-#         B, C, H, W = x.shape
-#         assert(H == self.img_size[0], f"Input image height ({H}) doesn't match model ({self.img_size[0]}).")
-#         assert(W == self.img_size[1], f"Input image width ({W}) doesn't match model ({self.img_size[1]}).")
-#         x = self.proj(x)
-#         if self.flatten:
-#             x = x.flatten(2).transpose(1, 2)  # BCHW -> BNC
-#         x = self.norm(x)
-#         return x
-
-
-def resample_patch_embed(
-        patch_embed,
-        new_size: list[int],
-        interpolation: str = 'bicubic',
-        antialias: bool = True,
-        verbose: bool = False,
-):
-    """Resample the weights of the patch embedding kernel to target resolution.
-    We resample the patch embedding kernel by approximately inverting the effect
-    of patch resizing.
-
-    Code based on:
-      https://github.com/google-research/big_vision/blob/b00544b81f8694488d5f36295aeb7972f3755ffe/big_vision/models/proj/flexi/vit.py
-
-    With this resizing, we can for example load a B/8 filter into a B/16 model
-    and, on 2x larger input image, the result will match.
-
-    Args:
-        patch_embed: original parameter to be resized.
-        new_size (tuple(int, int): target shape (height, width)-only.
-        interpolation (str): interpolation for resize
-        antialias (bool): use anti-aliasing filter in resize
-        verbose (bool): log operation
-    Returns:
-        Resized patch embedding kernel.
-    """
-    import numpy as np
-    try:
-        import functorch
-        vmap = functorch.vmap
-    except ImportError:
-        if hasattr(torch, 'vmap'):
-            vmap = torch.vmap
-        else:
-            assert False, "functorch or a version of torch with vmap is required for FlexiViT resizing."
-
-    assert len(patch_embed.shape) == 4, "Four dimensions expected"
-    assert len(new_size) == 2, "New shape should only be hw"
-    old_size = patch_embed.shape[-2:]
-    if tuple(old_size) == tuple(new_size):
-        return patch_embed
-
-    if verbose:
-        _logger.info(f"Resize patch embedding {patch_embed.shape} to {new_size}, w/ {interpolation} interpolation.")
-
-    def resize(x_np, _new_size):
-        x_tf = torch.Tensor(x_np)[None, None, ...]
-        x_upsampled = F.interpolate(
-            x_tf, size=_new_size, mode=interpolation, antialias=antialias)[0, 0, ...].numpy()
-        return x_upsampled
-
-    def get_resize_mat(_old_size, _new_size):
-        mat = []
-        for i in range(np.prod(_old_size)):
-            basis_vec = np.zeros(_old_size)
-            basis_vec[np.unravel_index(i, _old_size)] = 1.
-            mat.append(resize(basis_vec, _new_size).reshape(-1))
-        return np.stack(mat).T
-
-    resize_mat = get_resize_mat(old_size, new_size)
-    resize_mat_pinv = torch.Tensor(np.linalg.pinv(resize_mat.T))
-
-    def resample_kernel(kernel):
-        resampled_kernel = resize_mat_pinv @ kernel.reshape(-1)
-        return resampled_kernel.reshape(new_size)
-
-    v_resample_kernel = vmap(vmap(resample_kernel, 0, 0), 1, 1)
-    return v_resample_kernel(patch_embed)
-
-
-
 class WindowAttention(nn.Module):
-
-    def __init__(self, dim, window_size, num_heads, qkv_bias=True, attn_drop=0., proj_drop=0.):
-
+    def __init__(
+        self, dim, window_size, num_heads, qkv_bias=True, attn_drop=0.0, proj_drop=0.0
+    ):
         super().__init__()
         self.dim = dim
         self.window_size = window_size  # Wh, Ww
         self.num_heads = num_heads
         head_dim = dim // num_heads
-        self.scale = head_dim ** -0.5
+        self.scale = head_dim**-0.5
 
         # define a parameter table of relative position bias
         self.relative_position_bias_table = nn.Parameter(
-            torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads)) # 2*Wh-1 * 2*Ww-1, nH
+            torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads)
+        )  # 2*Wh-1 * 2*Ww-1, nH
 
         # get pair-wise relative position index for each token inside the window
         coords_h = torch.arange(self.window_size[0])
         coords_w = torch.arange(self.window_size[1])
         coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
         coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
-        relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]  # 2, Wh*Ww, Wh*Ww
-        relative_coords = relative_coords.permute(1, 2, 0).contiguous()  # Wh*Ww, Wh*Ww, 2
+        relative_coords = (
+            coords_flatten[:, :, None] - coords_flatten[:, None, :]
+        )  # 2, Wh*Ww, Wh*Ww
+        relative_coords = relative_coords.permute(
+            1, 2, 0
+        ).contiguous()  # Wh*Ww, Wh*Ww, 2
         relative_coords[:, :, 0] += self.window_size[0] - 1  # shift to start from 0
         relative_coords[:, :, 1] += self.window_size[1] - 1
         relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
@@ -162,25 +60,38 @@ class WindowAttention(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-        trunc_normal_(self.relative_position_bias_table, std=.02)
+        trunc_normal_(self.relative_position_bias_table, std=0.02)
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, mask = None):
+    def forward(self, x, mask=None):
         B_, N, C = x.shape
-        qkv = self.qkv(x).reshape(B_, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        qkv = (
+            self.qkv(x)
+            .reshape(B_, N, 3, self.num_heads, C // self.num_heads)
+            .permute(2, 0, 3, 1, 4)
+        )
         q, k, v = qkv.unbind(0)  # make torchscript happy (cannot use tensor as tuple)
 
         q = q * self.scale
-        attn = (q @ k.transpose(-2, -1))
+        attn = q @ k.transpose(-2, -1)
 
-        relative_position_bias = self.relative_position_bias_table[self.relative_position_index.view(-1)].view(
-            self.window_size[0] * self.window_size[1], self.window_size[0] * self.window_size[1], -1)  # Wh*Ww,Wh*Ww,nH
-        relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # nH, Wh*Ww, Wh*Ww
+        relative_position_bias = self.relative_position_bias_table[
+            self.relative_position_index.view(-1)
+        ].view(
+            self.window_size[0] * self.window_size[1],
+            self.window_size[0] * self.window_size[1],
+            -1,
+        )  # Wh*Ww,Wh*Ww,nH
+        relative_position_bias = relative_position_bias.permute(
+            2, 0, 1
+        ).contiguous()  # nH, Wh*Ww, Wh*Ww
         attn = attn + relative_position_bias.unsqueeze(0)
 
         if mask is not None:
             mask = mask.reshape(B_, 1, 1, N)
-            mask_new = mask * mask.transpose(2, 3) + (1 - mask) * (1 - mask).transpose(2, 3)
+            mask_new = mask * mask.transpose(2, 3) + (1 - mask) * (1 - mask).transpose(
+                2, 3
+            )
             mask_new = 1 - mask_new
             if mask_new.dtype == torch.float16:
                 attn = attn - 65500 * mask_new
@@ -194,11 +105,22 @@ class WindowAttention(nn.Module):
         x = self.proj_drop(x)
         return x
 
-class MixMIMBlock(nn.Module):
 
-    def __init__(self, dim, input_resolution, num_heads, window_size=7,
-                 mlp_ratio=4., qkv_bias=True, drop=0., attn_drop=0., drop_path=0.,
-                 act_layer=nn.GELU, norm_layer=nn.LayerNorm):
+class MixMIMBlock(nn.Module):
+    def __init__(
+        self,
+        dim,
+        input_resolution,
+        num_heads,
+        window_size=7,
+        mlp_ratio=4.0,
+        qkv_bias=True,
+        drop=0.0,
+        attn_drop=0.0,
+        drop_path=0.0,
+        act_layer=nn.GELU,
+        norm_layer=nn.LayerNorm,
+    ):
         super().__init__()
         self.dim = dim
         self.input_resolution = input_resolution
@@ -211,13 +133,23 @@ class MixMIMBlock(nn.Module):
 
         self.norm1 = norm_layer(dim)
         self.attn = WindowAttention(
-            dim, window_size=to_2tuple(self.window_size), num_heads=num_heads, qkv_bias=qkv_bias,
-            attn_drop=attn_drop, proj_drop=drop)
+            dim,
+            window_size=to_2tuple(self.window_size),
+            num_heads=num_heads,
+            qkv_bias=qkv_bias,
+            attn_drop=attn_drop,
+            proj_drop=drop,
+        )
 
-        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
+        self.mlp = Mlp(
+            in_features=dim,
+            hidden_features=mlp_hidden_dim,
+            act_layer=act_layer,
+            drop=drop,
+        )
 
     def forward(self, x, attn_mask=None):
         H, W = self.input_resolution
@@ -228,16 +160,22 @@ class MixMIMBlock(nn.Module):
         x = x.view(B, H, W, C)
 
         # partition windows
-        x_windows = window_partition(x, self.window_size)  # nW*B, window_size, window_size, C
-        x_windows = x_windows.view(-1, self.window_size * self.window_size, C)  # nW*B, window_size*window_size, C
+        x_windows = window_partition(
+            x, self.window_size
+        )  # nW*B, window_size, window_size, C
+        x_windows = x_windows.view(
+            -1, self.window_size * self.window_size, C
+        )  # nW*B, window_size*window_size, C
         if attn_mask is not None:
-            attn_mask = attn_mask.repeat(B, 1, 1)   # B, N, 1
+            attn_mask = attn_mask.repeat(B, 1, 1)  # B, N, 1
             attn_mask = attn_mask.view(B, H, W, 1)
             attn_mask = window_partition(attn_mask, self.window_size)
             attn_mask = attn_mask.view(-1, self.window_size * self.window_size, 1)
 
         # W-MSA/SW-MSA
-        attn_windows = self.attn(x_windows, mask=attn_mask)  # nW*B, window_size*window_size, C
+        attn_windows = self.attn(
+            x_windows, mask=attn_mask
+        )  # nW*B, window_size*window_size, C
 
         # merge windows
         attn_windows = attn_windows.view(-1, self.window_size, self.window_size, C)
@@ -252,12 +190,22 @@ class MixMIMBlock(nn.Module):
 
 
 class MixMIMLayer(nn.Module):
-
-    def __init__(self, dim, input_resolution, depth, num_heads, window_size,
-                 mlp_ratio=4., qkv_bias=True, drop=0., attn_drop=0.,
-                 drop_path=0., norm_layer=nn.LayerNorm, downsample=None, 
-                 use_checkpoint=False):
-
+    def __init__(
+        self,
+        dim,
+        input_resolution,
+        depth,
+        num_heads,
+        window_size,
+        mlp_ratio=4.0,
+        qkv_bias=True,
+        drop=0.0,
+        attn_drop=0.0,
+        drop_path=0.0,
+        norm_layer=nn.LayerNorm,
+        downsample=None,
+        use_checkpoint=False,
+    ):
         super().__init__()
         self.dim = dim
         self.input_resolution = input_resolution
@@ -269,11 +217,19 @@ class MixMIMLayer(nn.Module):
         for i in range(depth):
             self.blocks.append(
                 MixMIMBlock(
-                    dim=dim, input_resolution=input_resolution, num_heads=num_heads, 
-                    window_size=window_size, mlp_ratio=mlp_ratio,
-                    qkv_bias=qkv_bias, drop=drop, attn_drop=attn_drop,
-                    drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path, 
-                    norm_layer=norm_layer)
+                    dim=dim,
+                    input_resolution=input_resolution,
+                    num_heads=num_heads,
+                    window_size=window_size,
+                    mlp_ratio=mlp_ratio,
+                    qkv_bias=qkv_bias,
+                    drop=drop,
+                    attn_drop=attn_drop,
+                    drop_path=drop_path[i]
+                    if isinstance(drop_path, list)
+                    else drop_path,
+                    norm_layer=norm_layer,
+                )
             )
         # patch merging layer
         if downsample is not None:
@@ -296,7 +252,7 @@ class MixMIMLayer(nn.Module):
             x = self.downsample(x)
 
             bd, hd, wd, cd = x.shape
-            x = x.view(bd, hd*wd, cd)
+            x = x.view(bd, hd * wd, cd)
 
         return x
 
@@ -305,13 +261,32 @@ class MixMIMLayer(nn.Module):
 
 
 class MixMIM(nn.Module):
-    def __init__(self, decoder_dim=512, decoder_depth=8, decoder_num_heads=16,
-                 mlp_ratio=4, norm_pix_loss=True, 
-                 img_size=224, patch_size=4, in_chans=3, num_classes=0,
-                 embed_dim=96, depths=[2, 2, 18, 2], num_heads=[3, 6, 12, 24],
-                 window_size=[7, 7, 14, 7], qkv_bias=True, qk_scale=None, patch_norm=True,
-                 drop_rate=0.0, drop_path_rate=0.0, attn_drop_rate=0.0, 
-                 norm_layer=nn.LayerNorm, use_checkpoint=False, range_mask_ratio=0.0, **kwargs):
+    def __init__(
+        self,
+        decoder_dim=512,
+        decoder_depth=8,
+        decoder_num_heads=16,
+        mlp_ratio=4,
+        norm_pix_loss=True,
+        img_size=224,
+        patch_size=4,
+        in_chans=3,
+        num_classes=0,
+        embed_dim=96,
+        depths=[2, 2, 18, 2],
+        num_heads=[3, 6, 12, 24],
+        window_size=[7, 7, 14, 7],
+        qkv_bias=True,
+        qk_scale=None,
+        patch_norm=True,
+        drop_rate=0.0,
+        drop_path_rate=0.0,
+        attn_drop_rate=0.0,
+        norm_layer=nn.LayerNorm,
+        use_checkpoint=False,
+        range_mask_ratio=0.0,
+        **kwargs,
+    ):
         super().__init__()
         # decoder args
         self.decoder_dim = decoder_dim
@@ -319,7 +294,7 @@ class MixMIM(nn.Module):
         self.decoder_num_heads = decoder_num_heads
 
         # encoder args
-        self.encoder_stride = 32
+        self.encoder_stride = 8 * patch_size
         self.embed_dim = embed_dim
         self.patch_norm = patch_norm
         self.depths = depths
@@ -340,66 +315,102 @@ class MixMIM(nn.Module):
 
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed(
-            img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim,
-            norm_layer=norm_layer if self.patch_norm else None, flatten=True)
+            img_size=img_size,
+            patch_size=patch_size,
+            in_chans=in_chans,
+            embed_dim=embed_dim,
+            norm_layer=norm_layer if self.patch_norm else None,
+            flatten=True,
+        )
         num_patches = self.patch_embed.num_patches
         self.patch_grid = self.patch_embed.grid_size
 
-        self.dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth decay rule
+        self.dpr = [
+            x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))
+        ]  # stochastic depth decay rule
 
         # build layers
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
-            self.layers.append(MixMIMLayer(
-                dim=int(self.embed_dim * 2 ** i_layer),
-                input_resolution=(self.patch_grid[0] // (2 ** i_layer), self.patch_grid[1] // (2 ** i_layer)),
-                depth=self.depths[i_layer],
-                num_heads=self.num_heads[i_layer],
-                window_size=self.window_size[i_layer],
-                mlp_ratio=self.mlp_ratio,
-                qkv_bias=self.qkv_bias,
-                drop=self.drop_rate,
-                attn_drop=self.attn_drop_rate,
-                drop_path=self.dpr[sum(self.depths[:i_layer]):sum(self.depths[:i_layer + 1])],
-                norm_layer=norm_layer,
-                downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
-                use_checkpoint=self.use_checkpoint)
+            self.layers.append(
+                MixMIMLayer(
+                    dim=int(self.embed_dim * 2**i_layer),
+                    input_resolution=(
+                        self.patch_grid[0] // (2**i_layer),
+                        self.patch_grid[1] // (2**i_layer),
+                    ),
+                    depth=self.depths[i_layer],
+                    num_heads=self.num_heads[i_layer],
+                    window_size=self.window_size[i_layer],
+                    mlp_ratio=self.mlp_ratio,
+                    qkv_bias=self.qkv_bias,
+                    drop=self.drop_rate,
+                    attn_drop=self.attn_drop_rate,
+                    drop_path=self.dpr[
+                        sum(self.depths[:i_layer]) : sum(self.depths[: i_layer + 1])
+                    ],
+                    norm_layer=norm_layer,
+                    downsample=PatchMerging
+                    if (i_layer < self.num_layers - 1)
+                    else None,
+                    use_checkpoint=self.use_checkpoint,
+                )
             )
         self.pos_drop = nn.Dropout(p=drop_rate)
         self.norm = norm_layer(self.num_features)
 
         self.mask_token = nn.Parameter(torch.zeros(1, 1, self.decoder_dim))
-        trunc_normal_(self.mask_token, mean=0., std=.02)
+        trunc_normal_(self.mask_token, mean=0.0, std=0.02)
 
         num_patches = self.patch_embed.num_patches
         out_num_patches = (self.img_size // self.encoder_stride) ** 2
         self.out_num_patches = out_num_patches
-        self.absolute_pos_embed = nn.Parameter(torch.zeros(1, num_patches, self.embed_dim), requires_grad=False)
-        self.decoder_pos_embed = nn.Parameter(torch.zeros(1, out_num_patches, decoder_dim), requires_grad=False)
+        self.absolute_pos_embed = nn.Parameter(
+            torch.zeros(1, num_patches, self.embed_dim), requires_grad=False
+        )
+        self.decoder_pos_embed = nn.Parameter(
+            torch.zeros(1, out_num_patches, decoder_dim), requires_grad=False
+        )
 
         self.decoder_embed = nn.Linear(self.num_features, decoder_dim)
-        self.decoder_blocks = nn.ModuleList([
-            Block(decoder_dim, decoder_num_heads, mlp_ratio, qkv_bias=True, norm_layer=norm_layer)
-            for i in range(decoder_depth)])
+        self.decoder_blocks = nn.ModuleList(
+            [
+                Block(
+                    decoder_dim,
+                    decoder_num_heads,
+                    mlp_ratio,
+                    qkv_bias=True,
+                    norm_layer=norm_layer,
+                )
+                for i in range(decoder_depth)
+            ]
+        )
 
         self.decoder_norm = norm_layer(decoder_dim)
-        self.decoder_pred = nn.Linear(
-            decoder_dim,
-            self.encoder_stride ** 2 * 3
-        )
+        self.decoder_pred = nn.Linear(decoder_dim, self.encoder_stride**2 * 3)
 
         self.initialize_weights()
 
     def initialize_weights(self):
         # initialization
         # initialize (and freeze) pos_embed by sin-cos embedding
-        pos_embed = get_2d_sincos_pos_embed(self.absolute_pos_embed.shape[-1], \
-            int(self.patch_embed.num_patches**.5), cls_token=False)
-        self.absolute_pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
+        pos_embed = get_2d_sincos_pos_embed(
+            self.absolute_pos_embed.shape[-1],
+            int(self.patch_embed.num_patches**0.5),
+            cls_token=False,
+        )
+        self.absolute_pos_embed.data.copy_(
+            torch.from_numpy(pos_embed).float().unsqueeze(0)
+        )
 
-        decoder_pos_embed = get_2d_sincos_pos_embed(self.decoder_pos_embed.shape[-1], \
-            int(self.out_num_patches**.5), cls_token=False)
-        self.decoder_pos_embed.data.copy_(torch.from_numpy(decoder_pos_embed).float().unsqueeze(0))
+        decoder_pos_embed = get_2d_sincos_pos_embed(
+            self.decoder_pos_embed.shape[-1],
+            int(self.out_num_patches**0.5),
+            cls_token=False,
+        )
+        self.decoder_pos_embed.data.copy_(
+            torch.from_numpy(decoder_pos_embed).float().unsqueeze(0)
+        )
 
         # initialize nn.Linear and nn.LayerNorm
         self.apply(self._init_weights)
@@ -430,12 +441,18 @@ class MixMIM(nn.Module):
         mask_ratio = mask_ratio + random.uniform(0.0, self.range_mask_ratio)
         noise = torch.rand(1, 1, seq_l, device=x["image"].device)  # noise in [0, 1]
         # ascend: small is keep, large is remove
-        mask_idx = torch.argsort(noise, dim=2)[:, :, :int(seq_l * mask_ratio)]
+        mask_idx = torch.argsort(noise, dim=2)[:, :, : int(seq_l * mask_ratio)]
         mask.scatter_(2, mask_idx, 1)
         mask = mask.reshape(1, 1, out_H, out_W)
-        mask_s1 = torch.nn.functional.interpolate(mask, size=(s1_H, s1_W), mode='nearest')
-        mask_s2 = torch.nn.functional.interpolate(mask, size=(s2_H, s2_W), mode='nearest')
-        mask_s3 = torch.nn.functional.interpolate(mask, size=(s3_H, s3_W), mode='nearest')
+        mask_s1 = torch.nn.functional.interpolate(
+            mask, size=(s1_H, s1_W), mode="nearest"
+        )
+        mask_s2 = torch.nn.functional.interpolate(
+            mask, size=(s2_H, s2_W), mode="nearest"
+        )
+        mask_s3 = torch.nn.functional.interpolate(
+            mask, size=(s3_H, s3_W), mode="nearest"
+        )
 
         mask = mask.reshape(1, out_H * out_W, 1).contiguous()
         mask_s1 = mask_s1.reshape(1, s1_H * s1_W, 1).contiguous()
@@ -454,7 +471,7 @@ class MixMIM(nn.Module):
 
         h = w = imgs.shape[2] // p
         x = imgs.reshape(shape=(imgs.shape[0], 3, h, p, w, p))
-        x = torch.einsum('nchpwq->nhwpqc', x)
+        x = torch.einsum("nchpwq->nhwpqc", x)
         x = x.reshape(shape=(imgs.shape[0], h * w, p**2 * 3))
         return x
 
@@ -464,22 +481,21 @@ class MixMIM(nn.Module):
         imgs: (N, 3, H, W)
         """
         p = self.encoder_stride
-        h = w = int(x.shape[1]**.5)
+        h = w = int(x.shape[1] ** 0.5)
         assert h * w == x.shape[1]
 
         x = x.reshape(shape=(x.shape[0], h, w, p, p, 3))
-        x = torch.einsum('nhwpqc->nchpwq', x)
+        x = torch.einsum("nhwpqc->nchpwq", x)
         imgs = x.reshape(shape=(x.shape[0], 3, h * p, h * p))
         return imgs
 
     def forward_encoder(self, x, mask_s1, mask_s2, mask_s3, mask_s4):
-
         x = self.patch_embed(x)
 
         B, L, _ = x.shape
-        H = W = int(L ** 0.5)
+        H = W = int(L**0.5)
 
-        x = x * (1. - mask_s1) + x.flip(0) * mask_s1
+        x = x * (1.0 - mask_s1) + x.flip(0) * mask_s1
         x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
 
@@ -520,19 +536,13 @@ class MixMIM(nn.Module):
         return x
 
     def forward_loss(self, x, x_rec, mask):
-
         B, L, C = x_rec.shape
 
         # unmix tokens
-        x1_rec = x_rec[:B//2]
-        x2_rec = x_rec[B//2:]
+        x1_rec = x_rec[: B // 2]
+        x2_rec = x_rec[B // 2 :]
 
         target = self.patchify(x)
-
-        if self.norm_pix_loss:
-            mean = target.mean(dim=-1, keepdim=True)
-            var = target.var(dim=-1, keepdim=True)
-            target = (target - mean) / (var + 1.e-6)**.5
 
         unmix_x_rec = x1_rec * mask + x2_rec.flip(0) * (1 - mask)
 
@@ -545,45 +555,95 @@ class MixMIM(nn.Module):
         mask_s1, mask_s2, mask_s3, mask_s4 = self.random_masking(x, mask_ratio)
         z = self.forward_encoder(x["image"], mask_s1, mask_s2, mask_s3, mask_s4)
         x_rec = self.forward_decoder(z, mask_s4)
-        loss = self.forward_loss(x['image'], x_rec, mask_s4)
-
+        loss = self.forward_loss(x["image"], x_rec, mask_s4)
 
         # masked
         _, mask_l, _ = mask_s1.shape
         mask_w = mask_h = int(math.sqrt(mask_l))
         mask_input = mask_s1.view(1, 1, mask_h, mask_w)
-        B, C, H, W = x['image'].shape
-        mask_input = torch.nn.functional.interpolate(mask_input, size=(W, H), mode='nearest')
-        masked = x['image'] * mask_input
-        masked  = torch.where(masked != 0, masked, 1)
-
+        B, C, H, W = x["image"].shape
+        mask_input = torch.nn.functional.interpolate(
+            mask_input, size=(H, W), mode="nearest"
+        )
+        masked = x["image"] * (1 - mask_input)
+        masked = torch.where(masked != 0, masked, 1)
 
         # pred # TODO ne marche pas
         _, mask_l, _ = mask_s4.shape
         mask_w = mask_h = int(math.sqrt(mask_l))
         mask_output = mask_s4.view(1, 1, mask_h, mask_w)
-        mask_output = torch.nn.functional.interpolate(mask_output, size=(H, W), mode='nearest')
+        mask_output = torch.nn.functional.interpolate(
+            mask_output, size=(H, W), mode="nearest"
+        )
 
         x_rec_b, x_rec_p, x_rec_hw3 = x_rec.shape
         x_rec_hw = x_rec_hw3 / C
         x_rec_h = x_rec_w = int(math.sqrt(x_rec_hw))
 
-        x1_rec = x_rec[:x_rec_b//2]
+        x1_rec = x_rec[: x_rec_b // 2]
 
-        x1_rec = torch.permute(x1_rec, (0, 2, 1))
-        fold = nn.Fold(output_size=(H, W), kernel_size=(x_rec_h, x_rec_w), stride=(x_rec_h, x_rec_w))
-        x1_rec = fold(x1_rec)
-
-        pred = x1_rec * (1 - mask_output) + x['image'] * (mask_output)
+        x1_rec = rearrange(
+            x1_rec,
+            "b (h w) (p1 p2 c) -> b c (h p1) (w p2)",
+            h=H // x_rec_h,
+            p1=x_rec_h,
+            p2=x_rec_w,
+        )
+        pred = x1_rec * (1 - mask_output) + x["image"] * (mask_output)
 
         return loss, masked, pred
 
-    @torch.jit.ignore
-    def no_weight_decay(self):
-        return {'mask_token'}
+
+def mixmim_tiny(**kwargs):
+    default_args = dict(
+        img_size=kwargs["image_size"],
+        patch_size=4,
+        in_chans=3,
+        num_classes=0,
+        embed_dim=96,
+        depths=[2, 2, 6, 2],
+        num_heads=[3, 6, 12, 24],
+        window_size=[8, 8, 8, 8],
+        mlp_ratio=4,
+        qkv_bias=True,
+        qk_scale=None,
+        drop_rate=0.0,
+        drop_path_rate=0.0,
+        patch_norm=True,
+        use_checkpoint=False,
+        decoder_dim=512,
+        decoder_depth=8,
+        decoder_num_heads=16,
+    )
+    default_args.update(**kwargs)
+    return MixMIM(**default_args)
 
 
-@register_model
+def mixmim_small(**kwargs):
+    default_args = dict(
+        img_size=kwargs["image_size"],
+        patch_size=4,
+        in_chans=3,
+        num_classes=0,
+        embed_dim=96,
+        depths=[2, 2, 18, 2],
+        num_heads=[3, 6, 12, 24],
+        window_size=[8, 8, 8, 8],
+        mlp_ratio=4,
+        qkv_bias=True,
+        qk_scale=None,
+        drop_rate=0.0,
+        drop_path_rate=0.0,
+        patch_norm=True,
+        use_checkpoint=False,
+        decoder_dim=512,
+        decoder_depth=8,
+        decoder_num_heads=16,
+    )
+    default_args.update(**kwargs)
+    return MixMIM(**default_args)
+
+
 def mixmim_base(**kwargs):
     default_args = dict(
         img_size=kwargs["image_size"],
@@ -598,46 +658,62 @@ def mixmim_base(**kwargs):
         qkv_bias=True,
         qk_scale=None,
         drop_rate=0.0,
-        drop_path_rate=0.0, 
+        drop_path_rate=0.0,
         patch_norm=True,
         use_checkpoint=False,
         decoder_dim=512,
         decoder_depth=8,
-        decoder_num_heads=16
+        decoder_num_heads=16,
     )
     default_args.update(**kwargs)
-    model = MixMIM(**default_args)
-
-    return model
+    return MixMIM(**default_args)
 
 
-@register_model
 def mixmim_large(**kwargs):
     default_args = dict(
-        img_size=224, patch_size=4, in_chans=3, num_classes=0,
-        embed_dim=192, depths=[2, 2, 18, 2], num_heads=[6, 12, 24, 48],
-        window_size=[14, 14, 14, 7], mlp_ratio=4, qkv_bias=True, qk_scale=None,
-        drop_rate=0.0, drop_path_rate=0.0, 
-        patch_norm=True, use_checkpoint=False,
-        decoder_dim=512, decoder_depth=8, decoder_num_heads=16,
+        img_size=224,
+        patch_size=4,
+        in_chans=3,
+        num_classes=0,
+        embed_dim=192,
+        depths=[2, 2, 18, 2],
+        num_heads=[6, 12, 24, 48],
+        window_size=[14, 14, 14, 7],
+        mlp_ratio=4,
+        qkv_bias=True,
+        qk_scale=None,
+        drop_rate=0.0,
+        drop_path_rate=0.0,
+        patch_norm=True,
+        use_checkpoint=False,
+        decoder_dim=512,
+        decoder_depth=8,
+        decoder_num_heads=16,
     )
     default_args.update(**kwargs)
-    model = MixMIM(**default_args)
-
-    return model
+    return MixMIM(**default_args)
 
 
-@register_model
 def mixmim_huge(**kwargs):
     default_args = dict(
-        img_size=224, patch_size=4, in_chans=3, num_classes=0,
-        embed_dim=352, depths=[2, 2, 18, 2], num_heads=[11, 22, 44, 88],
-        window_size=[14, 14, 14, 7], mlp_ratio=4, qkv_bias=True, qk_scale=None,
-        drop_rate=0.0, drop_path_rate=0.0,
-        patch_norm=True, use_checkpoint=False,
-        decoder_dim=512, decoder_depth=8, decoder_num_heads=16,
+        img_size=224,
+        patch_size=4,
+        in_chans=3,
+        num_classes=0,
+        embed_dim=352,
+        depths=[2, 2, 18, 2],
+        num_heads=[11, 22, 44, 88],
+        window_size=[14, 14, 14, 7],
+        mlp_ratio=4,
+        qkv_bias=True,
+        qk_scale=None,
+        drop_rate=0.0,
+        drop_path_rate=0.0,
+        patch_norm=True,
+        use_checkpoint=False,
+        decoder_dim=512,
+        decoder_depth=8,
+        decoder_num_heads=16,
     )
     default_args.update(**kwargs)
-    model = MixMIM(**default_args)
-
-    return model
+    return MixMIM(**default_args)
