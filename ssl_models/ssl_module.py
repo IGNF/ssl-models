@@ -37,6 +37,8 @@ class SSLModule(LightningModule):
         patch_size=64,
         unpool=False,
         band_groups=None,
+        window_size=None,
+        norm_pix_loss=None
     ):
         super().__init__()
         # model_map = {
@@ -57,12 +59,14 @@ class SSLModule(LightningModule):
             model_args = {
                 "mask_ratio": mask_ratio,
                 "image_size": image_size,
-                "patch_size": patch_size,
-                "num_downsampling": num_downsampling,
-                "unpool": unpool,
+                "patch_size": patch_size
             }
             if band_groups:
                 model_args["band_groups"] = band_groups
+            if window_size:
+                model_args["window_size"] = window_size
+            if norm_pix_loss:
+                model_args["norm_pix_loss"] = norm_pix_loss
             self.model = model_map[model_size](**model_args)
         else:
             raise ValueError(
