@@ -614,6 +614,7 @@ def mixmim_tiny(**kwargs):
         decoder_dim=512,
         decoder_depth=8,
         decoder_num_heads=16,
+        norm_pix_loss=True,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)
@@ -639,6 +640,7 @@ def mixmim_small(**kwargs):
         decoder_dim=512,
         decoder_depth=8,
         decoder_num_heads=16,
+        norm_pix_loss=True,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)
@@ -664,6 +666,7 @@ def mixmim_base(**kwargs):
         decoder_dim=512,
         decoder_depth=8,
         decoder_num_heads=16,
+        norm_pix_loss=True,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)
@@ -689,6 +692,7 @@ def mixmim_large(**kwargs):
         decoder_dim=512,
         decoder_depth=8,
         decoder_num_heads=16,
+        norm_pix_loss=True,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)
@@ -714,6 +718,7 @@ def mixmim_huge(**kwargs):
         decoder_dim=512,
         decoder_depth=8,
         decoder_num_heads=16,
+        norm_pix_loss=True,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)
