@@ -19,11 +19,11 @@ def test_train_odeon_data():
     )
     data_module.setup(stage=str(Stages.FIT.value))
     data_loader = data_module.train_dataloader()
-    n_cycle = 2
-    for _ in range(n_cycle):
+    num_cycles = 2
+    for _ in range(num_cycles):
         for idx, batch in enumerate(data_loader):
             LOGGER.info(idx)
-            if int(idx) > n_cycle:
+            if int(idx) > num_cycles:
                 LOGGER.info("exit")
                 break
             LOGGER.info(f"id: {idx}, batch: {batch.keys()}")
@@ -39,11 +39,11 @@ def test_val_odeon_data():
     )
     data_module.setup(stage=str(Stages.VALIDATE.value))
     data_loader = data_module.val_dataloader()
-    n_cycle = 2
-    for _ in range(n_cycle):
+    num_cycles = 2
+    for _ in range(num_cycles):
         for idx, batch in enumerate(data_loader):
             LOGGER.info(idx)
-            if int(idx) > n_cycle:
+            if int(idx) > num_cycles:
                 LOGGER.info("exit")
                 break
             LOGGER.info(f"id: {idx}, batch: {batch.keys()}")

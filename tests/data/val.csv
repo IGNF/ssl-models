@@ -1,3 +1,3 @@
-image
-forest001.jpg
-river001.jpg
+image,class_name_mlrsnet,class_index_mlrsnet,class_name_patternnet,class_index_patternnet,class_name_rsd46-whu,class_index_rsd46-whu,class_name_resisc45,class_index_resisc45
+forest001.jpg,forest,8,,-1,,-1,,-1
+river001.jpg,river,42,,-1,,-1,,-1

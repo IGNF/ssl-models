@@ -1,3 +1,5 @@
+line-length = 88
+
 [format]
 # https://docs.astral.sh/ruff/settings/#format
 line-ending = "lf"  # Use UNIX `\n` line endings for all files

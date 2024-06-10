@@ -3,9 +3,9 @@ LightningDataModule for SSL.
 """
 
 from pathlib import Path
-import numpy as np
 
 import albumentations as A
+import numpy as np
 import pandas as pd
 import rasterio
 from pytorch_lightning import LightningDataModule
@@ -65,7 +65,7 @@ class GeoPileDataset(Dataset):
         "rsd46-whu": 46,
         "resisc45": 45,
     }
-    norm_fac = 255.
+    norm_fac = 255.0
     missing_val = -1
 
     def __init__(self, csv_path, root_dir, transform):
@@ -74,7 +74,10 @@ class GeoPileDataset(Dataset):
 
         csv_data = pd.read_csv(csv_path)
         self.file_name = csv_data["image"].tolist()
-        self.targets = {dataset: csv_data[f"class_index_{dataset}"].tolist() for dataset in self.num_classes}
+        self.targets = {
+            dataset: csv_data[f"class_index_{dataset}"].tolist()
+            for dataset in self.num_classes
+        }
 
     def __getitem__(self, idx):
         file_path = self.root_dir / self.file_name[idx]
@@ -85,7 +88,9 @@ class GeoPileDataset(Dataset):
             image = self.transform(image=image)["image"]
             image = image.transpose([2, 0, 1])
 
-        targets = {f"target_{dataset}": target[idx] for dataset, target in self.targets.items()}
+        targets = {
+            f"target_{dataset}": target[idx] for dataset, target in self.targets.items()
+        }
         return {"image": image, **targets}
 
     def __len__(self):

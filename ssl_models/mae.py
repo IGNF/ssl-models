@@ -247,7 +247,9 @@ class Encoder(nn.Module):
         self.register_buffer(
             name="pos_encoding",
             tensor=posemb_sincos_2d(
-                h=image_size // patch_size, w=image_size // patch_size, dim=pos_dim
+                h=image_size // patch_size,
+                w=image_size // patch_size,
+                dim=pos_dim,
             ),  # [L D/2]
             persistent=False,
         )
@@ -497,7 +499,9 @@ class Decoder(nn.Module):
         self.register_buffer(
             name="pos_encoding",
             tensor=posemb_sincos_2d(
-                h=image_size // patch_size, w=image_size // patch_size, dim=pos_dim
+                h=image_size // patch_size,
+                w=image_size // patch_size,
+                dim=pos_dim,
             ),  # [L D/2]
             persistent=False,
         )
@@ -549,10 +553,14 @@ class Decoder(nn.Module):
 
         # Align position & band embeddings across patches
         pos_encoding = repeat(
-            self.pos_encoding, "L D -> 1 repeat L D", repeat=self.num_group_patches
+            self.pos_encoding,
+            "L D -> 1 repeat L D",
+            repeat=self.num_group_patches,
         )  # [1 G L D/2]
         band_encoding = repeat(
-            self.band_encoding, "G D -> 1 G repeat D", repeat=self.num_spatial_patches
+            self.band_encoding,
+            "G D -> 1 G repeat D",
+            repeat=self.num_spatial_patches,
         )  # [1 G L D/2]
 
         pos_band_encoding = torch.cat(
