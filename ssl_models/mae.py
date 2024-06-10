@@ -8,6 +8,8 @@ from einops import rearrange, reduce, repeat
 from torch import nn
 from vit_pytorch.vit import Transformer
 
+from ssl_models.geopile_data import GeoPileDataset
+from ssl_models.probing import AttentiveProbing, LinearProbing
 from ssl_models.utils import posemb_sincos_1d, posemb_sincos_2d
 
 
@@ -678,6 +680,7 @@ class MAE(nn.Module):
         decoder_dim_head,
         decoder_mlp_ratio,
         decoder_dropout,
+        type_probing="attentive",
         # band groups
         band_groups={
             "rgb": (2, 1, 0),
@@ -721,6 +724,22 @@ class MAE(nn.Module):
             band_groups=band_groups,
             dropout=decoder_dropout,
         )
+
+        if type_probing is not None:
+            self.num_classes = GeoPileDataset.num_classes
+            self.probe = nn.ModuleDict(
+                [
+                    [
+                        dataset,
+                        AttentiveProbing(dim, num_classes)
+                        if type_probing == "attentive"
+                        else LinearProbing(dim, num_classes),
+                    ]
+                    for dataset, num_classes in self.num_classes.items()
+                ]
+            )
+        else:
+            self.num_classes = {}
 
     def per_pixel_loss(self, cube, pixels, masked_matrix):
         """
@@ -806,9 +825,14 @@ class MAE(nn.Module):
         )  # [B C L PP]
 
         # loss
-        loss, masked, pred = self.per_pixel_loss(cube["image"], pixels, masked_matrix)
-
-        return loss, masked, pred
+        rec_loss, masked, pred = self.per_pixel_loss(
+            cube["image"], pixels, masked_matrix
+        )
+        probe_logits = {
+            dataset: self.probe[dataset](encoded_unmasked_patches)
+            for dataset in self.num_classes
+        }
+        return rec_loss, masked, pred, probe_logits
 
 
 def mae_tiny(**kwargs):
@@ -836,7 +860,7 @@ def mae_tiny(**kwargs):
 def mae_small(**kwargs):
     args = {
         # encoder
-        "dim": 768,
+        "dim": 512,
         "depth": 12,
         "heads": 12,
         "dim_head": 64,
@@ -844,7 +868,7 @@ def mae_small(**kwargs):
         "dropout": 0.0,
         "emb_dropout": 0.0,
         # decoder
-        "decoder_dim": 512,
+        "decoder_dim": 256,
         "decoder_depth": 8,
         "decoder_heads": 8,
         "decoder_dim_head": 64,

@@ -12,14 +12,14 @@ References:
 
 from pytorch_lightning.cli import LightningCLI, SaveConfigCallback
 
-from ssl_models.data_module import SSLDataModule
+from ssl_models.geopile_data import GeoPileData
 from ssl_models.ssl_module import SSLModule
 from ssl_models.trainer import SSLTrainer
 
 # %%
 if __name__ == "__main__":
     cli = LightningCLI(
-        datamodule_class=SSLDataModule,
+        datamodule_class=GeoPileData,
         model_class=SSLModule,
         trainer_class=SSLTrainer,
         save_config_callback=SaveConfigCallback,

@@ -1,5 +1,5 @@
 """
-LightningDataModule for SSL.
+LightningDataModule for SSL, based on Odeon.
 """
 
 from pathlib import Path
@@ -21,7 +21,7 @@ DEFAULT_PARAMS = {
 }
 
 
-class SSLDataModule(Input):
+class SSLOdeonData(Input):
     def __init__(
         self,
         root_dir: str,

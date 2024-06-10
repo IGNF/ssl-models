@@ -2,14 +2,14 @@ from odeon.core.app_utils import Stages
 from odeon.data import Input
 
 from ssl_models import LOGGER
-from ssl_models.data_module import DEFAULT_PARAMS
+from ssl_models.odeon_data import DEFAULT_PARAMS
 from tests import TEST_DATA_DIR
 
 TRAIN_DATASET = TEST_DATA_DIR / "train.csv"
 VAL_DATASET = TEST_DATA_DIR / "val.csv"
 
 
-def test_train_data_module():
+def test_train_odeon_data():
     data_module = Input(
         fit_params={
             **DEFAULT_PARAMS,
@@ -29,7 +29,7 @@ def test_train_data_module():
             LOGGER.info(f"id: {idx}, batch: {batch.keys()}")
 
 
-def test_val_data():
+def test_val_odeon_data():
     data_module = Input(
         validate_params={
             **DEFAULT_PARAMS,

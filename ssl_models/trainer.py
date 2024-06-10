@@ -25,7 +25,7 @@ class SSLTrainer(pl.Trainer):
         b2: float = 0.99,
         accelerator: str = "auto",
         devices: str = "auto",
-        strategy: str = "ddp",
+        strategy: str = "ddp_find_unused_parameters_true",
         precision: str = "bf16-mixed",
         log_every_n_steps: int = 1,
         max_epochs: int = 1000,

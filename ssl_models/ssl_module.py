@@ -6,7 +6,10 @@ import math
 
 import torch
 from pytorch_lightning import LightningModule
+from torch.nn import CrossEntropyLoss
+from torchmetrics.classification import MulticlassAccuracy
 
+from ssl_models.geopile_data import GeoPileDataset
 from ssl_models.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.mixmae import (
     mixmae_base,
@@ -39,45 +42,36 @@ class SSLModule(LightningModule):
         patch_size=64,
         unpool=False,
         band_groups=None,
-        mask_batch=None,
-        swin_version=None,
+        type_probing="attentive",
     ):
         super().__init__()
-
-        if model == "MAE":
-            model_map = {
-                "tiny": mae_tiny,
-                "small": mae_small,
-                "medium": mae_medium,
-                "large": mae_large,
-            }
-        elif model == "MixMAE":
-            model_map = {
-                "tiny": mixmae_tiny,
-                "small": mixmae_small,
-                "base": mixmae_base,
-                "large": mixmae_large,
-                "huge": mixmae_huge,
-            }
-            swin_versions = [1, 2]
-            if swin_version not in swin_versions:
-                raise ValueError(
-                    f"Invalid swin version {swin_version}.\
-                          Expected one of {swin_versions}"
+        if type_probing is not None:
+            self.num_classes = GeoPileDataset.num_classes
+            self.missing_val = GeoPileDataset.missing_val
+            self.cross_entropy = CrossEntropyLoss(ignore_index=self.missing_val)
+            for dataset, num_classes in self.num_classes.items():
+                acc_metric = MulticlassAccuracy(
+                    num_classes=num_classes, ignore_index=self.missing_val
                 )
+                setattr(self, f"acc_metric_{dataset}", acc_metric)
         else:
-            raise ValueError(f"Invalid model name {model}. Not implemented")
+            self.num_classes = {}
+            self.missing_val = None
+            self.cross_entropy = None
+            self.acc_metric = None
 
-        num_downsampling = downsampling_from_patch_size(unpool, patch_size)
+        model_map = {
+            "tiny": mae_tiny,
+            "small": mae_small,
+            "medium": mae_medium,
+            "large": mae_large,
+        }
         if model_size in model_map:
             model_args = {
                 "mask_ratio": mask_ratio,
                 "image_size": image_size,
                 "patch_size": patch_size,
-                "mask_batch": mask_batch,
-                "swin_version": swin_version,
-                "num_downsampling": num_downsampling,
-                "unpool": unpool,
+                "type_probing": type_probing,
             }
             if band_groups:
                 model_args["band_groups"] = band_groups
@@ -123,17 +117,33 @@ class SSLModule(LightningModule):
         }
 
     def shared_step(self, batch: dict[str, torch.Tensor], batch_idx: int, phase: str):
-        loss, masked, pred = self(batch)
-        self.log(
-            name=f"{phase}/loss",
-            value=loss,
+        rec_loss, masked, pred, probe_logits = self(batch)
+        probe_loss = 0
+        for dataset in self.num_classes:
+            if torch.all(batch[f"target_{dataset}"] == self.missing_val):
+                continue
+            probe_loss += self.cross_entropy(
+                probe_logits[dataset], batch[f"target_{dataset}"]
+            )
+            acc_metric = getattr(self, f"acc_metric_{dataset}")
+            probe_acc = acc_metric(probe_logits[dataset], batch[f"target_{dataset}"])
+            self.log(name=f"{phase}/probe_acc_{dataset}", value=probe_acc)
+
+        loss = rec_loss + probe_loss
+        self.log(name=f"{phase}/rec_loss", value=rec_loss)
+        self.log(name=f"{phase}/probe_loss", value=probe_loss)
+        return {"loss": loss, "masked": masked, "pred": pred}
+
+    def log(self, name, value):
+        super().log(
+            name=name,
+            value=value,
             on_step=True,
             on_epoch=True,
             prog_bar=True,
             logger=True,
             sync_dist=True,
         )
-        return {"loss": loss, "masked": masked, "pred": pred}
 
     def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
         return self.shared_step(batch, batch_idx, phase="train")
