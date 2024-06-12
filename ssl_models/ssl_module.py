@@ -63,10 +63,6 @@ class SSLModule(LightningModule):
             }
             if band_groups:
                 model_args["band_groups"] = band_groups
-            if window_size:
-                model_args["window_size"] = window_size
-            if norm_pix_loss:
-                model_args["norm_pix_loss"] = norm_pix_loss
             self.model = model_map[model_size](**model_args)
         else:
             raise ValueError(

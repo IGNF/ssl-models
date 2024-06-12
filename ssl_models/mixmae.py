@@ -11,7 +11,10 @@ Code from https://github.com/Sense-X/MixMIM/tree/master
 import math
 import random
 
+import numpy as np
 import torch
+import torch.nn.functional as F
+
 from einops import rearrange
 from timm.models.layers import to_2tuple, trunc_normal_
 from timm.models.swin_transformer import PatchMerging, window_partition, window_reverse
@@ -24,67 +27,120 @@ from ssl_models.utils import get_2d_sincos_pos_embed
 
 class WindowAttention(nn.Module):
     def __init__(
-        self, dim, window_size, num_heads, qkv_bias=True, attn_drop=0.0, proj_drop=0.0
+        self,
+        dim,
+        window_size,
+        num_heads,
+        qkv_bias=True,
+        attn_drop=0.0,
+        proj_drop=0.0,
+        pretrained_window_size=[0, 0]
     ):
         super().__init__()
         self.dim = dim
         self.window_size = window_size  # Wh, Ww
+        self.pretrained_window_size = pretrained_window_size
         self.num_heads = num_heads
-        head_dim = dim // num_heads
-        self.scale = head_dim**-0.5
+        # head_dim = dim // num_heads
+        # self.scale = head_dim**-0.5
 
-        # define a parameter table of relative position bias
-        self.relative_position_bias_table = nn.Parameter(
-            torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads)
-        )  # 2*Wh-1 * 2*Ww-1, nH
+        self.logit_scale = nn.Parameter(torch.log(10 * torch.ones((num_heads, 1, 1))), requires_grad=True)
+
+        # # define a parameter table of relative position bias
+        # self.relative_position_bias_table = nn.Parameter(
+        #     torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads)
+        # )  # 2*Wh-1 * 2*Ww-1, nH
+        
+        # mlp to generate continuous relative position bias
+        self.cpb_mlp = nn.Sequential(nn.Linear(2, 512, bias=True),
+                                     nn.ReLU(inplace=True),
+                                     nn.Linear(512, num_heads, bias=False))
+        
+        # get relative_coords_table
+        relative_coords_h = torch.arange(-(self.window_size[0] - 1), self.window_size[0], dtype=torch.float32)
+        relative_coords_w = torch.arange(-(self.window_size[1] - 1), self.window_size[1], dtype=torch.float32)
+        relative_coords_table = torch.stack(
+            torch.meshgrid([relative_coords_h,
+                            relative_coords_w])).permute(1, 2, 0).contiguous().unsqueeze(0)  # 1, 2*Wh-1, 2*Ww-1, 2
+        if pretrained_window_size[0] > 0:
+            relative_coords_table[:, :, :, 0] /= (pretrained_window_size[0] - 1)
+            relative_coords_table[:, :, :, 1] /= (pretrained_window_size[1] - 1)
+        else:
+            relative_coords_table[:, :, :, 0] /= (self.window_size[0] - 1)
+            relative_coords_table[:, :, :, 1] /= (self.window_size[1] - 1)
+        relative_coords_table *= 8  # normalize to -8, 8
+        relative_coords_table = torch.sign(relative_coords_table) * torch.log2(
+            torch.abs(relative_coords_table) + 1.0) / np.log2(8)
+        
+        self.register_buffer("relative_coords_table", relative_coords_table)
 
         # get pair-wise relative position index for each token inside the window
         coords_h = torch.arange(self.window_size[0])
         coords_w = torch.arange(self.window_size[1])
         coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
         coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
-        relative_coords = (
-            coords_flatten[:, :, None] - coords_flatten[:, None, :]
-        )  # 2, Wh*Ww, Wh*Ww
-        relative_coords = relative_coords.permute(
-            1, 2, 0
-        ).contiguous()  # Wh*Ww, Wh*Ww, 2
+        relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]  # 2, Wh*Ww, Wh*Ww
+        relative_coords = relative_coords.permute(1, 2, 0).contiguous()  # Wh*Ww, Wh*Ww, 2
         relative_coords[:, :, 0] += self.window_size[0] - 1  # shift to start from 0
         relative_coords[:, :, 1] += self.window_size[1] - 1
         relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
         relative_position_index = relative_coords.sum(-1)  # Wh*Ww, Wh*Ww
         self.register_buffer("relative_position_index", relative_position_index)
 
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.qkv = nn.Linear(dim, dim * 3, bias=False)
+        if qkv_bias:
+            self.q_bias = nn.Parameter(torch.zeros(dim))
+            self.v_bias = nn.Parameter(torch.zeros(dim))
+        else:
+            self.q_bias = None
+            self.v_bias = None
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
-
-        trunc_normal_(self.relative_position_bias_table, std=0.02)
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x, mask=None):
+        # B_, N, C = x.shape
+        # qkv = (
+        #     self.qkv(x)
+        #     .reshape(B_, N, 3, self.num_heads, C // self.num_heads)
+        #     .permute(2, 0, 3, 1, 4)
+        # )
+        # q, k, v = qkv.unbind(0)  # make torchscript happy (cannot use tensor as tuple)
+
+        # q = q * self.scale
+        # attn = q @ k.transpose(-2, -1)
+
+        # relative_position_bias = self.relative_position_bias_table[
+        #     self.relative_position_index.view(-1)
+        # ].view(
+        #     self.window_size[0] * self.window_size[1],
+        #     self.window_size[0] * self.window_size[1],
+        #     -1,
+        # )  # Wh*Ww,Wh*Ww,nH
+        # relative_position_bias = relative_position_bias.permute(
+        #     2, 0, 1
+        # ).contiguous()  # nH, Wh*Ww, Wh*Ww
+        # attn = attn + relative_position_bias.unsqueeze(0)
         B_, N, C = x.shape
-        qkv = (
-            self.qkv(x)
-            .reshape(B_, N, 3, self.num_heads, C // self.num_heads)
-            .permute(2, 0, 3, 1, 4)
-        )
-        q, k, v = qkv.unbind(0)  # make torchscript happy (cannot use tensor as tuple)
+        qkv_bias = None
+        if self.q_bias is not None:
+            qkv_bias = torch.cat((self.q_bias, torch.zeros_like(self.v_bias, requires_grad=False), self.v_bias))
+        qkv = F.linear(input=x, weight=self.qkv.weight, bias=qkv_bias)
+        qkv = qkv.reshape(B_, N, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]  # make torchscript happy (cannot use tensor as tuple)
 
-        q = q * self.scale
-        attn = q @ k.transpose(-2, -1)
+        # cosine attention
+        attn = (F.normalize(q, dim=-1) @ F.normalize(k, dim=-1).transpose(-2, -1))
 
-        relative_position_bias = self.relative_position_bias_table[
-            self.relative_position_index.view(-1)
-        ].view(
-            self.window_size[0] * self.window_size[1],
-            self.window_size[0] * self.window_size[1],
-            -1,
-        )  # Wh*Ww,Wh*Ww,nH
-        relative_position_bias = relative_position_bias.permute(
-            2, 0, 1
-        ).contiguous()  # nH, Wh*Ww, Wh*Ww
+        logit_scale = torch.clamp(self.logit_scale, max=torch.log(torch.tensor(1. / 0.01, device=self.logit_scale.device))).exp()
+        attn = attn * logit_scale
+
+        relative_position_bias_table = self.cpb_mlp(self.relative_coords_table).view(-1, self.num_heads)
+        relative_position_bias = relative_position_bias_table[self.relative_position_index.view(-1)].view(
+            self.window_size[0] * self.window_size[1], self.window_size[0] * self.window_size[1], -1)  # Wh*Ww,Wh*Ww,nH
+        relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # nH, Wh*Ww, Wh*Ww
+        relative_position_bias = 16 * torch.sigmoid(relative_position_bias)
         attn = attn + relative_position_bias.unsqueeze(0)
 
         if mask is not None:
@@ -120,6 +176,7 @@ class MixMIMBlock(nn.Module):
         drop_path=0.0,
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
+        pretrained_window_size=0,
     ):
         super().__init__()
         self.dim = dim
@@ -133,30 +190,26 @@ class MixMIMBlock(nn.Module):
 
         self.norm1 = norm_layer(dim)
         self.attn = WindowAttention(
-            dim,
-            window_size=to_2tuple(self.window_size),
-            num_heads=num_heads,
-            qkv_bias=qkv_bias,
-            attn_drop=attn_drop,
-            proj_drop=drop,
-        )
+            dim, window_size=to_2tuple(self.window_size), num_heads=num_heads,
+            qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop,
+            pretrained_window_size=to_2tuple(pretrained_window_size))
 
-        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(
             in_features=dim,
             hidden_features=mlp_hidden_dim,
             act_layer=act_layer,
-            drop=drop,
-        )
+            drop=drop
+            )
 
     def forward(self, x, attn_mask=None):
         H, W = self.input_resolution
         B, L, C = x.shape
 
         shortcut = x
-        x = self.norm1(x)
+        # x = self.norm1(x)
         x = x.view(B, H, W, C)
 
         # partition windows
@@ -183,8 +236,11 @@ class MixMIMBlock(nn.Module):
 
         x = x.view(B, H * W, C)
 
-        x = shortcut + self.drop_path(x)
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        # x = shortcut + self.drop_path(x)
+        x = shortcut + self.drop_path(self.norm1(x))
+
+        # FFN
+        x = x + self.drop_path(self.norm2(self.mlp(x)))
 
         return x
 
@@ -205,6 +261,7 @@ class MixMIMLayer(nn.Module):
         norm_layer=nn.LayerNorm,
         downsample=None,
         use_checkpoint=False,
+        pretrained_window_size=0
     ):
         super().__init__()
         self.dim = dim
@@ -229,6 +286,7 @@ class MixMIMLayer(nn.Module):
                     if isinstance(drop_path, list)
                     else drop_path,
                     norm_layer=norm_layer,
+                    pretrained_window_size=pretrained_window_size,
                 )
             )
         # patch merging layer
@@ -258,6 +316,14 @@ class MixMIMLayer(nn.Module):
 
     def extra_repr(self) -> str:
         return f"dim={self.dim}, input_resolution={self.input_resolution}, depth={self.depth}"
+    
+
+    def _init_respostnorm(self):
+        for blk in self.blocks:
+            nn.init.constant_(blk.norm1.bias, 0)
+            nn.init.constant_(blk.norm1.weight, 0)
+            nn.init.constant_(blk.norm2.bias, 0)
+            nn.init.constant_(blk.norm2.weight, 0)
 
 
 class MixMIM(nn.Module):
@@ -285,6 +351,7 @@ class MixMIM(nn.Module):
         norm_layer=nn.LayerNorm,
         use_checkpoint=False,
         range_mask_ratio=0.0,
+        pretrained_window_sizes=[0, 0, 0, 0],
         **kwargs,
     ):
         super().__init__()
@@ -354,6 +421,7 @@ class MixMIM(nn.Module):
                     if (i_layer < self.num_layers - 1)
                     else None,
                     use_checkpoint=self.use_checkpoint,
+                    pretrained_window_size=pretrained_window_sizes[i_layer],
                 )
             )
         self.pos_drop = nn.Dropout(p=drop_rate)
@@ -390,6 +458,8 @@ class MixMIM(nn.Module):
         self.decoder_pred = nn.Linear(decoder_dim, self.encoder_stride**2 * 3)
 
         self.initialize_weights()
+        for bly in self.layers:
+            bly._init_respostnorm()
 
     def initialize_weights(self):
         # initialization
@@ -436,14 +506,31 @@ class MixMIM(nn.Module):
         seq_l = out_H * out_W
 
         # use a shared mask for a batch images
-        mask = torch.zeros([1, 1, seq_l], device=x["image"].device)
 
-        mask_ratio = mask_ratio + random.uniform(0.0, self.range_mask_ratio)
-        noise = torch.rand(1, 1, seq_l, device=x["image"].device)  # noise in [0, 1]
-        # ascend: small is keep, large is remove
-        mask_idx = torch.argsort(noise, dim=2)[:, :, : int(seq_l * mask_ratio)]
-        mask.scatter_(2, mask_idx, 1)
+        # mask = torch.zeros([1, 1, seq_l], device=x["image"].device)
+
+        # mask_ratio = mask_ratio + random.uniform(0.0, self.range_mask_ratio)
+        # noise = torch.rand(1, 1, seq_l, device=x["image"].device)  # noise in [0, 1]
+        # # ascend: small is keep, large is remove
+        # mask_idx = torch.argsort(noise, dim=2)[:, :, : int(seq_l * mask_ratio)]
+        # mask.scatter_(2, mask_idx, 1)
+
+        # mask_mix_images = torch.randint(4, (1, seq_l), device=x["image"].device).to(torch.float32)
+        mask_mix_images = torch.cat((
+            torch.zeros(int(seq_l / 4)),
+            torch.ones(int(seq_l / 4)),
+            torch.ones(int(seq_l / 4)) * 2,
+            torch.ones(int(seq_l / 4)) * 3
+            ))
+        mask_idx = torch.randperm(seq_l)
+        mask_mix_images = torch.reshape(mask_mix_images[mask_idx], (1, seq_l))
+        mask_mix_images = mask_mix_images.to(device=x["image"].device)
+
+        mask = mask_mix_images.clone()
+        mask[mask != 0] = 1
+
         mask = mask.reshape(1, 1, out_H, out_W)
+        mask_mix_images = mask_mix_images.reshape(1, 1, out_H, out_W)
         mask_s1 = torch.nn.functional.interpolate(
             mask, size=(s1_H, s1_W), mode="nearest"
         )
@@ -453,13 +540,17 @@ class MixMIM(nn.Module):
         mask_s3 = torch.nn.functional.interpolate(
             mask, size=(s3_H, s3_W), mode="nearest"
         )
+        mask_mix_images = torch.nn.functional.interpolate(
+            mask_mix_images, size=(s1_H, s1_W), mode="nearest"
+        )
 
         mask = mask.reshape(1, out_H * out_W, 1).contiguous()
         mask_s1 = mask_s1.reshape(1, s1_H * s1_W, 1).contiguous()
         mask_s2 = mask_s2.reshape(1, s2_H * s2_W, 1).contiguous()
         mask_s3 = mask_s3.reshape(1, s3_H * s3_W, 1).contiguous()
-
-        return mask_s1, mask_s2, mask_s3, mask
+        mask_mix_images = mask_mix_images.reshape(
+            1, s1_H * s1_W, 1).contiguous()
+        return mask_s1, mask_s2, mask_s3, mask, mask_mix_images
 
     def patchify(self, imgs):
         """
@@ -489,13 +580,45 @@ class MixMIM(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], 3, h * p, h * p))
         return imgs
 
-    def forward_encoder(self, x, mask_s1, mask_s2, mask_s3, mask_s4):
+    def mixing_images(self, x, mask_mix_images):
+        imgs_a, imgs_b, imgs_c, imgs_d = torch.tensor_split(x, 4, dim=0)
+        # imgs_a.to(device=mask_mix_images.device)
+        # imgs_b.to(device=mask_mix_images.device)
+        # imgs_c.to(device=mask_mix_images.device)
+        # imgs_d.to(device=mask_mix_images.device)
+
+        mask_a = mask_mix_images.clone()
+        mask_a[mask_mix_images != 0] = 1
+
+        mask_b = mask_mix_images.clone()
+        mask_b[mask_mix_images == 1] = 0
+        mask_b[mask_mix_images != 1] = 1
+
+        mask_c = mask_mix_images.clone()
+        mask_c[mask_mix_images == 2] = 0
+        mask_c[mask_mix_images != 2] = 1
+
+        mask_d = mask_mix_images.clone()
+        mask_d[mask_mix_images == 3] = 0
+        mask_d[mask_mix_images != 3] = 1
+
+        mix_imgs = imgs_a * (1.0 - mask_a) +\
+            imgs_b * (1.0 - mask_b) +\
+            imgs_c * (1.0 - mask_c) +\
+            imgs_d * (1.0 - mask_d)
+
+        return mix_imgs
+
+
+    def forward_encoder(self, x, mask_s1, mask_s2, mask_s3, mask_s4, mask_mix_images):
         x = self.patch_embed(x)
 
         B, L, _ = x.shape
         H = W = int(L**0.5)
 
-        x = x * (1.0 - mask_s1) + x.flip(0) * mask_s1
+        # x = x * (1.0 - mask_s1) + x.flip(0) * mask_s1
+        x = self.mixing_images(x, mask_mix_images)
+
         x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
 
@@ -518,9 +641,10 @@ class MixMIM(nn.Module):
         B, L, C = x.shape
 
         mask_tokens = self.mask_token.expand(B, L, -1)
-        x1 = x * (1 - mask) + mask_tokens * mask
-        x2 = x * mask + mask_tokens * (1 - mask)
-        x = torch.cat([x1, x2], dim=0)
+        # x1 = x * (1 - mask) + mask_tokens * mask
+        # x2 = x * mask + mask_tokens * (1 - mask)
+        # x = torch.cat([x1, x2], dim=0)
+        x = x * (1 - mask) + mask_tokens * mask
 
         # add pos embed
         x = x + self.decoder_pos_embed
@@ -536,25 +660,35 @@ class MixMIM(nn.Module):
         return x
 
     def forward_loss(self, x, x_rec, mask):
-        B, L, C = x_rec.shape
+        # B, L, C = x_rec.shape
 
-        # unmix tokens
-        x1_rec = x_rec[: B // 2]
-        x2_rec = x_rec[B // 2 :]
+        # # unmix tokens
+        # x1_rec = x_rec[: B // 2]
+        # x2_rec = x_rec[B // 2 :]
 
+        # target = self.patchify(x)
+
+        # unmix_x_rec = x1_rec * mask + x2_rec.flip(0) * (1 - mask)
+
+        # loss_rec = (unmix_x_rec - target) ** 2
+        # loss_rec = loss_rec.mean()
+
+        # initial batch size is divided by 4
+        new_batch_size = int(x.shape[0] / 4)
+        x = x[:new_batch_size, :, :, :]
         target = self.patchify(x)
 
-        unmix_x_rec = x1_rec * mask + x2_rec.flip(0) * (1 - mask)
+        loss_rec = (x_rec - target) ** 2
+        loss_rec_masked = torch.masked_select(loss_rec, mask.bool())
+        loss_rec_masked = loss_rec_masked.mean()
 
-        loss_rec = (unmix_x_rec - target) ** 2
-        loss_rec = loss_rec.mean()
-
-        return loss_rec
+        return loss_rec_masked
 
     def forward(self, x, mask_ratio=0.5):
-        mask_s1, mask_s2, mask_s3, mask_s4 = self.random_masking(x, mask_ratio)
-        z = self.forward_encoder(x["image"], mask_s1, mask_s2, mask_s3, mask_s4)
+        mask_s1, mask_s2, mask_s3, mask_s4, mask_mix_images = self.random_masking(x, mask_ratio)
+        z = self.forward_encoder(x["image"], mask_s1, mask_s2, mask_s3, mask_s4, mask_mix_images)
         x_rec = self.forward_decoder(z, mask_s4)
+
         loss = self.forward_loss(x["image"], x_rec, mask_s4)
 
         # masked
@@ -568,7 +702,7 @@ class MixMIM(nn.Module):
         masked = x["image"] * (1 - mask_input)
         masked = torch.where(masked != 0, masked, 1)
 
-        # pred # TODO ne marche pas
+        # pred
         _, mask_l, _ = mask_s4.shape
         mask_w = mask_h = int(math.sqrt(mask_l))
         mask_output = mask_s4.view(1, 1, mask_h, mask_w)
@@ -614,7 +748,7 @@ def mixmim_tiny(**kwargs):
         decoder_dim=512,
         decoder_depth=8,
         decoder_num_heads=16,
-        norm_pix_loss=True,
+        norm_pix_loss=False,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)
@@ -640,7 +774,7 @@ def mixmim_small(**kwargs):
         decoder_dim=512,
         decoder_depth=8,
         decoder_num_heads=16,
-        norm_pix_loss=True,
+        norm_pix_loss=False,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)
@@ -666,7 +800,7 @@ def mixmim_base(**kwargs):
         decoder_dim=512,
         decoder_depth=8,
         decoder_num_heads=16,
-        norm_pix_loss=True,
+        norm_pix_loss=False,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)
@@ -692,7 +826,7 @@ def mixmim_large(**kwargs):
         decoder_dim=512,
         decoder_depth=8,
         decoder_num_heads=16,
-        norm_pix_loss=True,
+        norm_pix_loss=False,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)
@@ -718,7 +852,7 @@ def mixmim_huge(**kwargs):
         decoder_dim=512,
         decoder_depth=8,
         decoder_num_heads=16,
-        norm_pix_loss=True,
+        norm_pix_loss=False,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)
