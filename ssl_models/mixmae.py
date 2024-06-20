@@ -172,26 +172,32 @@ class WindowAttentionSwinV2(nn.Module):
 
 
 class WindowAttention(nn.Module):
-
-    def __init__(self, dim, window_size, num_heads, qkv_bias=True, attn_drop=0., proj_drop=0.):
+    def __init__(
+        self, dim, window_size, num_heads, qkv_bias=True, attn_drop=0.0, proj_drop=0.0
+    ):
         super().__init__()
         self.dim = dim
         self.window_size = window_size  # Wh, Ww
         self.num_heads = num_heads
         head_dim = dim // num_heads
-        self.scale = head_dim ** -0.5
+        self.scale = head_dim**-0.5
 
         # define a parameter table of relative position bias
         self.relative_position_bias_table = nn.Parameter(
-            torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads))  # 2*Wh-1 * 2*Ww-1, nH
+            torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads)
+        )  # 2*Wh-1 * 2*Ww-1, nH
 
         # get pair-wise relative position index for each token inside the window
         coords_h = torch.arange(self.window_size[0])
         coords_w = torch.arange(self.window_size[1])
         coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
         coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
-        relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]  # 2, Wh*Ww, Wh*Ww
-        relative_coords = relative_coords.permute(1, 2, 0).contiguous()  # Wh*Ww, Wh*Ww, 2
+        relative_coords = (
+            coords_flatten[:, :, None] - coords_flatten[:, None, :]
+        )  # 2, Wh*Ww, Wh*Ww
+        relative_coords = relative_coords.permute(
+            1, 2, 0
+        ).contiguous()  # Wh*Ww, Wh*Ww, 2
         relative_coords[:, :, 0] += self.window_size[0] - 1  # shift to start from 0
         relative_coords[:, :, 1] += self.window_size[1] - 1
         relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
@@ -203,25 +209,38 @@ class WindowAttention(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-        trunc_normal_(self.relative_position_bias_table, std=.02)
+        trunc_normal_(self.relative_position_bias_table, std=0.02)
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, mask = None):
+    def forward(self, x, mask=None):
         B_, N, C = x.shape
-        qkv = self.qkv(x).reshape(B_, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        qkv = (
+            self.qkv(x)
+            .reshape(B_, N, 3, self.num_heads, C // self.num_heads)
+            .permute(2, 0, 3, 1, 4)
+        )
         q, k, v = qkv.unbind(0)  # make torchscript happy (cannot use tensor as tuple)
 
         q = q * self.scale
-        attn = (q @ k.transpose(-2, -1))
+        attn = q @ k.transpose(-2, -1)
 
-        relative_position_bias = self.relative_position_bias_table[self.relative_position_index.view(-1)].view(
-            self.window_size[0] * self.window_size[1], self.window_size[0] * self.window_size[1], -1)  # Wh*Ww,Wh*Ww,nH
-        relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # nH, Wh*Ww, Wh*Ww
+        relative_position_bias = self.relative_position_bias_table[
+            self.relative_position_index.view(-1)
+        ].view(
+            self.window_size[0] * self.window_size[1],
+            self.window_size[0] * self.window_size[1],
+            -1,
+        )  # Wh*Ww,Wh*Ww,nH
+        relative_position_bias = relative_position_bias.permute(
+            2, 0, 1
+        ).contiguous()  # nH, Wh*Ww, Wh*Ww
         attn = attn + relative_position_bias.unsqueeze(0)
 
         if mask is not None:
             mask = mask.reshape(B_, 1, 1, N)
-            mask_new = mask * mask.transpose(2, 3) + (1 - mask) * (1 - mask).transpose(2, 3)
+            mask_new = mask * mask.transpose(2, 3) + (1 - mask) * (1 - mask).transpose(
+                2, 3
+            )
             mask_new = 1 - mask_new
             if mask_new.dtype == torch.float16:
                 attn = attn - 65500 * mask_new
@@ -251,7 +270,7 @@ class MixMIMBlock(nn.Module):
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
         pretrained_window_size=0,
-        swin_version=2
+        swin_version=2,
     ):
         super().__init__()
         self.dim = dim
@@ -266,7 +285,7 @@ class MixMIMBlock(nn.Module):
             self.window_size = min(self.input_resolution)
 
         self.norm1 = norm_layer(dim)
-        if self.swin_version == 2:
+        if self.swin_version == 2:  # noqa: PLR2004
             self.attn = WindowAttentionSwinV2(
                 dim,
                 window_size=to_2tuple(self.window_size),
@@ -302,7 +321,7 @@ class MixMIMBlock(nn.Module):
 
         shortcut = x
         if self.swin_version == 1:
-            x = self.norm1(x)   
+            x = self.norm1(x)
         x = x.view(B, H, W, C)
 
         # partition windows
@@ -335,7 +354,7 @@ class MixMIMBlock(nn.Module):
             x = shortcut + self.drop_path(x)
             x = x + self.drop_path(self.mlp(self.norm2(x)))
 
-        elif self.swin_version ==2:
+        elif self.swin_version == 2:  # noqa: PLR2004
             x = shortcut + self.drop_path(self.norm1(x))
             # FFN
             x = x + self.drop_path(self.norm2(self.mlp(x)))
@@ -344,7 +363,7 @@ class MixMIMBlock(nn.Module):
 
 
 class MixMIMLayer(nn.Module):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         dim,
         input_resolution,
@@ -562,7 +581,7 @@ class MixMIM(nn.Module):
         self.decoder_pred = nn.Linear(decoder_dim, self.encoder_stride**2 * 3)
 
         self.initialize_weights()
-        if self.swin_version == 2:
+        if self.swin_version == 2:  # noqa: PLR2004
             for bly in self.layers:
                 bly._init_respostnorm()
 
