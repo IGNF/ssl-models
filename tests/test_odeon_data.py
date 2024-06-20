@@ -15,7 +15,7 @@ def test_train_odeon_data():
             **DEFAULT_PARAMS,
             "input_file": TRAIN_DATASET,
             "root_dir": TEST_DATA_DIR,
-        }
+        },
     )
     data_module.setup(stage=str(Stages.FIT.value))
     data_loader = data_module.train_dataloader()
@@ -35,7 +35,7 @@ def test_val_odeon_data():
             **DEFAULT_PARAMS,
             "input_file": VAL_DATASET,
             "root_dir": TEST_DATA_DIR,
-        }
+        },
     )
     data_module.setup(stage=str(Stages.VALIDATE.value))
     data_loader = data_module.val_dataloader()

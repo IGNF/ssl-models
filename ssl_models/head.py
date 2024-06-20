@@ -1,11 +1,23 @@
-"""Probing layers"""
+"""Head layers"""
 
 import torch
 from einops import rearrange
 from torch import nn
 
 
-class AttentiveProbing(nn.Module):
+class Head(nn.Module):
+    def maybe_detach_features(self, x, ssl_phase):
+        if ssl_phase == "probe":
+            x = x.detach()
+        return x
+
+    def maybe_detach_prediction(self, x, ssl_phase):
+        if ssl_phase == "pretrain":
+            x = x.detach()
+        return x
+
+
+class AttentiveHead(Head):
     def __init__(self, dim, num_classes, heads=8, dim_head=64):
         super().__init__()
         inner_dim = dim_head * heads
@@ -20,8 +32,8 @@ class AttentiveProbing(nn.Module):
 
         self.linear = nn.Linear(inner_dim, num_classes)
 
-    def forward(self, x):
-        out = x.detach()
+    def forward(self, x, ssl_phase):
+        out = self.maybe_detach_features(x, ssl_phase)
         out = self.norm(out)
 
         q = rearrange(self.query, "(H D) -> 1 H 1 D", H=self.heads)
@@ -33,15 +45,19 @@ class AttentiveProbing(nn.Module):
 
         out = torch.matmul(attn, v)
         out = rearrange(out, "B H 1 D -> B (H D)")
-        return self.linear(out)
+        out = self.linear(out)
+        out = self.maybe_detach_prediction(out, ssl_phase)
+        return out
 
 
-class LinearProbing(nn.Module):
+class LinearHead(Head):
     def __init__(self, dim, num_classes):
         super().__init__()
         self.linear = nn.Linear(dim, num_classes)
 
-    def forward(self, x):
-        out = x.detach()
+    def forward(self, x, ssl_phase):
+        out = self.maybe_detach_features(x, ssl_phase)
         out = torch.mean(out, dim=1)
-        return self.linear(out)
+        out = self.linear(out)
+        out = self.maybe_detach_prediction(out, ssl_phase)
+        return out

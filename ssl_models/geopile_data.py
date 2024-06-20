@@ -1,10 +1,8 @@
-"""
-LightningDataModule for SSL.
-"""
+"""LightningDataModule for SSL."""
 
 from pathlib import Path
 
-import albumentations as A
+import albumentations as A  # noqa: N812
 import numpy as np
 import pandas as pd
 import rasterio
@@ -16,7 +14,6 @@ class GeoPileData(LightningDataModule):
     def __init__(
         self,
         root_dir: str,
-        shuffle_val: bool = True,
         use_tranform: bool = True,
         batch_size: int = 32,
         num_workers: int = 0,
@@ -28,7 +25,7 @@ class GeoPileData(LightningDataModule):
                     A.VerticalFlip(p=0.5),
                     A.HorizontalFlip(p=0.5),
                     A.RandomRotate90(p=0.5),
-                ]
+                ],
             )
         else:
             transform = None
@@ -48,7 +45,7 @@ class GeoPileData(LightningDataModule):
             val_dataset,
             batch_size=batch_size,
             num_workers=num_workers,
-            shuffle=shuffle_val,
+            shuffle=False,
         )
 
     def train_dataloader(self):

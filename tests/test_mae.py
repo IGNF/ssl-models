@@ -6,7 +6,7 @@ from ssl_models.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.ssl_module import downsampling_from_patch_size
 
 
-@pytest.fixture
+@pytest.fixture()
 def model_map():
     return {
         "tiny": mae_tiny,

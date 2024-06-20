@@ -1,6 +1,4 @@
-"""
-Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model
-"""
+"""Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model"""
 
 import math
 
@@ -42,23 +40,18 @@ class SSLModule(LightningModule):
         patch_size=64,
         unpool=False,
         band_groups=None,
-        type_probing="attentive",
+        type_head="attentive",
     ):
         super().__init__()
-        if type_probing is not None:
-            self.num_classes = GeoPileDataset.num_classes
-            self.missing_val = GeoPileDataset.missing_val
-            self.cross_entropy = CrossEntropyLoss(ignore_index=self.missing_val)
-            for dataset, num_classes in self.num_classes.items():
-                acc_metric = MulticlassAccuracy(
-                    num_classes=num_classes, ignore_index=self.missing_val
-                )
-                setattr(self, f"acc_metric_{dataset}", acc_metric)
-        else:
-            self.num_classes = {}
-            self.missing_val = None
-            self.cross_entropy = None
-            self.acc_metric = None
+        self.num_classes = GeoPileDataset.num_classes
+        self.missing_val = GeoPileDataset.missing_val
+        self.cross_entropy = CrossEntropyLoss(ignore_index=self.missing_val)
+        for dataset, num_classes in self.num_classes.items():
+            acc_metric = MulticlassAccuracy(
+                num_classes=num_classes,
+                ignore_index=self.missing_val,
+            )
+            setattr(self, f"acc_metric_{dataset}", acc_metric)
 
         model_map = {
             "tiny": mae_tiny,
@@ -71,7 +64,7 @@ class SSLModule(LightningModule):
                 "mask_ratio": mask_ratio,
                 "image_size": image_size,
                 "patch_size": patch_size,
-                "type_probing": type_probing,
+                "type_head": type_head,
             }
             if band_groups:
                 model_args["band_groups"] = band_groups
@@ -80,12 +73,10 @@ class SSLModule(LightningModule):
             self.model = model_map[model_size](**model_args)
         else:
             raise ValueError(
-                f"Invalid model size {model_size}. Expected one of {model_map.keys()}"
+                f"Invalid model size {model_size}. Expected one of {model_map.keys()}",
             )
         self.tb_logger = None
-
-    def forward(self, cube: dict[str, torch.Tensor]):
-        return self.model(cube)
+        self.save_hyperparameters()
 
     def configure_optimizers(self):
         total_steps = self.trainer.estimated_stepping_batches
@@ -113,37 +104,59 @@ class SSLModule(LightningModule):
                 "scheduler": scheduler,
                 "interval": "step",
                 "monitor": "train/loss",
+                "name": f"{self.trainer.ssl_phase}/AdamW/lr",
             },
         }
 
-    def shared_step(self, batch: dict[str, torch.Tensor], batch_idx: int, phase: str):
-        rec_loss, masked, pred, probe_logits = self(batch)
-        probe_loss = 0
+    def pretrain_step(self, batch: dict[str, torch.Tensor], batch_idx: int, phase: str):
+        loss, masked, pred, _ = self.model(batch, ssl_phase=self.trainer.ssl_phase)
+        self.log(
+            name="rec_loss",
+            value=loss,
+            ssl_phase=self.trainer.ssl_phase,
+            phase=phase,
+        )
+        return {"loss": loss, "masked": masked, "pred": pred}
+
+    def probe_or_finetune_step(
+        self,
+        batch: dict[str, torch.Tensor],
+        batch_idx: int,
+        phase: str,
+    ):
+        _, _, _, probe_logits = self.model(batch, ssl_phase=self.trainer.ssl_phase)
+        loss = 0
+        masked, pred = None, None
         for dataset in self.num_classes:
             if torch.all(batch[f"target_{dataset}"] == self.missing_val):
                 continue
-            probe_loss += self.cross_entropy(
-                probe_logits[dataset], batch[f"target_{dataset}"]
+            loss += self.cross_entropy(
+                probe_logits[dataset],
+                batch[f"target_{dataset}"],
             )
             acc_metric = getattr(self, f"acc_metric_{dataset}")
             probe_acc = acc_metric(probe_logits[dataset], batch[f"target_{dataset}"])
-            self.log(name=f"{phase}/probe_acc_{dataset}", value=probe_acc)
-
-        loss = rec_loss + probe_loss
-        self.log(name=f"{phase}/rec_loss", value=rec_loss)
-        self.log(name=f"{phase}/probe_loss", value=probe_loss)
+            self.log(
+                name=f"acc_{dataset}",
+                value=probe_acc,
+                ssl_phase=self.trainer.ssl_phase,
+                phase=phase,
+                rank_zero_only=True,
+            )
+        self.log(
+            name="cross_entropy_loss",
+            value=loss,
+            ssl_phase=self.trainer.ssl_phase,
+            phase=phase,
+        )
         return {"loss": loss, "masked": masked, "pred": pred}
 
-    def log(self, name, value):
-        super().log(
-            name=name,
-            value=value,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
+    def shared_step(self, batch: dict[str, torch.Tensor], batch_idx: int, phase: str):
+        if self.trainer.ssl_phase == "pretrain":
+            step = self.pretrain_step
+        else:
+            step = self.probe_or_finetune_step
+        return step(batch, batch_idx, phase)
 
     def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
         return self.shared_step(batch, batch_idx, phase="train")
@@ -153,3 +166,17 @@ class SSLModule(LightningModule):
 
     def test_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
         return self.shared_step(batch, batch_idx, phase="test")
+
+    def log(self, name, value, ssl_phase, phase):
+        for metric_name, on_step in zip([f"step_{phase}", f"{phase}"], [True, False]):
+            if on_step and phase != "train":
+                continue  # log by step only for train
+            super().log(
+                name=f"{ssl_phase}/{name}/{metric_name}",
+                value=value,
+                on_step=on_step,
+                on_epoch=not on_step,
+                prog_bar=True,
+                logger=True,
+                sync_dist=True,
+            )

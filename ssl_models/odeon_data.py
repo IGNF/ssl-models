@@ -1,6 +1,4 @@
-"""
-LightningDataModule for SSL, based on Odeon.
-"""
+"""LightningDataModule for SSL, based on Odeon."""
 
 from pathlib import Path
 

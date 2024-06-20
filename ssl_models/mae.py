@@ -1,6 +1,4 @@
-"""
-Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model
-"""
+"""Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model"""
 
 import torch
 import torch.nn.functional as F
@@ -9,18 +7,15 @@ from torch import nn
 from vit_pytorch.vit import Transformer
 
 from ssl_models.geopile_data import GeoPileDataset
-from ssl_models.probing import AttentiveProbing, LinearProbing
+from ssl_models.head import AttentiveHead, LinearHead
 from ssl_models.utils import posemb_sincos_1d, posemb_sincos_2d
 
 
 class Patchify(nn.Module):
-    """
-    Patchify the input cube & create embeddings per patch
-    """
+    """Patchify the input cube & create embeddings per patch"""
 
-    def __init__(self, in_chans, embed_dim, patch_size, num_downsampling, unpool):
-        """
-        Define layers of patch stem.
+    def __init__(self, in_chans, embed_dim, patch_size):
+        """Define layers of patch stem.
 
         Parameters
         ----------
@@ -30,17 +25,14 @@ class Patchify(nn.Module):
             Embedding dimension
         patch_size : int
             Patch size
+
         """
         super().__init__()
-        self.patch_size = patch_size
-        self.num_downsampling = num_downsampling
-        self.unpool = unpool
-
-        self.conv_skip = nn.Conv2d(
+        self.proj = nn.Conv2d(
             in_chans,
             embed_dim,
-            kernel_size=self.patch_size,
-            stride=self.patch_size,
+            kernel_size=patch_size,
+            stride=patch_size,
         )
         self.norm_skip = nn.GroupNorm(1, embed_dim)
         if self.unpool:
@@ -240,7 +232,7 @@ class Encoder(nn.Module):
             {
                 name: Patchify(len(bands), dim, patch_size, num_downsampling, unpool)
                 for name, bands in self.band_groups.items()
-            }
+            },
         )
 
         # Fix the position & band embedding to sine & cosine functions
@@ -256,7 +248,8 @@ class Encoder(nn.Module):
         self.register_buffer(
             name="band_encoding",
             tensor=posemb_sincos_1d(
-                length=self.num_group_patches, dim=band_dim
+                length=self.num_group_patches,
+                dim=band_dim,
             ),  # [G D/2]
             persistent=False,
         )
@@ -277,8 +270,7 @@ class Encoder(nn.Module):
         )
 
     def to_patch_embed(self, cube):
-        """
-        Patchify the input cube & create embeddings per patch
+        """Patchify the input cube & create embeddings per patch
 
         Parameters
         ----------
@@ -291,6 +283,7 @@ class Encoder(nn.Module):
         patches : torch.Tensor
             A tensor of shape (B, G, L, D) containing the embeddings of the
             patches.
+
         """
         patches = []
         embed_inds = {}
@@ -303,8 +296,7 @@ class Encoder(nn.Module):
         return patches, embed_inds  # [B G L D]
 
     def add_encodings(self, patches):
-        """
-        Add position & band encoding to the patches
+        """Add position & band encoding to the patches
 
         Parameters
         ----------
@@ -317,20 +309,26 @@ class Encoder(nn.Module):
         patches : torch.Tensor
             A tensor of shape (B, G, L, D) containing the embeddings of the
             patches + position & band encoding.
+
         """
         self.B, G, L, D = patches.shape
 
         # Align position & band embeddings across patches
         pos_encoding = repeat(
-            self.pos_encoding, "L D -> 1 repeat L D", repeat=G
+            self.pos_encoding,
+            "L D -> 1 repeat L D",
+            repeat=G,
         )  # [1 G L D/2]
 
         band_encoding = repeat(
-            self.band_encoding, "G D -> 1 G repeat D", repeat=L
+            self.band_encoding,
+            "G D -> 1 G repeat D",
+            repeat=L,
         )  # [1 G L D/2]
 
         pos_band_encoding = torch.cat(
-            (pos_encoding, band_encoding), dim=-1
+            (pos_encoding, band_encoding),
+            dim=-1,
         )  # [1 G L D]
 
         # Add position & band encoding to the input feature vector
@@ -338,9 +336,8 @@ class Encoder(nn.Module):
         patches = self.dropout(patches)  # [B G L D]
         return patches  # [B G L D]
 
-    def mask_out(self, patches):
-        """
-        Mask out patches randomly by shuffling the patches & masking out the
+    def mask_out(self, patches, ssl_phase):
+        """Mask out patches randomly by shuffling the patches & masking out the
         first N patches
 
         Parameters
@@ -362,10 +359,11 @@ class Encoder(nn.Module):
             masked patches.
         masked_matrix : torch.Tensor
             A tensor of shape (B, G, L) containing the mask matrix.
+
         """
         B, GL, D = patches.shape
         assert (
-            GL == self.num_patches
+            self.num_patches == GL
         ), f"Expected {self.num_patches} patches, got {GL} patches."
 
         # Shuffle the patches
@@ -373,9 +371,9 @@ class Encoder(nn.Module):
 
         random_indices = torch.argsort(noise, dim=-1)  # [B GL]
         reverse_indices = torch.argsort(random_indices, dim=-1)  # [B GL]
-        if self.pretraining:
+        if ssl_phase == "pretrain":
             num_masked_patches = int(
-                self.mask_ratio * self.num_patches
+                self.mask_ratio * self.num_patches,
             )  # Number of patches to be masked out
         else:
             num_masked_patches = 0
@@ -389,7 +387,9 @@ class Encoder(nn.Module):
         masked_matrix = torch.zeros((B, GL), device=patches.device)  # [B GL] = 0
         masked_matrix[:, :num_masked_patches] = 1  # [B mask_ratio * GL] = 1
         masked_matrix = torch.gather(
-            masked_matrix, dim=1, index=reverse_indices
+            masked_matrix,
+            dim=1,
+            index=reverse_indices,
         )  # [B GL] -> [B GL] - reorder the patches
         masked_matrix = rearrange(
             masked_matrix,
@@ -399,10 +399,13 @@ class Encoder(nn.Module):
 
         # mask out the patches
         batch_indices = rearrange(
-            torch.arange(B, device=patches.device), "B -> B 1"
+            torch.arange(B, device=patches.device),
+            "B -> B 1",
         )  # [B 1]
         unmasked_patches = patches[
-            batch_indices, unmasked_indices, :
+            batch_indices,
+            unmasked_indices,
+            :,
         ]  # [B GL:(1 - mask_ratio) D]
         _ = patches[batch_indices, masked_indices, :]  # [B GL:mask_ratio D]
 
@@ -413,15 +416,15 @@ class Encoder(nn.Module):
             masked_matrix,
         )  # [B GL:(1 - mask_ratio) D], [(1-mask_ratio)], [mask_ratio], [B G L]
 
-    def forward(self, cube):
+    def forward(self, cube, ssl_phase):
         B, C, H, W = cube["image"].shape
 
-        patches, embed_inds = self.to_patch_embed(
-            cube["image"]
+        patches = self.to_patch_embed(
+            cube["image"],
         )  # [B G L D] - patchify & create embeddings per patch
 
         patches = self.add_encodings(
-            patches
+            patches,
         )  # [B G L D] - add position & band encoding to the embeddings
 
         patches = rearrange(patches, "B G L D -> B (G L) D")  # [B (GL) D]
@@ -434,12 +437,13 @@ class Encoder(nn.Module):
             masked_indices,
             masked_matrix,
         ) = self.mask_out(
-            patches
+            patches,
+            ssl_phase,
         )  # [B GL:(1 - mask_ratio) D], [(1-mask_ratio)], [mask_ratio], [B G L]
 
         # pass the unmasked patches through the transformer
         encoded_unmasked_patches = self.transformer(
-            unmasked_patches
+            unmasked_patches,
         )  # [B (GL:(1 - mask_ratio)) D]
 
         return (
@@ -508,7 +512,8 @@ class Decoder(nn.Module):
         self.register_buffer(
             name="band_encoding",
             tensor=posemb_sincos_1d(
-                length=self.num_group_patches, dim=band_dim
+                length=self.num_group_patches,
+                dim=band_dim,
             ),  # [G D/2]
             persistent=False,
         )
@@ -521,14 +526,17 @@ class Decoder(nn.Module):
             {
                 name: Pixelify(dim, len(bands), patch_size, num_downsampling, unpool)
                 for name, bands in self.band_groups.items()
-            }
+            },
         )
 
     def reconstruct_and_add_encoding(
-        self, unmasked_patches, unmasked_indices, masked_indices
+        self,
+        unmasked_patches,
+        unmasked_indices,
+        masked_indices,
+        ssl_phase,
     ):
-        """
-        Reconstruct the input patches from the random mask patch & add position
+        """Reconstruct the input patches from the random mask patch & add position
         & band encoding to them.
 
         Parameters
@@ -548,6 +556,7 @@ class Decoder(nn.Module):
         decoder_patches : torch.Tensor
             A tensor of shape (B, GL, D) containing the embeddings for the
             decoder part of the model.
+
         """
         B, *_ = unmasked_patches.shape
 
@@ -564,30 +573,45 @@ class Decoder(nn.Module):
         )  # [1 G L D/2]
 
         pos_band_encoding = torch.cat(
-            (pos_encoding, band_encoding), dim=-1
+            (pos_encoding, band_encoding),
+            dim=-1,
         )  # [1 G L D]
         pos_band_encoding = rearrange(
-            pos_band_encoding, "1 G L D -> 1 (G L) D"
+            pos_band_encoding,
+            "1 G L D -> 1 (G L) D",
         )  # [1 (GL) D]
         pos_band_encoding = repeat(
-            pos_band_encoding, "1 (GL) D -> B (GL) D", B=B
+            pos_band_encoding,
+            "1 (GL) D -> B (GL) D",
+            B=B,
         )  # [B (GL) D]
 
         batch_indices = rearrange(
-            torch.arange(B, device=unmasked_patches.device), "B -> B 1"
+            torch.arange(B, device=unmasked_patches.device),
+            "B -> B 1",
         )  # [B 1]
         unmasked_pos_band_encoding = pos_band_encoding[
-            batch_indices, unmasked_indices, :
+            batch_indices,
+            unmasked_indices,
+            :,
         ]  # [B (GL:(1 - mask_ratio)) D]
         masked_pos_band_encoding = pos_band_encoding[
-            batch_indices, masked_indices, :
+            batch_indices,
+            masked_indices,
+            :,
         ]  # [B (GL:mask_ratio) D]
 
         # Reconstruct the masked patches from the random mask patch &
         # add position & band encoding to them
-        num_masked_patches = int(self.mask_ratio * self.num_patches)
+        if ssl_phase == "pretrain":
+            num_masked_patches = int(self.mask_ratio * self.num_patches)
+        else:
+            num_masked_patches = 0
         masked_patches = repeat(
-            self.mask_patch, "D -> B GL D", B=B, GL=num_masked_patches
+            self.mask_patch,
+            "D -> B GL D",
+            B=B,
+            GL=num_masked_patches,
         )  # [B GL:mask_ratio D]
         masked_patches = (
             masked_patches + masked_pos_band_encoding
@@ -600,20 +624,24 @@ class Decoder(nn.Module):
 
         # Concatenate the masked & unmasked patches
         decoder_patches = torch.zeros(
-            (B, self.num_patches, self.dim), device=unmasked_patches.device
+            (B, self.num_patches, self.dim),
+            device=unmasked_patches.device,
         )  # [B GL D]
-        decoder_patches[batch_indices, unmasked_indices, :] = (
-            unmasked_patches  # [B GL:(1 - mask_ratio) D]
-        )
-        decoder_patches[batch_indices, masked_indices, :] = (
-            masked_patches  # [B GL:mask_ratio D]
-        )
+        decoder_patches[
+            batch_indices,
+            unmasked_indices,
+            :,
+        ] = unmasked_patches  # [B GL:(1 - mask_ratio) D]
+        decoder_patches[
+            batch_indices,
+            masked_indices,
+            :,
+        ] = masked_patches  # [B GL:mask_ratio D]
 
         return decoder_patches  # [B GL D]
 
-    def pixelify(self, patches, embed_inds):
-        """
-        Convert the patches into pixel space to compute the loss
+    def pixelify(self, patches):
+        """Convert the patches into pixel space to compute the loss
 
         Parameters
         ----------
@@ -626,9 +654,12 @@ class Decoder(nn.Module):
         pixels : torch.Tensor
             A tensor of shape (B, C, L, PP) containing the pixels of the
             cube.
+
         """
         patches = rearrange(
-            patches, "B (G L) D -> B G L D", G=len(self.band_groups)
+            patches,
+            "B (G L) D -> B G L D",
+            G=len(self.band_groups),
         )  # [B G L D]
         pixels = []
         for i, (name, bands) in enumerate(self.band_groups.items()):
@@ -647,14 +678,21 @@ class Decoder(nn.Module):
         return pixels  # [B C L PP]
 
     def forward(
-        self, encoded_unmasked_patches, embed_inds, unmasked_indices, masked_indices
+        self,
+        encoded_unmasked_patches,
+        unmasked_indices,
+        masked_indices,
+        ssl_phase,
     ):
         # Change the embedding dimension from encoder to decoder
         encoded_unmasked_patches = self.enc_to_dec(encoded_unmasked_patches)
 
         # Reconstruct the patches to feed into the decoder transformer
         decoder_patches = self.reconstruct_and_add_encoding(
-            encoded_unmasked_patches, unmasked_indices, masked_indices
+            encoded_unmasked_patches,
+            unmasked_indices,
+            masked_indices,
+            ssl_phase,
         )  # [B GL D]
 
         # Pass the decoder patches through the transformer
@@ -688,7 +726,7 @@ class MAE(nn.Module):
         decoder_dim_head,
         decoder_mlp_ratio,
         decoder_dropout,
-        type_probing="attentive",
+        type_head="attentive",
         # band groups
         band_groups={
             "rgb": (2, 1, 0),
@@ -733,25 +771,21 @@ class MAE(nn.Module):
             dropout=decoder_dropout,
         )
 
-        if type_probing is not None:
-            self.num_classes = GeoPileDataset.num_classes
-            self.probe = nn.ModuleDict(
+        self.num_classes = GeoPileDataset.num_classes
+        self.probe = nn.ModuleDict(
+            [
                 [
-                    [
-                        dataset,
-                        AttentiveProbing(dim, num_classes)
-                        if type_probing == "attentive"
-                        else LinearProbing(dim, num_classes),
-                    ]
-                    for dataset, num_classes in self.num_classes.items()
+                    dataset,
+                    AttentiveHead(dim, num_classes)
+                    if type_head == "attentive"
+                    else LinearHead(dim, num_classes),
                 ]
-            )
-        else:
-            self.num_classes = {}
+                for dataset, num_classes in self.num_classes.items()
+            ],
+        )
 
     def per_pixel_loss(self, cube, pixels, masked_matrix):
-        """
-        Compute the per pixel loss
+        """Compute the per pixel loss
 
         Parameters
         ----------
@@ -767,6 +801,7 @@ class MAE(nn.Module):
         Returns
         -------
         loss
+
         """
         patches = rearrange(
             cube,
@@ -783,7 +818,9 @@ class MAE(nn.Module):
         actual_loss, masked_patches = 0.0, 0.0
         for i, (_, group) in enumerate(self.band_groups.items()):
             group_loss = reduce(
-                loss[:, group, :], "B G L -> B L", "mean"
+                loss[:, group, :],
+                "B G L -> B L",
+                "mean",
             )  # (B, L) - loss per group
             actual_loss += (
                 group_loss * masked_matrix[:, i]
@@ -794,10 +831,17 @@ class MAE(nn.Module):
         pred = torch.zeros(patches.shape, device=patches.device)
         for i, (_, group) in enumerate(self.band_groups.items()):
             masked[:, group, :, :] = 1 * masked_matrix[:, None, i, :, None] + patches[
-                :, group, :, :
+                :,
+                group,
+                :,
+                :,
             ] * (1 - masked_matrix[:, None, i, :, None])
             pred[:, group, :, :] = pixels[:, group, :, :] * masked_matrix[
-                :, None, i, :, None
+                :,
+                None,
+                i,
+                :,
+                None,
             ] + patches[:, group, :, :] * (1 - masked_matrix[:, None, i, :, None])
 
         masked = rearrange(
@@ -815,7 +859,7 @@ class MAE(nn.Module):
 
         return actual_loss / masked_patches, masked, pred
 
-    def forward(self, cube):
+    def forward(self, cube, ssl_phase):
         # encoder
         (
             encoded_unmasked_patches,
@@ -824,20 +868,26 @@ class MAE(nn.Module):
             masked_indices,
             masked_matrix,
         ) = self.encoder(
-            cube
+            cube,
+            ssl_phase,
         )  # [B (GL:(1 - mask_ratio)) D], [(1-mask_ratio)], [mask_ratio], [B G L]
 
         # decoder
         pixels = self.decoder(
-            encoded_unmasked_patches, embed_inds, unmasked_indices, masked_indices
+            encoded_unmasked_patches,
+            unmasked_indices,
+            masked_indices,
+            ssl_phase,
         )  # [B C L PP]
 
         # loss
         rec_loss, masked, pred = self.per_pixel_loss(
-            cube["image"], pixels, masked_matrix
+            cube["image"],
+            pixels,
+            masked_matrix,
         )
         probe_logits = {
-            dataset: self.probe[dataset](encoded_unmasked_patches)
+            dataset: self.probe[dataset](encoded_unmasked_patches, ssl_phase)
             for dataset in self.num_classes
         }
         return rec_loss, masked, pred, probe_logits

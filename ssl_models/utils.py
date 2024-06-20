@@ -1,7 +1,4 @@
-"""
-Code from https://github.com/lucidrains/vit-pytorch/blob/main/vit_pytorch/simple_vit.py
-Code from: https://github.com/Sense-X/MixMIM/blob/master/util/pos_embed.py
-"""
+"""Code from https://github.com/lucidrains/vit-pytorch/blob/main/vit_pytorch/simple_vit.py"""
 
 import numpy as np
 import torch

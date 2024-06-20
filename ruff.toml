@@ -18,3 +18,6 @@ select = [
 
 [lint.pylint]
 max-args = 15
+
+[lint.per-file-ignores]
+"main.py" = ["F401"]

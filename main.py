@@ -1,26 +1,33 @@
-"""
-Command line interface to run SSL pretraining.
+"""Command line interface to run SSL pretraining.
 
 From the project root directory, do:
 
-    poetry run python main.py fit --config=./config/conf.yaml
-
-References:
-- https://lightning.ai/docs/pytorch/2.1.0/cli/lightning_cli.html
-- https://pytorch-lightning.medium.com/introducing-lightningcli-v2-supercharge-your-training-c070d43c7dd6
+    poetry run python main.py group.field=value
 """
 
-from pytorch_lightning.cli import LightningCLI, SaveConfigCallback
+from hydra_zen import store, zen
+from pytorch_lightning import seed_everything
 
-from ssl_models.geopile_data import GeoPileData
-from ssl_models.ssl_module import SSLModule
-from ssl_models.trainer import SSLTrainer
+import conf.data
+import conf.experiment
+import conf.hydra_conf
+import conf.model
+import conf.opt
+import conf.run
+import conf.trainer
+from ssl_models.run_experiment import run_experiment
 
 # %%
 if __name__ == "__main__":
-    cli = LightningCLI(
-        datamodule_class=GeoPileData,
-        model_class=SSLModule,
-        trainer_class=SSLTrainer,
-        save_config_callback=SaveConfigCallback,
+    store.add_to_hydra_store(overwrite_ok=True)
+    zen_f = zen(
+        run_experiment,
+        pre_call=[
+            lambda cfg: (
+                seed_everything(cfg.run.seed, workers=True)
+                if cfg.run.reproducible
+                else lambda: None
+            ),
+        ],
     )
+    zen_f.hydra_main(config_name="base_ssl_experiment", version_base="1.3")

@@ -1,6 +1,29 @@
 import numpy as np
 from pytorch_lightning import Callback, LightningModule, Trainer
+from pytorch_lightning.loggers import TensorBoardLogger
 from torch import Tensor
+from pytorch_lightning.utilities.rank_zero import rank_zero_only
+
+
+class TensorBoardLogger(TensorBoardLogger):
+    def __init__(
+        self,
+        ssl_phase,
+        *args,
+        **kwargs,
+    ) -> None:
+        self.ssl_phase = ssl_phase
+        super().__init__(
+            *args,
+            **kwargs,
+        )
+
+    @rank_zero_only
+    def log_metrics(self, metrics, step):
+        if "epoch" in metrics:
+            metrics[f"{self.ssl_phase}/epoch"] = metrics["epoch"]
+            metrics.pop("epoch", None)
+        return super().log_metrics(metrics, step)
 
 
 class ImageLogger(Callback):
@@ -10,6 +33,14 @@ class ImageLogger(Callback):
     def to_numpy(x: Tensor):
         return x.detach().cpu().numpy().astype(np.float32)
 
+    @staticmethod
+    def should_log(trainer: Trainer, outputs):
+        return (
+            trainer.global_rank == 0
+            and outputs["pred"] is not None
+            and outputs["masked"] is not None
+        )
+
     def on_batch_end(
         self,
         trainer: Trainer,
@@ -18,8 +49,6 @@ class ImageLogger(Callback):
         batch_idx,
         phase: str,
     ) -> None:
-        if trainer.global_rank != 0:
-            return
         match phase:
             case "train":
                 num_batches_per_epoch = len(trainer.train_dataloader)
@@ -28,7 +57,7 @@ class ImageLogger(Callback):
             case "test":
                 num_batches_per_epoch = len(trainer.test_dataloaders)
         log_every_n_batches = round(
-            num_batches_per_epoch / trainer.logged_images_per_epoch
+            num_batches_per_epoch / trainer.logged_images_per_epoch,
         )
         if batch_idx % log_every_n_batches:
             return
@@ -60,13 +89,14 @@ class ImageLogger(Callback):
         batch_idx,
         dataloader_idx=0,
     ) -> None:
-        self.on_batch_end(
-            trainer,
-            outputs,
-            batch,
-            batch_idx,
-            phase="train",
-        )
+        if ImageLogger.should_log(trainer, outputs):
+            self.on_batch_end(
+                trainer,
+                outputs,
+                batch,
+                batch_idx,
+                phase="train",
+            )
 
     def on_validation_batch_end(
         self,
@@ -77,10 +107,11 @@ class ImageLogger(Callback):
         batch_idx,
         dataloader_idx=0,
     ) -> None:
-        self.on_batch_end(
-            trainer,
-            outputs,
-            batch,
-            batch_idx,
-            phase="eval",
-        )
+        if ImageLogger.should_log(trainer, outputs):
+            self.on_batch_end(
+                trainer,
+                outputs,
+                batch,
+                batch_idx,
+                phase="eval",
+            )
