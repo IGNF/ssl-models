@@ -7,6 +7,7 @@ import math
 import torch
 from pytorch_lightning import LightningModule
 
+from ssl_models.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.mixmae import (
     mixmim_base,
     mixmim_huge,
@@ -31,38 +32,45 @@ def downsampling_from_patch_size(unpool, patch_size):
 class SSLModule(LightningModule):
     def __init__(
         self,
+        model="vit",
         model_size="small",
         mask_ratio=0.75,
         image_size=512,
         patch_size=64,
         unpool=False,
         band_groups=None,
-        window_size=None,
-        norm_pix_loss=None
+        mask_batch=None,
     ):
         super().__init__()
-        # model_map = {
-        #     "tiny": mae_tiny,
-        #     "small": mae_small,
-        #     "medium": mae_medium,
-        #     "large": mae_large,
-        # }
-        model_map = {
-            "tiny": mixmim_tiny,
-            "small": mixmim_small,
-            "base": mixmim_base,
-            "large": mixmim_large,
-            "huge": mixmim_huge,
-        }
-        num_downsampling = downsampling_from_patch_size(unpool, patch_size)
+
+        if model == "vit":
+            model_map = {
+                "tiny": mae_tiny,
+                "small": mae_small,
+                "medium": mae_medium,
+                "large": mae_large,
+            }
+        elif model == "mixmae":
+            model_map = {
+                "tiny": mixmim_tiny,
+                "small": mixmim_small,
+                "base": mixmim_base,
+                "large": mixmim_large,
+                "huge": mixmim_huge,
+            }
+        else:
+            raise ValueError(f"Invalid model name {model}. Not implemented")
+
         if model_size in model_map:
             model_args = {
                 "mask_ratio": mask_ratio,
                 "image_size": image_size,
-                "patch_size": patch_size
+                "patch_size": patch_size,
             }
             if band_groups:
                 model_args["band_groups"] = band_groups
+            if mask_batch:
+                model_args["mask_batch"] = mask_batch
             self.model = model_map[model_size](**model_args)
         else:
             raise ValueError(
