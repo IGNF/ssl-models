@@ -23,7 +23,7 @@ from torch.utils.checkpoint import checkpoint
 from ssl_models.utils import get_2d_sincos_pos_embed
 
 
-class WindowAttention(nn.Module):
+class WindowAttentionSwinV2(nn.Module):
     def __init__(
         self,
         dim,
@@ -171,6 +171,71 @@ class WindowAttention(nn.Module):
         return x
 
 
+class WindowAttention(nn.Module):
+
+    def __init__(self, dim, window_size, num_heads, qkv_bias=True, attn_drop=0., proj_drop=0.):
+        super().__init__()
+        self.dim = dim
+        self.window_size = window_size  # Wh, Ww
+        self.num_heads = num_heads
+        head_dim = dim // num_heads
+        self.scale = head_dim ** -0.5
+
+        # define a parameter table of relative position bias
+        self.relative_position_bias_table = nn.Parameter(
+            torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads))  # 2*Wh-1 * 2*Ww-1, nH
+
+        # get pair-wise relative position index for each token inside the window
+        coords_h = torch.arange(self.window_size[0])
+        coords_w = torch.arange(self.window_size[1])
+        coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
+        coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
+        relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]  # 2, Wh*Ww, Wh*Ww
+        relative_coords = relative_coords.permute(1, 2, 0).contiguous()  # Wh*Ww, Wh*Ww, 2
+        relative_coords[:, :, 0] += self.window_size[0] - 1  # shift to start from 0
+        relative_coords[:, :, 1] += self.window_size[1] - 1
+        relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
+        relative_position_index = relative_coords.sum(-1)  # Wh*Ww, Wh*Ww
+        self.register_buffer("relative_position_index", relative_position_index)
+
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(dim, dim)
+        self.proj_drop = nn.Dropout(proj_drop)
+
+        trunc_normal_(self.relative_position_bias_table, std=.02)
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(self, x, mask = None):
+        B_, N, C = x.shape
+        qkv = self.qkv(x).reshape(B_, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv.unbind(0)  # make torchscript happy (cannot use tensor as tuple)
+
+        q = q * self.scale
+        attn = (q @ k.transpose(-2, -1))
+
+        relative_position_bias = self.relative_position_bias_table[self.relative_position_index.view(-1)].view(
+            self.window_size[0] * self.window_size[1], self.window_size[0] * self.window_size[1], -1)  # Wh*Ww,Wh*Ww,nH
+        relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # nH, Wh*Ww, Wh*Ww
+        attn = attn + relative_position_bias.unsqueeze(0)
+
+        if mask is not None:
+            mask = mask.reshape(B_, 1, 1, N)
+            mask_new = mask * mask.transpose(2, 3) + (1 - mask) * (1 - mask).transpose(2, 3)
+            mask_new = 1 - mask_new
+            if mask_new.dtype == torch.float16:
+                attn = attn - 65500 * mask_new
+            else:
+                attn = attn - 1e30 * mask_new
+        attn = self.softmax(attn)
+        attn = self.attn_drop(attn)
+
+        x = (attn @ v).transpose(1, 2).reshape(B_, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+        return x
+
+
 class MixMIMBlock(nn.Module):
     def __init__(
         self,
@@ -186,6 +251,7 @@ class MixMIMBlock(nn.Module):
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
         pretrained_window_size=0,
+        swin_version=2
     ):
         super().__init__()
         self.dim = dim
@@ -193,21 +259,32 @@ class MixMIMBlock(nn.Module):
         self.num_heads = num_heads
         self.window_size = window_size
         self.mlp_ratio = mlp_ratio
+        self.swin_version = swin_version
         if min(self.input_resolution) <= self.window_size:
             # if window size is larger than input resolution,\
             # we don't partition windows
             self.window_size = min(self.input_resolution)
 
         self.norm1 = norm_layer(dim)
-        self.attn = WindowAttention(
-            dim,
-            window_size=to_2tuple(self.window_size),
-            num_heads=num_heads,
-            qkv_bias=qkv_bias,
-            attn_drop=attn_drop,
-            proj_drop=drop,
-            pretrained_window_size=to_2tuple(pretrained_window_size),
-        )
+        if self.swin_version == 2:
+            self.attn = WindowAttentionSwinV2(
+                dim,
+                window_size=to_2tuple(self.window_size),
+                num_heads=num_heads,
+                qkv_bias=qkv_bias,
+                attn_drop=attn_drop,
+                proj_drop=drop,
+                pretrained_window_size=to_2tuple(pretrained_window_size),
+            )
+        else:
+            self.attn = WindowAttention(
+                dim,
+                window_size=to_2tuple(self.window_size),
+                num_heads=num_heads,
+                qkv_bias=qkv_bias,
+                attn_drop=attn_drop,
+                proj_drop=drop,
+            )
 
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.norm2 = norm_layer(dim)
@@ -224,7 +301,8 @@ class MixMIMBlock(nn.Module):
         B, L, C = x.shape
 
         shortcut = x
-        # x = self.norm1(x)
+        if self.swin_version == 1:
+            x = self.norm1(x)   
         x = x.view(B, H, W, C)
 
         # partition windows
@@ -253,11 +331,14 @@ class MixMIMBlock(nn.Module):
 
         x = x.view(B, H * W, C)
 
-        # x = shortcut + self.drop_path(x)
-        x = shortcut + self.drop_path(self.norm1(x))
+        if self.swin_version == 1:
+            x = shortcut + self.drop_path(x)
+            x = x + self.drop_path(self.mlp(self.norm2(x)))
 
-        # FFN
-        x = x + self.drop_path(self.norm2(self.mlp(x)))
+        elif self.swin_version ==2:
+            x = shortcut + self.drop_path(self.norm1(x))
+            # FFN
+            x = x + self.drop_path(self.norm2(self.mlp(x)))
 
         return x
 
@@ -279,12 +360,14 @@ class MixMIMLayer(nn.Module):
         downsample=None,
         use_checkpoint=False,
         pretrained_window_size=0,
+        swin_version=2,
     ):
         super().__init__()
         self.dim = dim
         self.input_resolution = input_resolution
         self.depth = depth
         self.use_checkpoint = use_checkpoint
+        self.swin_version = swin_version
 
         # build blocks
         self.blocks = nn.ModuleList()
@@ -304,6 +387,7 @@ class MixMIMLayer(nn.Module):
                     else drop_path,
                     norm_layer=norm_layer,
                     pretrained_window_size=pretrained_window_size,
+                    swin_version=self.swin_version,
                 )
             )
         # patch merging layer
@@ -368,6 +452,7 @@ class MixMIM(nn.Module):
         range_mask_ratio=0.0,
         pretrained_window_sizes=[0, 0, 0, 0],
         mask_batch=False,
+        swin_version=2,
         **kwargs,
     ):
         super().__init__()
@@ -391,6 +476,8 @@ class MixMIM(nn.Module):
         self.mlp_ratio = mlp_ratio
         self.window_size = window_size
         self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
+        self.swin_version = swin_version
+        print(self.swin_version)
 
         # reconstruction args
         self.norm_pix_loss = norm_pix_loss
@@ -438,6 +525,7 @@ class MixMIM(nn.Module):
                     else None,
                     use_checkpoint=self.use_checkpoint,
                     pretrained_window_size=pretrained_window_sizes[i_layer],
+                    swin_version=self.swin_version,
                 )
             )
         self.pos_drop = nn.Dropout(p=drop_rate)
@@ -474,8 +562,9 @@ class MixMIM(nn.Module):
         self.decoder_pred = nn.Linear(decoder_dim, self.encoder_stride**2 * 3)
 
         self.initialize_weights()
-        for bly in self.layers:
-            bly._init_respostnorm()
+        if self.swin_version == 2:
+            for bly in self.layers:
+                bly._init_respostnorm()
 
         self.mask_batch = mask_batch
 
@@ -773,6 +862,7 @@ def mixmim_tiny(**kwargs):
         decoder_num_heads=16,
         norm_pix_loss=False,
         mask_batch=True,
+        swin_version=2,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)
@@ -800,6 +890,7 @@ def mixmim_small(**kwargs):
         decoder_num_heads=16,
         norm_pix_loss=False,
         mask_batch=True,
+        swin_version=2,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)
@@ -827,6 +918,7 @@ def mixmim_base(**kwargs):
         decoder_num_heads=16,
         norm_pix_loss=False,
         mask_batch=True,
+        swin_version=2,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)
@@ -854,6 +946,7 @@ def mixmim_large(**kwargs):
         decoder_num_heads=16,
         norm_pix_loss=False,
         mask_batch=True,
+        swin_version=2,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)
@@ -881,6 +974,7 @@ def mixmim_huge(**kwargs):
         decoder_num_heads=16,
         norm_pix_loss=False,
         mask_batch=True,
+        swin_version=2,
     )
     default_args.update(**kwargs)
     return MixMIM(**default_args)

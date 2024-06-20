@@ -40,6 +40,7 @@ class SSLModule(LightningModule):
         unpool=False,
         band_groups=None,
         mask_batch=None,
+        swin_version=None,
     ):
         super().__init__()
 
@@ -58,6 +59,12 @@ class SSLModule(LightningModule):
                 "large": mixmim_large,
                 "huge": mixmim_huge,
             }
+            swin_versions = [1, 2]
+            if swin_version not in swin_versions:
+                raise ValueError(
+                    f"Invalid swin version {swin_version}.\
+                          Expected one of {swin_versions}"
+                )
         else:
             raise ValueError(f"Invalid model name {model}. Not implemented")
 
@@ -66,6 +73,8 @@ class SSLModule(LightningModule):
                 "mask_ratio": mask_ratio,
                 "image_size": image_size,
                 "patch_size": patch_size,
+                "mask_batch": mask_batch,
+                "swin_version": swin_version,
             }
             if band_groups:
                 model_args["band_groups"] = band_groups
