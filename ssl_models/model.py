@@ -71,8 +71,7 @@ class SSLModule(LightningModule):
         total_steps = self.trainer.estimated_stepping_batches
         lr = (
             # use sqrt scaling rule with Adam
-            self.trainer.base_lr
-            * self.trainer.train_dataloader.batch_size**0.5
+            self.trainer.base_lr * self.trainer.train_dataloader.batch_size**0.5
         )
         optimizer = torch.optim.AdamW(
             self.model.parameters(),

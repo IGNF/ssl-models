@@ -23,7 +23,7 @@ class ClassifMetric(Metric):
         self.num_classes = GeoPileDataset.num_classes
         self.missing_val = GeoPileDataset.missing_val
         self.cross_entropy = CrossEntropyLoss(ignore_index=self.missing_val)
-        self.acc_metric = nn.ModuleDict(
+        self.agg_acc = nn.ModuleDict(
             [
                 [
                     dataset,
@@ -36,9 +36,6 @@ class ClassifMetric(Metric):
             ],
         )
         self.agg_loss = nn.ModuleDict(
-            [[dataset, MeanMetric()] for dataset in self.num_classes],
-        )
-        self.agg_acc = nn.ModuleDict(
             [[dataset, MeanMetric()] for dataset in self.num_classes],
         )
 
@@ -55,11 +52,10 @@ class ClassifMetric(Metric):
             )
             self.agg_loss[dataset].update(loss, weight)
 
-            acc = self.acc_metric[dataset](
+            self.agg_acc[dataset].update(
                 head_logits[dataset],
                 batch[f"target_{dataset}"],
             )
-            self.agg_acc[dataset].update(acc, weight)
 
     def compute_loss(
         self,
