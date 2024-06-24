@@ -84,8 +84,6 @@ class Encoder(nn.Module):
         dim_head: int,
         mlp_ratio: float,
         band_groups: dict,
-        dropout: float,
-        emb_dropout: float,
     ) -> None:
         super().__init__()
         if image_size % patch_size:
@@ -131,15 +129,12 @@ class Encoder(nn.Module):
         self.pos_encoding = self.pos_encoding.requires_grad_(requires_grad=False)
         self.band_encoding = self.band_encoding.requires_grad_(requires_grad=False)
 
-        self.dropout = nn.Dropout(emb_dropout)
-
         self.transformer = Transformer(
             dim=dim,
             depth=depth,
             heads=heads,
             dim_head=dim_head,
             mlp_dim=dim * mlp_ratio,
-            dropout=dropout,
         )
 
     def to_patch_embed(self, cube: Tensor) -> Tensor:
@@ -176,8 +171,8 @@ class Encoder(nn.Module):
         )  # [1 G L D]
 
         # Add position & band encoding to the input feature vector
-        patches = patches + pos_band_encoding  # [B G L D] + [1 G L D] - broadcasting
-        return self.dropout(patches)  # [B G L D]
+        # [B G L D] + [1 G L D] - broadcasting
+        return patches + pos_band_encoding
 
     def mask_out(
         self,
@@ -258,7 +253,6 @@ class Encoder(nn.Module):
         )  # [B G L D] - add position & band encoding to the embeddings
 
         patches = rearrange(patches, "B G L D -> B (G L) D")  # [B (GL) D]
-        patches = self.dropout(patches)  # [B (GL) D]
 
         # mask out patches
         (
@@ -300,7 +294,6 @@ class Decoder(nn.Module):
         dim_head: int,
         mlp_ratio: float,
         band_groups: dict,
-        dropout: float,
     ) -> None:
         super().__init__()
         self.mask_ratio = mask_ratio
@@ -323,7 +316,6 @@ class Decoder(nn.Module):
             heads=heads,
             dim_head=dim_head,
             mlp_dim=dim * mlp_ratio,
-            dropout=dropout,
         )
 
         # Split the embedding dimensions between spatial & band patches equally
@@ -516,15 +508,12 @@ class MAE(nn.Module):
         heads: int,
         dim_head: int,
         mlp_ratio: float,
-        dropout: float,
-        emb_dropout: float,
         # decoder
         decoder_dim: int,
         decoder_depth: int,
         decoder_heads: int,
         decoder_dim_head: int,
         decoder_mlp_ratio: float,
-        decoder_dropout: float,
         band_groups: dict,
         type_head: str = "attentive",
         # band groups
@@ -547,8 +536,6 @@ class MAE(nn.Module):
             dim_head=dim_head,
             mlp_ratio=mlp_ratio,
             band_groups=band_groups,
-            dropout=dropout,
-            emb_dropout=emb_dropout,
         )
 
         self.decoder = Decoder(
@@ -564,7 +551,6 @@ class MAE(nn.Module):
             dim_head=decoder_dim_head,
             mlp_ratio=decoder_mlp_ratio,
             band_groups=band_groups,
-            dropout=decoder_dropout,
         )
 
         self.num_classes = GeoPileDataset.num_classes
@@ -681,92 +667,72 @@ class MAE(nn.Module):
 
 
 def mae_tiny(**kwargs) -> MAE:  # noqa: ANN003
-    """MAE tiny."""
+    """Construct MAE tiny."""
     args = {
-        # encoder
-        "dim": 128,
-        "depth": 4,
+        "dim": 192,
+        "depth": 6,
         "heads": 4,
-        "dim_head": 64,
+        "dim_head": 48,
         "mlp_ratio": 2,
-        "dropout": 0.0,
-        "emb_dropout": 0.0,
-        # decoder
-        "decoder_dim": 64,
-        "decoder_depth": 2,
+        "decoder_dim": 96,
+        "decoder_depth": 3,
         "decoder_heads": 2,
-        "decoder_dim_head": 64,
+        "decoder_dim_head": 48,
         "decoder_mlp_ratio": 2,
-        "decoder_dropout": 0.0,
     }
     args.update(kwargs)
     return MAE(**args)
 
 
 def mae_small(**kwargs) -> MAE:  # noqa: ANN003
-    """MAE small."""
+    """Construct MAE small."""
     args = {
-        # encoder
-        "dim": 512,
-        "depth": 12,
-        "heads": 12,
+        "dim": 384,
+        "depth": 6,
+        "heads": 6,
         "dim_head": 64,
-        "mlp_ratio": 4,
-        "dropout": 0.0,
-        "emb_dropout": 0.0,
-        # decoder
-        "decoder_dim": 256,
-        "decoder_depth": 8,
-        "decoder_heads": 8,
+        "mlp_ratio": 2,
+        "decoder_dim": 192,
+        "decoder_depth": 4,
+        "decoder_heads": 4,
         "decoder_dim_head": 64,
-        "decoder_mlp_ratio": 4,
-        "decoder_dropout": 0.0,
+        "decoder_mlp_ratio": 2,
     }
     args.update(kwargs)
     return MAE(**args)
 
 
 def mae_medium(**kwargs) -> MAE:  # noqa: ANN003
-    """MAE base."""
+    """Construct MAE base/medium."""
     args = {
-        # encoder
-        "dim": 1024,
-        "depth": 24,
-        "heads": 16,
+        "dim": 768,
+        "depth": 12,
+        "heads": 12,
         "dim_head": 64,
         "mlp_ratio": 4,
-        "dropout": 0.0,
-        "emb_dropout": 0.0,
-        # decoder
         "decoder_dim": 512,
-        "decoder_depth": 8,
-        "decoder_heads": 16,
+        "decoder_depth": 6,
+        "decoder_heads": 6,
         "decoder_dim_head": 64,
         "decoder_mlp_ratio": 4,
-        "decoder_dropout": 0.0,
     }
     args.update(kwargs)
     return MAE(**args)
 
 
 def mae_large(**kwargs) -> MAE:  # noqa: ANN003
-    """MAE large."""
+    """Construct MAE large."""
     args = {
-        # encoder
-        "dim": 1280,
-        "depth": 32,
+        "dim": 1024,
+        "depth": 24,
         "heads": 16,
         "dim_head": 64,
         "mlp_ratio": 4,
-        "dropout": 0.0,
-        "emb_dropout": 0.0,
-        # decoder
         "decoder_dim": 512,
         "decoder_depth": 8,
-        "decoder_heads": 16,
+        "decoder_heads": 8,
         "decoder_dim_head": 64,
         "decoder_mlp_ratio": 4,
-        "decoder_dropout": 0.0,
     }
     args.update(kwargs)
     return MAE(**args)
