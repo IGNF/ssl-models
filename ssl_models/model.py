@@ -4,18 +4,10 @@ import math
 
 import torch
 from pytorch_lightning import LightningModule
-from torch.nn import CrossEntropyLoss
-from torchmetrics.classification import MulticlassAccuracy
+from torch import nn
 
-from ssl_models.geopile_data import GeoPileDataset
 from ssl_models.mae import mae_large, mae_medium, mae_small, mae_tiny
-from ssl_models.mixmae import (
-    mixmae_base,
-    mixmae_huge,
-    mixmae_large,
-    mixmae_small,
-    mixmae_tiny,
-)
+from ssl_models.metric import ClassifMetric
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -43,15 +35,6 @@ class SSLModule(LightningModule):
         type_head="attentive",
     ):
         super().__init__()
-        self.num_classes = GeoPileDataset.num_classes
-        self.missing_val = GeoPileDataset.missing_val
-        self.cross_entropy = CrossEntropyLoss(ignore_index=self.missing_val)
-        for dataset, num_classes in self.num_classes.items():
-            acc_metric = MulticlassAccuracy(
-                num_classes=num_classes,
-                ignore_index=self.missing_val,
-            )
-            setattr(self, f"acc_metric_{dataset}", acc_metric)
 
         model_map = {
             "tiny": mae_tiny,
@@ -75,6 +58,9 @@ class SSLModule(LightningModule):
             raise ValueError(
                 f"Invalid model size {model_size}. Expected one of {model_map.keys()}",
             )
+        self.metric = nn.ModuleDict(
+            [["classif_train", ClassifMetric()], ["classif_val", ClassifMetric()]],
+        )
         self.tb_logger = None
         self.save_hyperparameters()
 
@@ -82,7 +68,8 @@ class SSLModule(LightningModule):
         total_steps = self.trainer.estimated_stepping_batches
         lr = (
             # use sqrt scaling rule with Adam
-            self.trainer.base_lr * self.trainer.train_dataloader.batch_size**0.5
+            self.trainer.base_lr
+            * self.trainer.train_dataloader.batch_size**0.5
         )
         optimizer = torch.optim.AdamW(
             self.model.parameters(),
@@ -104,14 +91,14 @@ class SSLModule(LightningModule):
                 "scheduler": scheduler,
                 "interval": "step",
                 "monitor": "train/loss",
-                "name": f"{self.trainer.ssl_phase}/AdamW/lr",
+                "name": f"{self.trainer.ssl_phase}_AdamW/lr",
             },
         }
 
-    def pretrain_step(self, batch: dict[str, torch.Tensor], batch_idx: int, phase: str):
+    def pretrain_step(self, batch: dict[str, torch.Tensor], phase: str):
         loss, masked, pred, _ = self.model(batch, ssl_phase=self.trainer.ssl_phase)
         self.log(
-            name="rec_loss",
+            loss_name="rec_loss",
             value=loss,
             ssl_phase=self.trainer.ssl_phase,
             phase=phase,
@@ -121,58 +108,82 @@ class SSLModule(LightningModule):
     def probe_or_finetune_step(
         self,
         batch: dict[str, torch.Tensor],
-        batch_idx: int,
         phase: str,
     ):
-        _, _, _, probe_logits = self.model(batch, ssl_phase=self.trainer.ssl_phase)
-        loss = 0
+        _, _, _, head_logits = self.model(batch, ssl_phase=self.trainer.ssl_phase)
+
         masked, pred = None, None
-        for dataset in self.num_classes:
-            if torch.all(batch[f"target_{dataset}"] == self.missing_val):
-                continue
-            loss += self.cross_entropy(
-                probe_logits[dataset],
-                batch[f"target_{dataset}"],
-            )
-            acc_metric = getattr(self, f"acc_metric_{dataset}")
-            probe_acc = acc_metric(probe_logits[dataset], batch[f"target_{dataset}"])
-            self.log(
-                name=f"acc_{dataset}",
-                value=probe_acc,
-                ssl_phase=self.trainer.ssl_phase,
-                phase=phase,
-                rank_zero_only=True,
-            )
-        self.log(
+        loss = self.metric[f"classif_{phase}"].compute_loss(head_logits, batch)
+        self.metric[f"classif_{phase}"].update(head_logits, batch)
+
+        self.log_classif(
             name="cross_entropy_loss",
             value=loss,
             ssl_phase=self.trainer.ssl_phase,
             phase=phase,
+            on_step=True,
         )
         return {"loss": loss, "masked": masked, "pred": pred}
 
-    def shared_step(self, batch: dict[str, torch.Tensor], batch_idx: int, phase: str):
+    def shared_step(self, batch: dict[str, torch.Tensor], phase: str):
         if self.trainer.ssl_phase == "pretrain":
-            step = self.pretrain_step
+            return self.pretrain_step(batch, phase)
         else:
-            step = self.probe_or_finetune_step
-        return step(batch, batch_idx, phase)
+            return self.probe_or_finetune_step(batch, phase)
 
     def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
-        return self.shared_step(batch, batch_idx, phase="train")
+        return self.shared_step(batch, phase="train")
 
     def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
-        return self.shared_step(batch, batch_idx, phase="val")
+        return self.shared_step(batch, phase="val")
 
-    def test_step(self, batch: dict[str, torch.Tensor], batch_idx: int):
-        return self.shared_step(batch, batch_idx, phase="test")
+    def on_epoch_end(self, phase) -> None:
+        agg_loss, agg_acc = self.metric[f"classif_{phase}"].compute()
 
-    def log(self, name, value, ssl_phase, phase):
-        for metric_name, on_step in zip([f"step_{phase}", f"{phase}"], [True, False]):
+        self.log_classif(
+            name="cross_entropy_loss",
+            value=agg_loss,
+            ssl_phase=self.trainer.ssl_phase,
+            phase=phase,
+            on_step=False,
+        )
+        for dataset, acc in agg_acc.items():
+            self.log_classif(
+                name=f"acc_{dataset}",
+                value=acc,
+                ssl_phase=self.trainer.ssl_phase,
+                phase=phase,
+                on_step=False,
+            )
+
+    def on_train_epoch_end(self) -> None:
+        if self.trainer.ssl_phase != "pretrain":
+            self.on_epoch_end(phase="train")
+
+    def on_validation_epoch_end(self) -> None:
+        if self.trainer.ssl_phase != "pretrain":
+            self.on_epoch_end(phase="val")
+
+    def log_classif(self, name, value, ssl_phase, phase, on_step):
+        if on_step and phase != "train":
+            return
+        step_phase = f"step_{phase}" if on_step else phase
+        super().log(
+            name=f"{ssl_phase}_{name}/{step_phase}",
+            value=value,
+            on_step=on_step,
+            on_epoch=not on_step,
+            prog_bar=True,
+            logger=True,
+            sync_dist=True,
+        )
+
+    def log(self, loss_name, value, ssl_phase, phase):
+        for step_phase, on_step in zip([f"step_{phase}", f"{phase}"], [True, False]):
             if on_step and phase != "train":
-                continue  # log by step only for train
+                continue  # log by step only for train loss
             super().log(
-                name=f"{ssl_phase}/{name}/{metric_name}",
+                name=f"{ssl_phase}_{loss_name}/{step_phase}",
                 value=value,
                 on_step=on_step,
                 on_epoch=not on_step,
