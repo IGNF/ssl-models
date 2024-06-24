@@ -1,13 +1,14 @@
+"""Run conf."""  # noqa: EXE002
+
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 from hydra_zen import MISSING, store
 
-# ================== Run Conf ==================
-run_store = store(group="run")
-
 
 @dataclass
-class RunConfig:
+class RunConfig:  # noqa: D101
     exp_dir: str = MISSING
     exp_name: str = MISSING
     probe: bool = True
@@ -21,4 +22,5 @@ class RunConfig:
     clearml_offline_mode: bool = False
 
 
+run_store = store(group="run")
 run_store(RunConfig, name="default_run")

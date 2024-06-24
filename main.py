@@ -14,7 +14,7 @@ import conf.hydra_conf
 import conf.model
 import conf.opt
 import conf.run
-import conf.trainer
+import conf.trainer  # noqa: F401
 from ssl_models.run_experiment import run_experiment
 
 # %%

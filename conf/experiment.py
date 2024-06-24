@@ -1,8 +1,9 @@
+"""Experiment conf."""  # noqa: EXE002
+
 from hydra_zen import MISSING, builds, store
 
 from ssl_models.run_experiment import run_experiment
 
-# ================== Experiment Conf ==================
 Experiment = builds(
     run_experiment,
     populate_full_signature=True,

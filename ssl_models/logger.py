@@ -1,40 +1,61 @@
+"""Logger module."""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
-from torch import Tensor
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
+
+if TYPE_CHECKING:
+    from torch import Tensor
 
 
 class TensorBoardLogger(TensorBoardLogger):
+    """Custom tensorboard logger."""
+
     def __init__(
         self,
-        ssl_phase,
-        *args,
-        **kwargs,
+        ssl_phase: str,
+        save_dir: str,
+        name: str,
+        version: str,
+        *,
+        default_hp_metric: bool,
     ) -> None:
         self.ssl_phase = ssl_phase
         super().__init__(
-            *args,
-            **kwargs,
+            save_dir=save_dir,
+            name=name,
+            version=version,
+            default_hp_metric=default_hp_metric,
         )
 
+    def add_image(self, tag: str, image: Tensor, epoch: int) -> None:
+        """Add image to tensorboard logger."""
+        self._experiment.add_image(tag, image, epoch)
+
     @rank_zero_only
-    def log_metrics(self, metrics, step):
+    def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
+        """Log metrics, appending ssl phase info to epoch logging."""
         if "epoch" in metrics:
-            metrics[f"{self.ssl_phase}/epoch"] = metrics["epoch"]
+            metrics[f"{self.ssl_phase}_epoch"] = metrics["epoch"]
             metrics.pop("epoch", None)
-        return super().log_metrics(metrics, step)
+        super().log_metrics(metrics, step)
 
 
 class ImageLogger(Callback):
     """Log masked images, predicted images, and target images."""
 
     @staticmethod
-    def to_numpy(x: Tensor):
+    def to_numpy(x: Tensor) -> Tensor:
+        """Move to CPU and convert to numpy."""
         return x.detach().cpu().numpy().astype(np.float32)
 
     @staticmethod
-    def should_log(trainer: Trainer, outputs):
+    def should_log(trainer: Trainer, outputs: dict[str, Any]) -> bool:
+        """Check whether images should be logged."""
         return (
             trainer.global_rank == 0
             and outputs["pred"] is not None
@@ -44,11 +65,12 @@ class ImageLogger(Callback):
     def on_batch_end(
         self,
         trainer: Trainer,
-        outputs,
-        batch,
-        batch_idx,
+        outputs: dict[str, Tensor],
+        batch: dict[str, Tensor],
+        batch_idx: int,
         phase: str,
     ) -> None:
+        """Log images."""
         match phase:
             case "train":
                 num_batches_per_epoch = len(trainer.train_dataloader)
@@ -64,17 +86,17 @@ class ImageLogger(Callback):
 
         epoch = trainer.current_epoch
         prefix_idx = batch_idx // log_every_n_batches
-        trainer.tb_logger._experiment.add_image(
+        trainer.tb_logger.add_image(
             f"{phase}/{prefix_idx}_input",
             ImageLogger.to_numpy(outputs["masked"][0]),
             epoch,
         )
-        trainer.tb_logger._experiment.add_image(
+        trainer.tb_logger.add_image(
             f"{phase}/{prefix_idx}_pred",
             ImageLogger.to_numpy(outputs["pred"][0]),
             epoch,
         )
-        trainer.tb_logger._experiment.add_image(
+        trainer.tb_logger.add_image(
             f"{phase}/{prefix_idx}_target",
             ImageLogger.to_numpy(batch["image"][0]),
             epoch,
@@ -83,12 +105,13 @@ class ImageLogger(Callback):
     def on_train_batch_end(
         self,
         trainer: Trainer,
-        pl_module: LightningModule,
-        outputs,
-        batch,
-        batch_idx,
-        dataloader_idx=0,
+        pl_module: LightningModule,  # noqa: ARG002
+        outputs: dict[str, Tensor],
+        batch: dict[str, Tensor],
+        batch_idx: int,
+        dataloader_idx: int = 0,  # noqa: ARG002
     ) -> None:
+        """Log train images."""
         if ImageLogger.should_log(trainer, outputs):
             self.on_batch_end(
                 trainer,
@@ -101,12 +124,13 @@ class ImageLogger(Callback):
     def on_validation_batch_end(
         self,
         trainer: Trainer,
-        pl_module: LightningModule,
-        outputs,
-        batch,
-        batch_idx,
-        dataloader_idx=0,
+        pl_module: LightningModule,  # noqa: ARG002
+        outputs: dict[str, Tensor],
+        batch: dict[str, Tensor],
+        batch_idx: int,
+        dataloader_idx: int = 0,  # noqa: ARG002
     ) -> None:
+        """Log validation images."""
         if ImageLogger.should_log(trainer, outputs):
             self.on_batch_end(
                 trainer,

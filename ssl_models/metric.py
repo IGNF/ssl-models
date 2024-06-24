@@ -1,3 +1,5 @@
+"""Module for classification metrics."""
+
 from __future__ import annotations
 
 import torch
@@ -12,7 +14,7 @@ from ssl_models.geopile_data import GeoPileDataset
 class ClassifMetric(Metric):
     """Subclass of torchmetrics Metric.
 
-    Stores aggregated accuracies for different datasets.
+    Store aggregated losses and accuracies for different datasets.
     """
 
     def __init__(self) -> None:

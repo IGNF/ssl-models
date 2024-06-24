@@ -1,6 +1,9 @@
-"""LightningDataModule for SSL."""
+"""GeoPile data module."""
+
+from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, ClassVar
 
 import albumentations as A  # noqa: N812
 import numpy as np
@@ -9,15 +12,21 @@ import rasterio
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
 
+if TYPE_CHECKING:
+    from torch import Tensor
+
 
 class GeoPileData(LightningDataModule):
+    """GeoPile data module."""
+
     def __init__(
         self,
         root_dir: str,
+        batch_size: int,
+        num_workers: int,
+        *,
         use_tranform: bool = True,
-        batch_size: int = 32,
-        num_workers: int = 0,
-    ):
+    ) -> None:
         super().__init__()
         if use_tranform:
             transform = A.Compose(
@@ -48,24 +57,33 @@ class GeoPileData(LightningDataModule):
             shuffle=False,
         )
 
-    def train_dataloader(self):
+    def train_dataloader(self) -> DataLoader:
+        """Return train data loader."""
         return self.train_loader
 
-    def val_dataloader(self):
+    def val_dataloader(self) -> DataLoader:
+        """Return val data loader."""
         return self.val_loader
 
 
 class GeoPileDataset(Dataset):
-    num_classes = {
+    """GeoPile dataset."""
+
+    num_classes: ClassVar[dict[str, int]] = {
         "mlrsnet": 46,
         "patternnet": 38,
         "rsd46-whu": 46,
         "resisc45": 45,
     }
-    norm_fac = 255.0
-    missing_val = -1
+    norm_fac: ClassVar[int] = 255.0
+    missing_val: ClassVar[int] = -1
 
-    def __init__(self, csv_path, root_dir, transform):
+    def __init__(
+        self,
+        csv_path: str | Path,
+        root_dir: str | Path,
+        transform: A.Compose | None,
+    ) -> None:
         self.root_dir = Path(root_dir)
         self.transform = transform
 
@@ -76,7 +94,8 @@ class GeoPileDataset(Dataset):
             for dataset in self.num_classes
         }
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> dict[str, Tensor]:
+        """Get dataset item."""
         file_path = self.root_dir / self.file_name[idx]
         image = rasterio.open(file_path).read()
         image = image.astype(np.float32) / self.norm_fac
@@ -90,5 +109,6 @@ class GeoPileDataset(Dataset):
         }
         return {"image": image, **targets}
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """Return length of dataset."""
         return len(self.file_name)

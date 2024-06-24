@@ -15,9 +15,10 @@ select = [
     "UP",   # pyupgrade
     "W",    # pycodestyle warnings
 ]
+exclude = ["tests/*"]
+
+[lint.per-file-ignores]
+"*" = ["D102", "D107", "ANN101"]
 
 [lint.pylint]
 max-args = 15
-
-[lint.per-file-ignores]
-"main.py" = ["F401"]

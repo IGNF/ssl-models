@@ -1,3 +1,7 @@
+"""Trainer conf."""
+
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from hydra_zen import store
@@ -10,7 +14,7 @@ trainer_store = store(group="trainer")
 
 
 @dataclass
-class TrainerConfig:
+class TrainerConfig:  # noqa: D101
     accelerator: str = "auto"
     devices: str | int = "auto"
     strategy: str = "ddp_find_unused_parameters_true"

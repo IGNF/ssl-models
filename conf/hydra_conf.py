@@ -1,3 +1,5 @@
+"""Hydra conf."""  # noqa: EXE002
+
 from hydra.conf import HydraConf, JobConf, RunDir, RuntimeConf
 from hydra_zen import store
 

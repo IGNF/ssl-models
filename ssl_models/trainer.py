@@ -1,4 +1,9 @@
+"""Trainer module."""
+
+from __future__ import annotations
+
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytorch_lightning as pl
 from hydra.core.hydra_config import HydraConfig
@@ -7,22 +12,34 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     TQDMProgressBar,
 )
+
 from ssl_models.logger import ImageLogger, TensorBoardLogger
+
+if TYPE_CHECKING:
+    from pytorch_lightning import Callback
+    from pytorch_lightning.loggers.logger import Logger
+
+    from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
+    from conf.run import RunConfig
 
 
 class SSLTrainer(pl.Trainer):
+    """SSL trainer."""
+
     def __init__(
         self,
-        run,
-        ssl_phase,
-        opt,
-        *args,
-        **kwargs,
+        run: RunConfig,
+        ssl_phase: str,
+        opt: OptPretrainConfig | OptProbeConfig | OptFinetuneConfig,
+        accelerator: str,
+        devices: str | int,
+        strategy: str,
+        precision: str,
     ) -> None:
         self.ssl_phase = ssl_phase
         self.exp_dir = run.exp_dir
         self.exp_name = run.exp_name
-        self.exp_version = self.get_hydra_timestamp()
+        self.exp_version = self.hydra_timestamp()
 
         self.logged_images_per_epoch = run.logged_images_per_epoch
 
@@ -36,12 +53,15 @@ class SSLTrainer(pl.Trainer):
         super().__init__(
             logger=self.loggers,
             callbacks=self.callbacks,
-            max_epochs=opt.max_epochs,
-            *args,
-            **kwargs,
+            max_epochs=opt.epochs,
+            accelerator=accelerator,
+            devices=devices,
+            strategy=strategy,
+            precision=precision,
         )
 
-    def configure_loggers(self):
+    def configure_loggers(self) -> list[Logger]:
+        """Configure loggers."""
         self.tb_logger = TensorBoardLogger(
             ssl_phase=self.ssl_phase,
             save_dir=self.exp_dir,
@@ -51,7 +71,8 @@ class SSLTrainer(pl.Trainer):
         )
         return [self.tb_logger]
 
-    def configure_callbacks(self):
+    def configure_callbacks(self) -> list[Callback]:
+        """Configure callbacks."""
         callbacks = []
         callbacks.append(TQDMProgressBar(refresh_rate=10))
         callbacks.append(
@@ -64,6 +85,7 @@ class SSLTrainer(pl.Trainer):
         return callbacks
 
     @staticmethod
-    def get_hydra_timestamp():
+    def hydra_timestamp() -> str:
+        """Get hydra timestamp, specifying log folder version."""
         hydra_cfg = HydraConfig.get()
         return Path(hydra_cfg.runtime.output_dir).stem
