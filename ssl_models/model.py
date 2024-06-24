@@ -92,8 +92,7 @@ class SSLModule(LightningModule):
             "lr_scheduler": {
                 "scheduler": scheduler,
                 "interval": "step",
-                "monitor": "train/loss",
-                "name": f"{self.trainer.ssl_phase}_AdamW/lr",
+                "name": f"{self.trainer.ssl_phase}_AdamW_lr",
             },
         }
 

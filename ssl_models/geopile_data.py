@@ -21,6 +21,7 @@ class GeoPileData(LightningDataModule):
 
     def __init__(
         self,
+        ssl_phase: str,
         root_dir: str,
         batch_size: int,
         num_workers: int,
@@ -40,7 +41,7 @@ class GeoPileData(LightningDataModule):
             transform = None
 
         train_path = Path(root_dir) / "train.csv"
-        train_dataset = GeoPileDataset(train_path, root_dir, transform)
+        train_dataset = GeoPileDataset(train_path, root_dir, ssl_phase, transform)
         self.train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,
@@ -49,7 +50,7 @@ class GeoPileData(LightningDataModule):
         )
 
         val_path = Path(root_dir) / "val.csv"
-        val_dataset = GeoPileDataset(val_path, root_dir, transform)
+        val_dataset = GeoPileDataset(val_path, root_dir, ssl_phase, transform)
         self.val_loader = DataLoader(
             val_dataset,
             batch_size=batch_size,
@@ -82,12 +83,17 @@ class GeoPileDataset(Dataset):
         self,
         csv_path: str | Path,
         root_dir: str | Path,
+        ssl_phase: str,
         transform: A.Compose | None,
     ) -> None:
         self.root_dir = Path(root_dir)
         self.transform = transform
 
         csv_data = pd.read_csv(csv_path)
+        if ssl_phase in ("probe", "finetune"):
+            class_cols = [f"class_index_{dataset}" for dataset in self.num_classes]
+            csv_data = csv_data[(csv_data[class_cols] != self.missing_val).any(axis=1)]
+
         self.file_name = csv_data["image"].tolist()
         self.targets = {
             dataset: csv_data[f"class_index_{dataset}"].tolist()

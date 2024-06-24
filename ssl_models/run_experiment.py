@@ -16,25 +16,16 @@ def run_experiment(
     opt_pretrain: OptPretrainConfig,
     opt_probe: OptProbeConfig,
     opt_finetune: OptFinetuneConfig,
-    data: GeoPileData,
+    data: Partial[GeoPileData],
     model: SSLModule,
     trainer: Partial[SSLTrainer],
 ) -> None:
     """Run experiment, with arguments set up using hydra zen."""
+    data_pretrain = data(ssl_phase="pretrain")
     trainer_pretrain = trainer(
         run=run,
         ssl_phase="pretrain",
         opt=opt_pretrain,
-    )
-    trainer_probe = trainer(
-        run=run,
-        ssl_phase="probe",
-        opt=opt_probe,
-    )
-    trainer_finetune = trainer(
-        run=run,
-        ssl_phase="finetune",
-        opt=opt_finetune,
     )
 
     if run.use_clearml and trainer_pretrain.global_rank == 0:
@@ -44,7 +35,7 @@ def run_experiment(
             "opt_pretrain": vars(opt_pretrain),
             "opt_probe": vars(opt_probe),
             "opt_finetune": vars(opt_finetune),
-            "data": vars(data),
+            "data": vars(data_pretrain),
             "model": vars(model),
             "trainer": vars(trainer_pretrain),
         }
@@ -58,12 +49,24 @@ def run_experiment(
         task.set_parameters_as_dict(config)
 
     LOGGER.info("Pretrain")
-    trainer_pretrain.fit(model, datamodule=data)
+    trainer_pretrain.fit(model, datamodule=data_pretrain)
 
     if run.probe > 0:
         LOGGER.info("Probe")
-        trainer_probe.fit(model, datamodule=data)
+        data_probe = data(ssl_phase="probe")
+        trainer_probe = trainer(
+            run=run,
+            ssl_phase="probe",
+            opt=opt_probe,
+        )
+        trainer_probe.fit(model, datamodule=data_probe)
 
     if run.finetune > 0:
         LOGGER.info("Finetune")
-        trainer_finetune.fit(model, datamodule=data)
+        data_finetune = data(ssl_phase="finetune")
+        trainer_finetune = trainer(
+            run=run,
+            ssl_phase="finetune",
+            opt=opt_finetune,
+        )
+        trainer_finetune.fit(model, datamodule=data_finetune)
