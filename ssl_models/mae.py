@@ -1,7 +1,5 @@
 """MAE module. Adapted from clay foundation model: https://github.com/Clay-foundation/model."""
 
-from __future__ import annotations
-
 import torch
 import torch.nn.functional as F  # noqa: N812
 from einops import rearrange, reduce, repeat

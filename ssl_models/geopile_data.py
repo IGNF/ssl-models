@@ -1,19 +1,15 @@
 """GeoPile data module."""
 
-from __future__ import annotations
-
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import Final
 
 import albumentations as A  # noqa: N812
 import numpy as np
 import pandas as pd
 import rasterio
 from pytorch_lightning import LightningDataModule
+from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
-
-if TYPE_CHECKING:
-    from torch import Tensor
 
 
 class GeoPileData(LightningDataModule):
@@ -55,7 +51,7 @@ class GeoPileData(LightningDataModule):
             val_dataset,
             batch_size=batch_size,
             num_workers=num_workers,
-            shuffle=False,
+            shuffle=True,
         )
 
     def train_dataloader(self) -> DataLoader:
@@ -70,14 +66,14 @@ class GeoPileData(LightningDataModule):
 class GeoPileDataset(Dataset):
     """GeoPile dataset."""
 
-    num_classes: ClassVar[dict[str, int]] = {
+    num_classes: Final[dict[str, int]] = {
         "mlrsnet": 46,
         "patternnet": 38,
         "rsd46-whu": 46,
         "resisc45": 45,
     }
-    norm_fac: ClassVar[int] = 255.0
-    missing_val: ClassVar[int] = -1
+    norm_fac: Final[int] = 255.0
+    missing_val: Final[int] = -1
 
     def __init__(
         self,
@@ -89,10 +85,15 @@ class GeoPileDataset(Dataset):
         self.root_dir = Path(root_dir)
         self.transform = transform
 
-        csv_data = pd.read_csv(csv_path)
-        if ssl_phase in ("probe", "finetune"):
-            class_cols = [f"class_index_{dataset}" for dataset in self.num_classes]
-            csv_data = csv_data[(csv_data[class_cols] != self.missing_val).any(axis=1)]
+        match ssl_phase:
+            case "pretrain":
+                csv_data = pd.read_csv(csv_path)
+            case "probe" | "finetune":
+                class_cols = [f"class_index_{dataset}" for dataset in self.num_classes]
+                csv_data = pd.read_csv(csv_path)
+                csv_data = csv_data[
+                    (csv_data[class_cols] != self.missing_val).any(axis=1)
+                ]
 
         self.file_name = csv_data["image"].tolist()
         self.targets = {

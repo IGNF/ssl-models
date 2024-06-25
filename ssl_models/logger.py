@@ -1,16 +1,12 @@
 """Logger module."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
-
-if TYPE_CHECKING:
-    from torch import Tensor
+from torch import Tensor
 
 
 class TensorBoardLogger(TensorBoardLogger):

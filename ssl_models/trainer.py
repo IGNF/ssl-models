@@ -1,26 +1,20 @@
 """Trainer module."""
 
-from __future__ import annotations
-
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytorch_lightning as pl
 from hydra.core.hydra_config import HydraConfig
+from pytorch_lightning import Callback
 from pytorch_lightning.callbacks import (
     LearningRateMonitor,
     ModelCheckpoint,
     TQDMProgressBar,
 )
+from pytorch_lightning.loggers.logger import Logger
 
+from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
+from conf.run import RunConfig
 from ssl_models.logger import ImageLogger, TensorBoardLogger
-
-if TYPE_CHECKING:
-    from pytorch_lightning import Callback
-    from pytorch_lightning.loggers.logger import Logger
-
-    from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
-    from conf.run import RunConfig
 
 
 class SSLTrainer(pl.Trainer):

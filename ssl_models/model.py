@@ -1,17 +1,18 @@
 """Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
 
-from __future__ import annotations
-
+import itertools
 from typing import Any
 
 import math
 
 import torch
+import torch.nn.functional as F  # noqa: N812
 from pytorch_lightning import LightningModule
 from torch import Tensor, nn
+from torchmetrics import MeanMetric
 
+from ssl_models.geopile_data import GeoPileDataset
 from ssl_models.mae import mae_large, mae_medium, mae_small, mae_tiny
-from ssl_models.metric import ClassifMetric
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -60,11 +61,21 @@ class SSLModule(LightningModule):
             self.model = model_map[model_size](**model_args)
         else:
             raise ValueError
-        self.metric = nn.ModuleDict(
-            [["classif_train", ClassifMetric()], ["classif_val", ClassifMetric()]],
+        self.num_classes = GeoPileDataset.num_classes
+        self.missing_val = GeoPileDataset.missing_val
+        self.acc_metric = nn.ModuleDict(
+            [
+                [
+                    f"{dataset}_{phase}",
+                    MeanMetric(dist_sync_on_step=False, sync_on_compute=False),
+                ]
+                for dataset, phase in itertools.product(
+                    self.num_classes.keys(),
+                    ["train", "val"],
+                )
+            ],
         )
         self.tb_logger = None
-        self.save_hyperparameters()
 
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer."""
@@ -120,8 +131,24 @@ class SSLModule(LightningModule):
         _, _, _, head_logits = self.model(batch, ssl_phase=self.trainer.ssl_phase)
 
         masked, pred = None, None
-        loss = self.metric[f"classif_{phase}"].compute_loss(head_logits, batch)
-        self.metric[f"classif_{phase}"].update(head_logits, batch)
+        loss = 0
+        for dataset in self.num_classes:
+            if torch.all(batch[f"target_{dataset}"] == self.missing_val):
+                continue
+            inds = (batch[f"target_{dataset}"] != self.missing_val).nonzero().squeeze()
+            logits = torch.index_select(head_logits[dataset], dim=0, index=inds)
+            target = torch.index_select(
+                batch[f"target_{dataset}"],
+                dim=0,
+                index=inds,
+            )
+            loss += F.cross_entropy(logits, target)
+
+            acc = logits.argmax(dim=1) == target
+            self.acc_metric[f"{dataset}_{phase}"].update(
+                acc.mean(dtype=torch.float),
+                weight=acc.numel(),
+            )
 
         self.log_classif(
             name="cross_entropy_loss",
@@ -158,23 +185,15 @@ class SSLModule(LightningModule):
 
     def on_epoch_end(self, phase: str) -> None:
         """Log epoch metrics for training/validation."""
-        agg_loss, agg_acc = self.metric[f"classif_{phase}"].compute()
-
-        self.log_classif(
-            name="cross_entropy_loss",
-            value=agg_loss,
-            ssl_phase=self.trainer.ssl_phase,
-            phase=phase,
-            on_step=False,
-        )
-        for dataset, acc in agg_acc.items():
+        for dataset in self.num_classes:
             self.log_classif(
                 name=f"acc_{dataset}",
-                value=acc,
+                value=self.acc_metric[f"{dataset}_{phase}"].compute(),
                 ssl_phase=self.trainer.ssl_phase,
                 phase=phase,
                 on_step=False,
             )
+            self.acc_metric[f"{dataset}_{phase}"].reset()
 
     def on_train_epoch_end(self) -> None:
         if self.trainer.ssl_phase != "pretrain":

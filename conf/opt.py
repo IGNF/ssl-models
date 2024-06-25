@@ -37,7 +37,7 @@ class OptFinetuneConfig:  # noqa: D101
     b1: float = 0.9
     b2: float = 0.99
     wd: float = 0.01
-    epochs: int = 10
+    epochs: int = 20
 
 
 finetune_store = store(group="opt_finetune")

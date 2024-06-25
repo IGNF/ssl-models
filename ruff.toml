@@ -18,7 +18,7 @@ select = [
 exclude = ["tests/*"]
 
 [lint.per-file-ignores]
-"*" = ["D102", "D107", "ANN101"]
+"*" = ["D102", "D107", "FA102", "ANN101"]
 
 [lint.pylint]
 max-args = 15

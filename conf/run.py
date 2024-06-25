@@ -1,7 +1,5 @@
 """Run conf."""  # noqa: EXE002
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 
 from hydra_zen import MISSING, store
