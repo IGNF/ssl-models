@@ -608,19 +608,6 @@ class MixMIM(nn.Module):
             torch.from_numpy(decoder_pos_embed).float().unsqueeze(0)
         )
 
-        # initialize nn.Linear and nn.LayerNorm
-        self.apply(self._init_weights)
-
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            # we use xavier_uniform following official JAX ViT:
-            torch.nn.init.xavier_uniform_(m.weight)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
-
     def random_masking(self, x, mask_batch=True):
         B, _, H, W = x["image"].shape
         nb_masks_batch = 1
@@ -706,8 +693,6 @@ class MixMIM(nn.Module):
 
         h = w = imgs.shape[2] // p
         x = imgs.reshape(shape=(imgs.shape[0], 3, h, p, w, p))
-        # x = torch.einsum("nchpwq->nhwpqc", x)
-
         x = rearrange(
             x, "n c h p w q -> n h w p q c", n=imgs.shape[0], c=3, h=h, w=w, p=p, q=p
         )
