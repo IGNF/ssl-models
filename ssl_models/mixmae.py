@@ -706,23 +706,14 @@ class MixMIM(nn.Module):
 
         h = w = imgs.shape[2] // p
         x = imgs.reshape(shape=(imgs.shape[0], 3, h, p, w, p))
-        x = torch.einsum("nchpwq->nhwpqc", x)
+        # x = torch.einsum("nchpwq->nhwpqc", x)
+
+        x = rearrange(
+            x, "n c h p w q -> n h w p q c", n=imgs.shape[0], c=3, h=h, w=w, p=p, q=p
+        )
+
         x = x.reshape(shape=(imgs.shape[0], h * w, p**2 * 3))
         return x
-
-    def unpatchify(self, x):
-        """
-        x: (N, L, patch_size**2 *3)
-        imgs: (N, 3, H, W)
-        """
-        p = self.encoder_stride
-        h = w = int(x.shape[1] ** 0.5)
-        assert h * w == x.shape[1]
-
-        x = x.reshape(shape=(x.shape[0], h, w, p, p, 3))
-        x = torch.einsum("nhwpqc->nchpwq", x)
-        imgs = x.reshape(shape=(x.shape[0], 3, h * p, h * p))
-        return imgs
 
     def mixing_images(self, x, mask_mix_images):
         """
