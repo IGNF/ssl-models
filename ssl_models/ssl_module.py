@@ -68,6 +68,7 @@ class SSLModule(LightningModule):
         else:
             raise ValueError(f"Invalid model name {model}. Not implemented")
 
+        num_downsampling = downsampling_from_patch_size(unpool, patch_size)
         if model_size in model_map:
             model_args = {
                 "mask_ratio": mask_ratio,
@@ -75,6 +76,8 @@ class SSLModule(LightningModule):
                 "patch_size": patch_size,
                 "mask_batch": mask_batch,
                 "swin_version": swin_version,
+                "num_downsampling": num_downsampling,
+                "unpool": unpool,
             }
             if band_groups:
                 model_args["band_groups"] = band_groups
