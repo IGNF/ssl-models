@@ -8,8 +8,6 @@ Code from https://github.com/Sense-X/MixMIM/tree/master
 # --------------------------------------------------------
 """
 
-import math
-
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -496,7 +494,6 @@ class MixMAE(nn.Module):
         self.window_size = window_size
         self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
         self.swin_version = swin_version
-        print(self.swin_version)
 
         # reconstruction args
         self.norm_pix_loss = norm_pix_loss
@@ -818,7 +815,7 @@ class MixMAE(nn.Module):
 
         _, _, x_rec_hw3 = x_rec.shape
         x_rec_hw = x_rec_hw3 / C
-        x_rec_h = x_rec_w = int(math.sqrt(x_rec_hw))
+        x_rec_h = x_rec_w = int(x_rec_hw**0.5)
 
         x1_rec = x_rec
 
