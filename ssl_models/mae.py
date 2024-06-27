@@ -76,22 +76,22 @@ class Patchify(nn.Module):
             self.norm = nn.GroupNorm(1, embed_dim)
 
     def forward(self, xb: Tensor) -> tuple[Tensor, list[Tensor]]:
-        _, _, h, w = xb.shape
+        _, _, H, W = xb.shape  # noqa: N806
         skip = xb
         skip = self.conv_skip(skip)
         skip = self.norm_skip(skip)
         skip = rearrange(
             skip,
-            "b c h w -> (b h w) c 1 1",
+            "B C H W -> (B H W) C 1 1",
         )
 
         inds = []
         if self.unpool:
             xb = rearrange(
                 xb,
-                "b c (h p1) (w p2) -> (b h w) c p1 p2",
-                p1=self.patch_size,
-                p2=self.patch_size,
+                "B C (H P1) (W P2) -> (B H W) C P1 P2",
+                P1=self.patch_size,
+                P2=self.patch_size,
             )
             for idx in range(self.num_downsampling):
                 xb = self.convs[f"conv_{idx}"](xb)
@@ -106,9 +106,9 @@ class Patchify(nn.Module):
             xb = skip
         xb = rearrange(
             xb,
-            "(b h w) d 1 1 -> b (h w) d",
-            h=h // self.patch_size,
-            w=w // self.patch_size,
+            "(B H W) C 1 1 -> B (H W) C",
+            H=H // self.patch_size,
+            W=W // self.patch_size,
         )
         return xb, inds
 
@@ -173,18 +173,18 @@ class Pixelify(nn.Module):
             self.fc = nn.Conv2d(4, out_chans, kernel_size=1)
 
     def forward(self, xb: Tensor, inds: list[Tensor]) -> Tensor:
-        b, _, _ = xb.shape
+        B, _, _ = xb.shape  # noqa: N806
         xb = rearrange(
             xb,
-            "b l c -> (b l) c 1 1",
+            "B L C -> (B L) C 1 1",
         )
         skip = xb
         skip = self.conv_skip(skip)
         skip = rearrange(
             skip,
-            "b (p1 p2 c) 1 1 -> b c p1 p2",
-            p1=self.patch_size,
-            p2=self.patch_size,
+            "B (P1 P2 C) 1 1 -> B C P1 P2",
+            P1=self.patch_size,
+            P2=self.patch_size,
         )
         if self.unpool:
             xb = self.conv(xb)
@@ -198,7 +198,7 @@ class Pixelify(nn.Module):
         else:
             xb = skip
 
-        return rearrange(xb, "(b l) c p1 p2 -> b l (p1 p2 c)", b=b)
+        return rearrange(xb, "(B L) C P1 P2 -> B L (P1 P2 C)", B=B)
 
 
 class Encoder(nn.Module):
