@@ -8,19 +8,33 @@ from vit_pytorch.vit import Transformer
 
 from ssl_models.geopile_data import GeoPileDataset
 from ssl_models.head import AttentiveHead, LinearHead
-from ssl_models.utils import posemb_sincos_1d, posemb_sincos_2d
+from ssl_models.utils import (
+    downsampling_from_patch_size,
+    posemb_sincos_1d,
+    posemb_sincos_2d,
+)
 
 
 class Patchify(nn.Module):
     """Patchify the input cube & create embeddings per patch."""
 
-    def __init__(self, in_chans: int, embed_dim: int, patch_size: int) -> None:
+    def __init__(
+        self,
+        in_chans: int,
+        embed_dim: int,
+        patch_size: int,
+        unpool: bool,
+    ) -> None:
         super().__init__()
-        self.proj = nn.Conv2d(
+        self.patch_size = patch_size
+        self.unpool = unpool
+        self.num_downsampling = downsampling_from_patch_size(unpool, patch_size)
+
+        self.conv_skip = nn.Conv2d(
             in_chans,
             embed_dim,
-            kernel_size=patch_size,
-            stride=patch_size,
+            kernel_size=self.patch_size,
+            stride=self.patch_size,
         )
         self.norm_skip = nn.GroupNorm(1, embed_dim)
         if self.unpool:
@@ -45,13 +59,13 @@ class Patchify(nn.Module):
                         ),
                     ]
                     for idx, (channels_in, channels_out) in enumerate(channels)
-                ]
+                ],
             )
             self.norms = nn.ModuleDict(
                 [
                     [f"norm_{idx}", nn.GroupNorm(1, channels_out)]
                     for idx, (_, channels_out) in enumerate(channels)
-                ]
+                ],
             )
             self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)
             self.conv = nn.Conv2d(
@@ -61,11 +75,130 @@ class Patchify(nn.Module):
             )
             self.norm = nn.GroupNorm(1, embed_dim)
 
-    def forward(self, xb: Tensor) -> Tensor:
-        B, C, H, W = xb.shape  # noqa: N806
-        xb = self.proj(xb)
-        xb = rearrange(xb, "B D P1 P2 -> B (P1 P2) D")
-        return self.norm(xb)
+    def forward(self, xb: Tensor) -> tuple[Tensor, list[Tensor]]:
+        _, _, h, w = xb.shape
+        skip = xb
+        skip = self.conv_skip(skip)
+        skip = self.norm_skip(skip)
+        skip = rearrange(
+            skip,
+            "b c h w -> (b h w) c 1 1",
+        )
+
+        inds = []
+        if self.unpool:
+            xb = rearrange(
+                xb,
+                "b c (h p1) (w p2) -> (b h w) c p1 p2",
+                p1=self.patch_size,
+                p2=self.patch_size,
+            )
+            for idx in range(self.num_downsampling):
+                xb = self.convs[f"conv_{idx}"](xb)
+                xb = self.norms[f"norm_{idx}"](xb)
+                xb, ind = self.max_pool(xb)
+                inds.append(ind)
+
+            xb = self.conv(xb)
+            xb = self.norm(xb)
+            xb = xb + skip
+        else:
+            xb = skip
+        xb = rearrange(
+            xb,
+            "(b h w) d 1 1 -> b (h w) d",
+            h=h // self.patch_size,
+            w=w // self.patch_size,
+        )
+        return xb, inds
+
+
+class Pixelify(nn.Module):
+    """Pixelify patches."""
+
+    def __init__(
+        self,
+        embed_dim: int,
+        out_chans: int,
+        patch_size: int,
+        unpool: bool,
+    ) -> None:
+        super().__init__()
+        self.patch_size = patch_size
+        self.unpool = unpool
+        self.num_downsampling = downsampling_from_patch_size(unpool, patch_size)
+
+        self.conv_skip = nn.Conv2d(
+            embed_dim,
+            out_chans * self.patch_size**2,
+            kernel_size=1,
+        )
+        if self.unpool:
+            channels = []
+            for idx in range(self.num_downsampling):
+                pow_in = self.num_downsampling - idx
+                pow_out = self.num_downsampling - (idx + 1)
+                channels_in = 4 * 2**pow_in
+                channels_out = 4 * 2**pow_out
+                channels.append((channels_in, channels_out))
+
+            self.conv = nn.Conv2d(
+                embed_dim,
+                4 * 2**self.num_downsampling,
+                kernel_size=1,
+            )
+            self.norm = nn.GroupNorm(1, 4 * 2**self.num_downsampling)
+            self.max_unpool = nn.MaxUnpool2d(kernel_size=2, stride=2)
+            self.convs = nn.ModuleDict(
+                [
+                    [
+                        f"conv_{idx}",
+                        nn.Conv2d(
+                            channels_in,
+                            channels_out,
+                            kernel_size=2,
+                            padding_mode="reflect",
+                            padding="same",
+                        ),
+                    ]
+                    for idx, (channels_in, channels_out) in enumerate(channels)
+                ],
+            )
+            self.norms = nn.ModuleDict(
+                [
+                    [f"norm_{idx}", nn.GroupNorm(1, channels_out)]
+                    for idx, (_, channels_out) in enumerate(channels)
+                ],
+            )
+            self.fc = nn.Conv2d(4, out_chans, kernel_size=1)
+
+    def forward(self, xb: Tensor, inds: list[Tensor]) -> Tensor:
+        b, _, _ = xb.shape
+        xb = rearrange(
+            xb,
+            "b l c -> (b l) c 1 1",
+        )
+        skip = xb
+        skip = self.conv_skip(skip)
+        skip = rearrange(
+            skip,
+            "b (p1 p2 c) 1 1 -> b c p1 p2",
+            p1=self.patch_size,
+            p2=self.patch_size,
+        )
+        if self.unpool:
+            xb = self.conv(xb)
+            xb = self.norm(xb)
+            for idx, ind in enumerate(inds[::-1]):
+                xb = self.max_unpool(xb, ind)
+                xb = self.convs[f"conv_{idx}"](xb)
+                xb = self.norms[f"norm_{idx}"](xb)
+            xb = self.fc(xb)
+            xb = xb + skip
+        else:
+            xb = skip
+
+        return rearrange(xb, "(b l) c p1 p2 -> b l (p1 p2 c)", b=b)
 
 
 class Encoder(nn.Module):
@@ -76,6 +209,7 @@ class Encoder(nn.Module):
         mask_ratio: float,
         image_size: int,
         patch_size: int,
+        unpool: bool,
         dim: int,
         depth: int,
         heads: int,
@@ -85,7 +219,11 @@ class Encoder(nn.Module):
     ) -> None:
         super().__init__()
         if image_size % patch_size:
-            raise ValueError
+            msg = (
+                f"Invalid patch_size {patch_size}."
+                f" Expected divisor of image_size {image_size}"
+            )
+            raise ValueError(msg)
         self.mask_ratio = mask_ratio
         self.image_size = image_size
         self.patch_size = patch_size
@@ -99,7 +237,7 @@ class Encoder(nn.Module):
         pos_dim = band_dim = dim // 2
         self.patch_embedding = nn.ModuleDict(
             {
-                name: Patchify(len(bands), dim, patch_size, num_downsampling, unpool)
+                name: Patchify(len(bands), dim, patch_size, unpool)
                 for name, bands in self.band_groups.items()
             },
         )
@@ -135,7 +273,7 @@ class Encoder(nn.Module):
             mlp_dim=dim * mlp_ratio,
         )
 
-    def to_patch_embed(self, cube: Tensor) -> Tensor:
+    def to_patch_embed(self, cube: Tensor) -> tuple[Tensor, dict]:
         """Patchify the input cube & create embeddings per patch."""
         patches = []
         embed_inds = {}
@@ -143,8 +281,8 @@ class Encoder(nn.Module):
             cube_slice = cube[:, bands, :, :]  # [B C H W] -> [B C[slice[...]] H W]
             embed_slice, embed_inds[name] = self.patch_embedding[name](cube_slice)
             patches.append(embed_slice)
-
-        return rearrange(patches, "G B L D -> B G L D")  # [B G L D]
+        patches = rearrange(patches, "G B L D -> B G L D")  # [B G L D]
+        return patches, embed_inds
 
     def add_encodings(self, patches: Tensor) -> Tensor:
         """Add position & band encoding to the patches."""
@@ -183,7 +321,8 @@ class Encoder(nn.Module):
         """
         B, GL, D = patches.shape  # noqa: N806
         if self.num_patches != GL:
-            raise ValueError
+            msg = f"Invalid number of patches {GL}. Expected {self.num_patches}."
+            raise ValueError(msg)
 
         # Shuffle the patches
         noise = torch.randn((B, GL), device=patches.device)  # [B GL]
@@ -242,7 +381,7 @@ class Encoder(nn.Module):
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         B, C, H, W = cube["image"].shape  # noqa: N806
 
-        patches = self.to_patch_embed(
+        patches, embed_inds = self.to_patch_embed(
             cube["image"],
         )  # [B G L D] - patchify & create embeddings per patch
 
@@ -285,6 +424,7 @@ class Decoder(nn.Module):
         mask_ratio: float,
         image_size: int,
         patch_size: int,
+        unpool: bool,
         encoder_dim: int,
         dim: int,
         depth: int,
@@ -344,7 +484,7 @@ class Decoder(nn.Module):
 
         self.embed_to_pixels = nn.ModuleDict(
             {
-                name: Pixelify(dim, len(bands), patch_size, num_downsampling, unpool)
+                name: Pixelify(dim, len(bands), patch_size, unpool)
                 for name, bands in self.band_groups.items()
             },
         )
@@ -445,7 +585,7 @@ class Decoder(nn.Module):
 
         return decoder_patches  # [B GL D]
 
-    def pixelify(self, patches: Tensor) -> Tensor:
+    def pixelify(self, patches: Tensor, embed_inds: dict) -> Tensor:
         """Convert the patches into pixel space to compute the loss."""
         patches = rearrange(
             patches,
@@ -456,7 +596,8 @@ class Decoder(nn.Module):
         for i, (name, _) in enumerate(self.band_groups.items()):
             group_embeddings = patches[:, i, :, :]  # [B L D]
             group_pixels = self.embed_to_pixels[name](
-                group_embeddings, embed_inds[name]
+                group_embeddings,
+                embed_inds[name],
             )  # [B L (P P C)]
             group_pixels = rearrange(
                 group_pixels,
@@ -470,6 +611,7 @@ class Decoder(nn.Module):
     def forward(
         self,
         encoded_unmasked_patches: Tensor,
+        embed_inds: dict,
         unmasked_indices: Tensor,
         masked_indices: Tensor,
         ssl_phase: str,
@@ -489,7 +631,7 @@ class Decoder(nn.Module):
         decoded_patches = self.transformer(decoder_patches)  # [B GL D]
 
         # Pixelify the decoded patches
-        return self.pixelify(decoded_patches)  # [B C L PP]
+        return self.pixelify(decoded_patches, embed_inds)  # [B C L PP]
 
 
 class MAE(nn.Module):
@@ -500,6 +642,7 @@ class MAE(nn.Module):
         mask_ratio: float,
         image_size: int,
         patch_size: int,
+        unpool: bool,
         # encoder
         dim: int,
         depth: int,
@@ -512,21 +655,22 @@ class MAE(nn.Module):
         decoder_heads: int,
         decoder_dim_head: int,
         decoder_mlp_ratio: float,
-        band_groups: dict,
+        band_groups: dict | None = None,
         type_head: str = "attentive",
-        # band groups
+        **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__()
         self.mask_ratio = mask_ratio
         self.image_size = image_size
         self.patch_size = patch_size
+        if not band_groups:
+            band_groups = {"rgb": [0, 1, 2]}
         self.band_groups = band_groups
 
         self.encoder = Encoder(
             mask_ratio=mask_ratio,
             image_size=image_size,
             patch_size=patch_size,
-            num_downsampling=num_downsampling,
             unpool=unpool,
             dim=dim,
             depth=depth,
@@ -540,7 +684,6 @@ class MAE(nn.Module):
             mask_ratio=mask_ratio,
             image_size=image_size,
             patch_size=patch_size,
-            num_downsampling=num_downsampling,
             unpool=unpool,
             encoder_dim=dim,
             dim=decoder_dim,
@@ -646,6 +789,7 @@ class MAE(nn.Module):
         # decoder
         pixels = self.decoder(
             encoded_unmasked_patches,
+            embed_inds,
             unmasked_indices,
             masked_indices,
             ssl_phase,

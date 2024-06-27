@@ -10,7 +10,7 @@ Code from https://github.com/Sense-X/MixMIM/tree/master
 
 import numpy as np
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: N812
 from einops import rearrange
 from timm.models.layers import to_2tuple, trunc_normal_
 from timm.models.swin_transformer import PatchMerging, window_partition, window_reverse

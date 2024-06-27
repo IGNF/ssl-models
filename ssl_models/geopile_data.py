@@ -18,9 +18,8 @@ class GeoPileData(LightningDataModule):
         self,
         ssl_phase: str,
         root_dir: str,
-        batch_size: int,
-        num_workers: int,
-        *,
+        batch_size: int = 32,
+        num_workers: int = 1,
         use_tranform: bool = True,
     ) -> None:
         super().__init__()
@@ -97,7 +96,7 @@ class GeoPileDataset(Dataset):
         self.file_name = csv_data["image"].tolist()
         self.targets = {
             dataset: csv_data[f"class_index_{dataset}"].tolist()
-            for dataset in self.num_classes
+            for dataset in self.NUM_CLASSES
         }
 
     def __getitem__(self, idx: int) -> dict[str, Tensor]:

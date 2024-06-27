@@ -1,9 +1,6 @@
 """Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
 
 import itertools
-from typing import Any
-
-import math
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -13,18 +10,15 @@ from torchmetrics import MeanMetric
 
 from ssl_models.geopile_data import GeoPileDataset
 from ssl_models.mae import mae_large, mae_medium, mae_small, mae_tiny
+from ssl_models.mixmae import (
+    mixmae_base,
+    mixmae_huge,
+    mixmae_large,
+    mixmae_small,
+    mixmae_tiny,
+)
 
 torch.set_float32_matmul_precision(precision="medium")
-
-
-def downsampling_from_patch_size(unpool, patch_size):
-    if unpool:
-        num_downsampling = round(math.log2(patch_size))
-        if 2**num_downsampling != patch_size:
-            raise ValueError("Patch size must be a power of 2")
-    else:
-        num_downsampling = None
-    return num_downsampling
 
 
 class SSLModule(LightningModule):
@@ -32,27 +26,50 @@ class SSLModule(LightningModule):
 
     def __init__(
         self,
+        model: str,
         model_size: str,
-        mask_ratio: float,
-        image_size: int,
-        patch_size: int,
-        band_groups: dict[str, list],
-        type_head: str,
+        mask_ratio: float = 0.75,
+        image_size: int = 256,
+        patch_size: int = 16,
+        unpool: bool = False,
+        band_groups: dict[str, list] | None = None,
+        type_head: str = "attentive",
+        swin_version: int | None = None,
+        mask_batch: bool | None = None,
     ) -> None:
         super().__init__()
 
-        model_map = {
-            "tiny": mae_tiny,
-            "small": mae_small,
-            "medium": mae_medium,
-            "large": mae_large,
-        }
+        if model == "mae":
+            model_map = {
+                "tiny": mae_tiny,
+                "small": mae_small,
+                "medium": mae_medium,
+                "large": mae_large,
+            }
+        elif model == "mixmae":
+            model_map = {
+                "tiny": mixmae_tiny,
+                "small": mixmae_small,
+                "base": mixmae_base,
+                "large": mixmae_large,
+                "huge": mixmae_huge,
+            }
+            if swin_version not in (1, 2):
+                msg = f"Invalid swin version {swin_version}. Expected one of '1' or '2'"
+                raise ValueError(msg)
+        else:
+            msg = f"Invalid model name {model}. Not implemented"
+            raise ValueError(msg)
+
         if model_size in model_map:
             model_args = {
                 "mask_ratio": mask_ratio,
                 "image_size": image_size,
                 "patch_size": patch_size,
                 "type_head": type_head,
+                "mask_batch": mask_batch,
+                "swin_version": swin_version,
+                "unpool": unpool,
             }
             if band_groups:
                 model_args["band_groups"] = band_groups
@@ -60,7 +77,9 @@ class SSLModule(LightningModule):
                 model_args["mask_batch"] = mask_batch
             self.model = model_map[model_size](**model_args)
         else:
-            raise ValueError
+            msg = f"Invalid model size {model_size}. Expected one of {model_map.keys()}"
+            raise ValueError(msg)
+
         self.num_classes = GeoPileDataset.NUM_CLASSES
         self.missing_val = GeoPileDataset.MISSING_VAL
         self.acc_metric = nn.ModuleDict(
@@ -77,7 +96,7 @@ class SSLModule(LightningModule):
         )
         self.tb_logger = None
 
-    def configure_optimizers(self) -> dict[str, Any]:
+    def configure_optimizers(self) -> dict:
         """Configure optimizer."""
         total_steps = self.trainer.estimated_stepping_batches
         lr = (
@@ -111,7 +130,7 @@ class SSLModule(LightningModule):
         self,
         batch: dict[str, torch.Tensor],
         phase: str,
-    ) -> dict[str, Any]:
+    ) -> dict:
         """Pretraining step."""
         loss, masked, pred, _ = self.model(batch, ssl_phase=self.trainer.ssl_phase)
         self.log(
@@ -126,7 +145,7 @@ class SSLModule(LightningModule):
         self,
         batch: dict[str, torch.Tensor],
         phase: str,
-    ) -> dict[str, Any]:
+    ) -> dict:
         """Probing/finetuning step."""
         _, _, _, head_logits = self.model(batch, ssl_phase=self.trainer.ssl_phase)
 
@@ -158,7 +177,7 @@ class SSLModule(LightningModule):
         )
         return {"loss": loss, "masked": masked, "pred": pred}
 
-    def shared_step(self, batch: dict[str, torch.Tensor], phase: str) -> dict[str, Any]:
+    def shared_step(self, batch: dict[str, torch.Tensor], phase: str) -> dict:
         """Shared step for training/validation."""
         match self.trainer.ssl_phase:
             case "pretrain":
@@ -166,20 +185,24 @@ class SSLModule(LightningModule):
             case "probe" | "finetune":
                 return self.probe_or_finetune_step(batch, phase)
             case _:
-                raise ValueError
+                msg = (
+                    f"Invalid ssl phase {self.trainer.ssl_phase}."
+                    " Expected one of 'pretrain' or 'probe' or 'finetune'"
+                )
+                raise ValueError(msg)
 
     def training_step(
         self,
         batch: dict[str, torch.Tensor],
         batch_idx: int,  # noqa: ARG002
-    ) -> dict[str, Any]:
+    ) -> dict:
         return self.shared_step(batch, phase="train")
 
     def validation_step(
         self,
         batch: dict[str, torch.Tensor],
         batch_idx: int,  # noqa: ARG002
-    ) -> dict[str, Any]:
+    ) -> dict:
         return self.shared_step(batch, phase="val")
 
     def on_epoch_end(self, phase: str) -> None:

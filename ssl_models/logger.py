@@ -1,7 +1,5 @@
 """Logger module."""
 
-from typing import Any
-
 import numpy as np
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -18,7 +16,6 @@ class TensorBoardLogger(TensorBoardLogger):
         save_dir: str,
         name: str,
         version: str,
-        *,
         default_hp_metric: bool,
     ) -> None:
         self.ssl_phase = ssl_phase
@@ -51,7 +48,7 @@ class ImageLogger(Callback):
         return x.detach().cpu().numpy().astype(np.float32)
 
     @staticmethod
-    def should_log(trainer: Trainer, outputs: dict[str, Any]) -> bool:
+    def should_log(trainer: Trainer, outputs: dict) -> bool:
         """Check whether images should be logged."""
         return (
             trainer.global_rank == 0

@@ -27,7 +27,6 @@ class SSLOdeonData(Input):
         root_dir: str,
         batch_size: int,
         num_workers: int,
-        *,
         use_tranform: bool,
     ) -> None:
         if use_tranform:
