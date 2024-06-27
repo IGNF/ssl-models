@@ -1,3 +1,5 @@
+line-length = 88
+
 [format]
 # https://docs.astral.sh/ruff/settings/#format
 line-ending = "lf"  # Use UNIX `\n` line endings for all files
@@ -13,6 +15,10 @@ select = [
     "UP",   # pyupgrade
     "W",    # pycodestyle warnings
 ]
+exclude = ["tests/*"]
+
+[lint.per-file-ignores]
+"*" = ["D102", "D107", "FA102", "ANN101", "FBT001", "FBT002"]
 
 [lint.pylint]
 max-args = 15

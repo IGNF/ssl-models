@@ -1,10 +1,8 @@
-"""
-LightningDataModule for SSL.
-"""
+"""LightningDataModule for SSL, based on Odeon."""
 
 from pathlib import Path
 
-import albumentations as A
+import albumentations as A  # noqa: N812
 from odeon.data import Input
 
 DEFAULT_PARAMS = {
@@ -21,15 +19,16 @@ DEFAULT_PARAMS = {
 }
 
 
-class SSLDataModule(Input):
+class SSLOdeonData(Input):
+    """GeoPile data module with Odeon."""
+
     def __init__(
         self,
         root_dir: str,
-        shuffle_val: bool = True,
-        use_tranform: bool = True,
-        batch_size: int = 32,
-        num_workers: int = 0,
-    ):
+        batch_size: int,
+        num_workers: int,
+        use_tranform: bool,
+    ) -> None:
         if use_tranform:
             transform = [
                 A.RandomRotate90(p=0.5),
@@ -62,8 +61,7 @@ class SSLDataModule(Input):
             "dataloader_options": {
                 "batch_size": batch_size,
                 "num_workers": num_workers,
-                "shuffle": shuffle_val,
-                "drop_last": True,
+                "shuffle": False,
             },
             "input_file": val_dataset,
         }
