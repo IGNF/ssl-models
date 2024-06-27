@@ -551,7 +551,7 @@ class MAE(nn.Module):
             band_groups=band_groups,
         )
 
-        self.num_classes = GeoPileDataset.num_classes
+        self.num_classes = GeoPileDataset.NUM_CLASSES
         self.head = nn.ModuleDict(
             [
                 [

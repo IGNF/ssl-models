@@ -1,7 +1,6 @@
 """GeoPile data module."""
 
 from pathlib import Path
-from typing import Final
 
 import albumentations as A  # noqa: N812
 import numpy as np
@@ -66,14 +65,14 @@ class GeoPileData(LightningDataModule):
 class GeoPileDataset(Dataset):
     """GeoPile dataset."""
 
-    num_classes: Final[dict[str, int]] = {
+    NUM_CLASSES: dict[str, int] = {  # noqa: RUF012
         "mlrsnet": 46,
         "patternnet": 38,
         "rsd46-whu": 46,
         "resisc45": 45,
     }
-    norm_fac: Final[int] = 255.0
-    missing_val: Final[int] = -1
+    NORM_FAC: int = 255.0
+    MISSING_VAL: int = -1
 
     def __init__(
         self,
@@ -89,10 +88,10 @@ class GeoPileDataset(Dataset):
             case "pretrain":
                 csv_data = pd.read_csv(csv_path)
             case "probe" | "finetune":
-                class_cols = [f"class_index_{dataset}" for dataset in self.num_classes]
+                class_cols = [f"class_index_{dataset}" for dataset in self.NUM_CLASSES]
                 csv_data = pd.read_csv(csv_path)
                 csv_data = csv_data[
-                    (csv_data[class_cols] != self.missing_val).any(axis=1)
+                    (csv_data[class_cols] != self.MISSING_VAL).any(axis=1)
                 ]
 
         self.file_name = csv_data["image"].tolist()
@@ -105,7 +104,7 @@ class GeoPileDataset(Dataset):
         """Get dataset item."""
         file_path = self.root_dir / self.file_name[idx]
         image = rasterio.open(file_path).read()
-        image = image.astype(np.float32) / self.norm_fac
+        image = image.astype(np.float32) / self.NORM_FAC
         if self.transform is not None:
             image = image.transpose([1, 2, 0])
             image = self.transform(image=image)["image"]

@@ -61,8 +61,8 @@ class SSLModule(LightningModule):
             self.model = model_map[model_size](**model_args)
         else:
             raise ValueError
-        self.num_classes = GeoPileDataset.num_classes
-        self.missing_val = GeoPileDataset.missing_val
+        self.num_classes = GeoPileDataset.NUM_CLASSES
+        self.missing_val = GeoPileDataset.MISSING_VAL
         self.acc_metric = nn.ModuleDict(
             [
                 [
@@ -115,7 +115,7 @@ class SSLModule(LightningModule):
         """Pretraining step."""
         loss, masked, pred, _ = self.model(batch, ssl_phase=self.trainer.ssl_phase)
         self.log(
-            loss_name="rec_loss",
+            name="rec_loss",
             value=loss,
             ssl_phase=self.trainer.ssl_phase,
             phase=phase,
@@ -150,12 +150,11 @@ class SSLModule(LightningModule):
                 weight=acc.numel(),
             )
 
-        self.log_classif(
+        self.log(
             name="cross_entropy_loss",
             value=loss,
             ssl_phase=self.trainer.ssl_phase,
             phase=phase,
-            on_step=True,
         )
         return {"loss": loss, "masked": masked, "pred": pred}
 
@@ -186,12 +185,11 @@ class SSLModule(LightningModule):
     def on_epoch_end(self, phase: str) -> None:
         """Log epoch metrics for training/validation."""
         for dataset in self.num_classes:
-            self.log_classif(
+            self.log_acc(
                 name=f"acc_{dataset}",
                 value=self.acc_metric[f"{dataset}_{phase}"].compute(),
                 ssl_phase=self.trainer.ssl_phase,
                 phase=phase,
-                on_step=False,
             )
             self.acc_metric[f"{dataset}_{phase}"].reset()
 
@@ -203,36 +201,31 @@ class SSLModule(LightningModule):
         if self.trainer.ssl_phase != "pretrain":
             self.on_epoch_end(phase="val")
 
-    def log_classif(
+    def log_acc(
         self,
         name: str,
         value: Tensor,
         ssl_phase: str,
         phase: str,
-        *,
-        on_step: bool,
     ) -> None:
-        """Log classif metrics."""
-        if on_step and phase != "train":
-            return
-        step_phase = f"step_{phase}" if on_step else phase
+        """Log accuracy metric."""
         super().log(
-            name=f"{ssl_phase}_{name}/{step_phase}",
+            name=f"{ssl_phase}_{name}/{phase}",
             value=value,
-            on_step=on_step,
-            on_epoch=not on_step,
+            on_step=False,
+            on_epoch=True,
             prog_bar=True,
             logger=True,
             sync_dist=True,
         )
 
-    def log(self, loss_name: str, value: Tensor, ssl_phase: str, phase: str) -> None:
-        """Log loss."""
+    def log(self, name: str, value: Tensor, ssl_phase: str, phase: str) -> None:
+        """Log metric."""
         for step_phase, on_step in zip([f"step_{phase}", f"{phase}"], [True, False]):
             if on_step and phase != "train":
                 continue  # log by step only for train loss
             super().log(
-                name=f"{ssl_phase}_{loss_name}/{step_phase}",
+                name=f"{ssl_phase}_{name}/{step_phase}",
                 value=value,
                 on_step=on_step,
                 on_epoch=not on_step,
