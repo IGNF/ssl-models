@@ -255,7 +255,7 @@ class WindowAttention(nn.Module):
         return x
 
 
-class MixMIMBlock(nn.Module):
+class MixMAEBlock(nn.Module):
     def __init__(
         self,
         dim,
@@ -362,7 +362,7 @@ class MixMIMBlock(nn.Module):
         return x
 
 
-class MixMIMLayer(nn.Module):
+class MixMAELayer(nn.Module):
     def __init__(  # noqa: PLR0913
         self,
         dim,
@@ -392,7 +392,7 @@ class MixMIMLayer(nn.Module):
         self.blocks = nn.ModuleList()
         for i in range(depth):
             self.blocks.append(
-                MixMIMBlock(
+                MixMAEBlock(
                     dim=dim,
                     input_resolution=input_resolution,
                     num_heads=num_heads,
@@ -446,7 +446,7 @@ class MixMIMLayer(nn.Module):
             nn.init.constant_(blk.norm2.weight, 0)
 
 
-class MixMIM(nn.Module):
+class MixMAE(nn.Module):
     def __init__(  # noqa: PLR0913
         self,
         decoder_dim=512,
@@ -522,7 +522,7 @@ class MixMIM(nn.Module):
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
             self.layers.append(
-                MixMIMLayer(
+                MixMAELayer(
                     dim=int(self.embed_dim * 2**i_layer),
                     input_resolution=(
                         self.patch_grid[0] // (2**i_layer),
@@ -799,7 +799,7 @@ class MixMIM(nn.Module):
 
         # masked
         b_mask, mask_l, _ = mask_s1.shape
-        mask_w = mask_h = int(math.sqrt(mask_l))
+        mask_w = mask_h = int(mask_l**0.5)
         mask_input = mask_s1.view(b_mask, 1, mask_h, mask_w)
         B, C, H, W = x["image"].shape
         mask_input = torch.nn.functional.interpolate(
@@ -810,7 +810,7 @@ class MixMIM(nn.Module):
 
         # pred
         _, mask_l, _ = mask_s4.shape
-        mask_w = mask_h = int(math.sqrt(mask_l))
+        mask_w = mask_h = int(mask_l**0.5)
         mask_output = mask_s4.view(b_mask, 1, mask_h, mask_w)
         mask_output = torch.nn.functional.interpolate(
             mask_output, size=(H, W), mode="nearest"
@@ -835,7 +835,7 @@ class MixMIM(nn.Module):
         return loss, masked, pred
 
 
-def mixmim_tiny(**kwargs):
+def mixmae_tiny(**kwargs):
     default_args = dict(
         img_size=kwargs["image_size"],
         patch_size=4,
@@ -860,10 +860,10 @@ def mixmim_tiny(**kwargs):
         swin_version=2,
     )
     default_args.update(**kwargs)
-    return MixMIM(**default_args)
+    return MixMAE(**default_args)
 
 
-def mixmim_small(**kwargs):
+def mixmae_small(**kwargs):
     default_args = dict(
         img_size=kwargs["image_size"],
         patch_size=4,
@@ -888,10 +888,10 @@ def mixmim_small(**kwargs):
         swin_version=2,
     )
     default_args.update(**kwargs)
-    return MixMIM(**default_args)
+    return MixMAE(**default_args)
 
 
-def mixmim_base(**kwargs):
+def mixmae_base(**kwargs):
     default_args = dict(
         img_size=kwargs["image_size"],
         patch_size=4,
@@ -916,10 +916,10 @@ def mixmim_base(**kwargs):
         swin_version=2,
     )
     default_args.update(**kwargs)
-    return MixMIM(**default_args)
+    return MixMAE(**default_args)
 
 
-def mixmim_large(**kwargs):
+def mixmae_large(**kwargs):
     default_args = dict(
         img_size=224,
         patch_size=4,
@@ -944,10 +944,10 @@ def mixmim_large(**kwargs):
         swin_version=2,
     )
     default_args.update(**kwargs)
-    return MixMIM(**default_args)
+    return MixMAE(**default_args)
 
 
-def mixmim_huge(**kwargs):
+def mixmae_huge(**kwargs):
     default_args = dict(
         img_size=224,
         patch_size=4,
@@ -972,4 +972,4 @@ def mixmim_huge(**kwargs):
         swin_version=2,
     )
     default_args.update(**kwargs)
-    return MixMIM(**default_args)
+    return MixMAE(**default_args)

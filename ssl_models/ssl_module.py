@@ -9,11 +9,11 @@ from pytorch_lightning import LightningModule
 
 from ssl_models.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.mixmae import (
-    mixmim_base,
-    mixmim_huge,
-    mixmim_large,
-    mixmim_small,
-    mixmim_tiny,
+    mixmae_base,
+    mixmae_huge,
+    mixmae_large,
+    mixmae_small,
+    mixmae_tiny,
 )
 
 torch.set_float32_matmul_precision(precision="medium")
@@ -32,7 +32,7 @@ def downsampling_from_patch_size(unpool, patch_size):
 class SSLModule(LightningModule):
     def __init__(
         self,
-        model="vit",
+        model="MAE",
         model_size="small",
         mask_ratio=0.75,
         image_size=512,
@@ -44,20 +44,20 @@ class SSLModule(LightningModule):
     ):
         super().__init__()
 
-        if model == "vit":
+        if model == "MAE":
             model_map = {
                 "tiny": mae_tiny,
                 "small": mae_small,
                 "medium": mae_medium,
                 "large": mae_large,
             }
-        elif model == "mixmae":
+        elif model == "MixMAE":
             model_map = {
-                "tiny": mixmim_tiny,
-                "small": mixmim_small,
-                "base": mixmim_base,
-                "large": mixmim_large,
-                "huge": mixmim_huge,
+                "tiny": mixmae_tiny,
+                "small": mixmae_small,
+                "base": mixmae_base,
+                "large": mixmae_large,
+                "huge": mixmae_huge,
             }
             swin_versions = [1, 2]
             if swin_version not in swin_versions:
