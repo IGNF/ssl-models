@@ -8,6 +8,13 @@ import torch
 from pytorch_lightning import LightningModule
 
 from ssl_models.mae import mae_large, mae_medium, mae_small, mae_tiny
+from ssl_models.mixmae import (
+    mixmae_base,
+    mixmae_huge,
+    mixmae_large,
+    mixmae_small,
+    mixmae_tiny,
+)
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -25,31 +32,57 @@ def downsampling_from_patch_size(unpool, patch_size):
 class SSLModule(LightningModule):
     def __init__(
         self,
+        model="MAE",
         model_size="small",
         mask_ratio=0.75,
         image_size=512,
         patch_size=64,
         unpool=False,
         band_groups=None,
+        mask_batch=None,
+        swin_version=None,
     ):
         super().__init__()
-        model_map = {
-            "tiny": mae_tiny,
-            "small": mae_small,
-            "medium": mae_medium,
-            "large": mae_large,
-        }
+
+        if model == "MAE":
+            model_map = {
+                "tiny": mae_tiny,
+                "small": mae_small,
+                "medium": mae_medium,
+                "large": mae_large,
+            }
+        elif model == "MixMAE":
+            model_map = {
+                "tiny": mixmae_tiny,
+                "small": mixmae_small,
+                "base": mixmae_base,
+                "large": mixmae_large,
+                "huge": mixmae_huge,
+            }
+            swin_versions = [1, 2]
+            if swin_version not in swin_versions:
+                raise ValueError(
+                    f"Invalid swin version {swin_version}.\
+                          Expected one of {swin_versions}"
+                )
+        else:
+            raise ValueError(f"Invalid model name {model}. Not implemented")
+
         num_downsampling = downsampling_from_patch_size(unpool, patch_size)
         if model_size in model_map:
             model_args = {
                 "mask_ratio": mask_ratio,
                 "image_size": image_size,
                 "patch_size": patch_size,
+                "mask_batch": mask_batch,
+                "swin_version": swin_version,
                 "num_downsampling": num_downsampling,
                 "unpool": unpool,
             }
             if band_groups:
                 model_args["band_groups"] = band_groups
+            if mask_batch:
+                model_args["mask_batch"] = mask_batch
             self.model = model_map[model_size](**model_args)
         else:
             raise ValueError(

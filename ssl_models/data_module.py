@@ -53,6 +53,7 @@ class SSLDataModule(Input):
                 "batch_size": batch_size,
                 "num_workers": num_workers,
                 "shuffle": True,
+                "drop_last": True,
             },
             "input_file": train_dataset,
         }
@@ -62,6 +63,7 @@ class SSLDataModule(Input):
                 "batch_size": batch_size,
                 "num_workers": num_workers,
                 "shuffle": shuffle_val,
+                "drop_last": True,
             },
             "input_file": val_dataset,
         }
