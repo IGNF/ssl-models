@@ -9,9 +9,9 @@ from pytorch_lightning import LightningModule
 
 from ssl_models.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.mixmae import (
-    mixmae_base,
     mixmae_huge,
     mixmae_large,
+    mixmae_base,
     mixmae_small,
     mixmae_tiny,
 )
