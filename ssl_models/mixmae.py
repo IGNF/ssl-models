@@ -21,7 +21,7 @@ from timm.models.vision_transformer import Block, DropPath, Mlp, PatchEmbed
 from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
-from ssl_models.utils import get_2d_sincos_pos_embed
+from ssl_models.utils import get_2d_sincos_pos_embed, posemb_sincos_2d
 
 
 class WindowAttentionSwinV2(nn.Module):
@@ -639,20 +639,32 @@ class MixMAE(nn.Module):
     def initialize_weights(self) -> None:
         # initialization
         # initialize (and freeze) pos_embed by sin-cos embedding
-        pos_embed = get_2d_sincos_pos_embed(
-            self.absolute_pos_embed.shape[-1],
+        # pos_embed = get_2d_sincos_pos_embed(
+        #     self.absolute_pos_embed.shape[-1], # embed_dim
+        #     int(self.patch_embed.num_patches**0.5), # grid size
+        #     cls_token=False,
+        # )
+        pos_embed = posemb_sincos_2d(
             int(self.patch_embed.num_patches**0.5),
-            cls_token=False,
+            int(self.patch_embed.num_patches**0.5),
+            self.absolute_pos_embed.shape[-1],
         )
+
         self.absolute_pos_embed.data.copy_(
             torch.from_numpy(pos_embed).float().unsqueeze(0),
         )
 
-        decoder_pos_embed = get_2d_sincos_pos_embed(
-            self.decoder_pos_embed.shape[-1],
+        # decoder_pos_embed = get_2d_sincos_pos_embed(
+        #     self.decoder_pos_embed.shape[-1],
+        #     int(self.out_num_patches**0.5),
+        #     cls_token=False,
+        # )
+        decoder_pos_embed = posemb_sincos_2d(
             int(self.out_num_patches**0.5),
-            cls_token=False,
+            int(self.out_num_patches**0.5),
+            self.decoder_pos_embed.shape[-1],
         )
+
         self.decoder_pos_embed.data.copy_(
             torch.from_numpy(decoder_pos_embed).float().unsqueeze(0),
         )
@@ -934,14 +946,12 @@ def mixmae_tiny(**kwargs) -> MixMAE:  # noqa: ANN003
         "img_size": kwargs["image_size"],
         "patch_size": 4,
         "in_chans": 3,
-        "num_classes": 0,
         "embed_dim": 96,
         "depths": [2, 2, 6, 2],
         "num_heads": [3, 6, 12, 24],
         "window_size": [16, 16, 16, 8],
         "mlp_ratio": 4,
         "qkv_bias": True,
-        "qk_scale": None,
         "drop_rate": 0.0,
         "drop_path_rate": 0.0,
         "patch_norm": True,
@@ -963,14 +973,12 @@ def mixmae_small(**kwargs) -> MixMAE:  # noqa: ANN003
         "img_size": kwargs["image_size"],
         "patch_size": 4,
         "in_chans": 3,
-        "num_classes": 0,
         "embed_dim": 96,
         "depths": [2, 2, 18, 2],
         "num_heads": [3, 6, 12, 24],
         "window_size": [16, 16, 16, 8],
         "mlp_ratio": 4,
         "qkv_bias": True,
-        "qk_scale": None,
         "drop_rate": 0.0,
         "drop_path_rate": 0.0,
         "patch_norm": True,
@@ -992,14 +1000,12 @@ def mixmae_base(**kwargs) -> MixMAE:  # noqa: ANN003
         "img_size": kwargs["image_size"],
         "patch_size": 4,
         "in_chans": 3,
-        "num_classes": 0,
         "embed_dim": 128,
         "depths": [2, 2, 18, 2],
         "num_heads": [4, 8, 16, 32],
         "window_size": [16, 16, 16, 8],
         "mlp_ratio": 4,
         "qkv_bias": True,
-        "qk_scale": None,
         "drop_rate": 0.0,
         "drop_path_rate": 0.0,
         "patch_norm": True,
@@ -1021,14 +1027,12 @@ def mixmae_large(**kwargs) -> MixMAE:  # noqa: ANN003
         "img_size": 224,
         "patch_size": 4,
         "in_chans": 3,
-        "num_classes": 0,
         "embed_dim": 192,
         "depths": [2, 2, 18, 2],
         "num_heads": [6, 12, 24, 48],
         "window_size": [14, 14, 14, 7],
         "mlp_ratio": 4,
         "qkv_bias": True,
-        "qk_scale": None,
         "drop_rate": 0.0,
         "drop_path_rate": 0.0,
         "patch_norm": True,
@@ -1050,14 +1054,12 @@ def mixmae_huge(**kwargs) -> MixMAE:  # noqa: ANN003
         "img_size": 224,
         "patch_size": 4,
         "in_chans": 3,
-        "num_classes": 0,
         "embed_dim": 352,
         "depths": [2, 2, 18, 2],
         "num_heads": [11, 22, 44, 88],
         "window_size": [14, 14, 14, 7],
         "mlp_ratio": 4,
         "qkv_bias": True,
-        "qk_scale": None,
         "drop_rate": 0.0,
         "drop_path_rate": 0.0,
         "patch_norm": True,
