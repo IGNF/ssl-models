@@ -30,7 +30,7 @@ class WindowAttentionSwinV2(nn.Module):
     def __init__(
         self,
         dim: int,
-        window_size: int,
+        window_size: tuple[int, int],
         num_heads: int,
         qkv_bias: bool,
         attn_drop: float,
@@ -95,11 +95,14 @@ class WindowAttentionSwinV2(nn.Module):
         relative_coords = (
             coords_flatten[:, :, None] - coords_flatten[:, None, :],
         )  # 2, Wh*Ww, Wh*Ww
+        print("a")
+        print(type(relative_coords))
         relative_coords = relative_coords.permute(
             1,
             2,
             0,
         ).contiguous()  # Wh*Ww, Wh*Ww, 2
+        print("b")
         relative_coords[:, :, 0] += self.window_size[0] - 1  # shift to start from 0
         relative_coords[:, :, 1] += self.window_size[1] - 1
         relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
@@ -312,6 +315,7 @@ class MixMAEBlock(nn.Module):
             self.window_size = min(self.input_resolution)
 
         self.norm1 = norm_layer(dim)
+
         if self.swin_version == 2:  # noqa: PLR2004
             self.attn = WindowAttentionSwinV2(
                 dim,
@@ -499,7 +503,7 @@ class MixMAE(nn.Module):
         decoder_num_heads: int,
         mlp_ratio: int,
         norm_pix_loss: bool,
-        img_size: int,
+        image_size: int,
         patch_size: int,
         in_chans: int,
         embed_dim: int,
@@ -510,13 +514,14 @@ class MixMAE(nn.Module):
         patch_norm: bool,
         drop_rate: float,
         drop_path_rate: float,
-        attn_drop_rate: float,
-        norm_layer: nn.LayerNorm,
         use_checkpoint: bool,
-        range_mask_ratio: float,
-        pretrained_window_sizes: tuple[int, int, int, int],
         mask_batch: bool,
         swin_version: int,
+        attn_drop_rate: float = 0.0,
+        norm_layer: nn.LayerNorm = nn.LayerNorm,
+        range_mask_ratio: float = 0.0,
+        pretrained_window_sizes: tuple[int, int, int, int] = [0, 0, 0, 0],
+        **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__()
         # decoder args
@@ -535,7 +540,7 @@ class MixMAE(nn.Module):
         self.drop_rate = drop_rate
         self.attn_drop_rate = attn_drop_rate
         self.use_checkpoint = use_checkpoint
-        self.img_size = img_size
+        self.image_size = image_size
         self.mlp_ratio = mlp_ratio
         self.window_size = window_size
         self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
@@ -547,7 +552,7 @@ class MixMAE(nn.Module):
 
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed(
-            img_size=img_size,
+            img_size=image_size,
             patch_size=patch_size,
             in_chans=in_chans,
             embed_dim=embed_dim,
@@ -597,7 +602,7 @@ class MixMAE(nn.Module):
         trunc_normal_(self.mask_token, mean=0.0, std=0.02)
 
         num_patches = self.patch_embed.num_patches
-        out_num_patches = (self.img_size // self.encoder_stride) ** 2
+        out_num_patches = (self.image_size // self.encoder_stride) ** 2
         self.out_num_patches = out_num_patches
         self.absolute_pos_embed = (
             nn.Parameter(
@@ -942,8 +947,8 @@ class MixMAE(nn.Module):
 
 def mixmae_tiny(**kwargs) -> MixMAE:  # noqa: ANN003
     """Construct MixMAE tiny."""
-    default_args = {
-        "img_size": kwargs["image_size"],
+    args = {
+        "image_size": 256,
         "patch_size": 4,
         "in_chans": 3,
         "embed_dim": 96,
@@ -963,14 +968,14 @@ def mixmae_tiny(**kwargs) -> MixMAE:  # noqa: ANN003
         "mask_batch": True,
         "swin_version": 2,
     }
-    default_args.update(**kwargs)
-    return MixMAE(**default_args)
+    args.update(kwargs)
+    return MixMAE(**args)
 
 
 def mixmae_small(**kwargs) -> MixMAE:  # noqa: ANN003
     """Construct MixMAE small."""
-    default_args = {
-        "img_size": kwargs["image_size"],
+    args = {
+        "image_size": kwargs["image_size"],
         "patch_size": 4,
         "in_chans": 3,
         "embed_dim": 96,
@@ -990,14 +995,14 @@ def mixmae_small(**kwargs) -> MixMAE:  # noqa: ANN003
         "mask_batch": True,
         "swin_version": 2,
     }
-    default_args.update(**kwargs)
-    return MixMAE(**default_args)
+    args.update(kwargs)
+    return MixMAE(**args)
 
 
 def mixmae_base(**kwargs) -> MixMAE:  # noqa: ANN003
     """Construct MixMAE base."""
-    default_args = {
-        "img_size": kwargs["image_size"],
+    args = {
+        "image_size": kwargs["image_size"],
         "patch_size": 4,
         "in_chans": 3,
         "embed_dim": 128,
@@ -1017,14 +1022,14 @@ def mixmae_base(**kwargs) -> MixMAE:  # noqa: ANN003
         "mask_batch": True,
         "swin_version": 2,
     }
-    default_args.update(**kwargs)
-    return MixMAE(**default_args)
+    args.update(kwargs)
+    return MixMAE(**args)
 
 
 def mixmae_large(**kwargs) -> MixMAE:  # noqa: ANN003
     """Construct MixMAE large."""
-    default_args = {
-        "img_size": 224,
+    args = {
+        "image_size": 224,
         "patch_size": 4,
         "in_chans": 3,
         "embed_dim": 192,
@@ -1044,14 +1049,14 @@ def mixmae_large(**kwargs) -> MixMAE:  # noqa: ANN003
         "mask_batch": True,
         "swin_version": 2,
     }
-    default_args.update(**kwargs)
-    return MixMAE(**default_args)
+    args.update(kwargs)
+    return MixMAE(**args)
 
 
 def mixmae_huge(**kwargs) -> MixMAE:  # noqa: ANN003
     """Construct MixMAE huge."""
-    default_args = {
-        "img_size": 224,
+    args = {
+        "image_size": 224,
         "patch_size": 4,
         "in_chans": 3,
         "embed_dim": 352,
@@ -1071,5 +1076,5 @@ def mixmae_huge(**kwargs) -> MixMAE:  # noqa: ANN003
         "mask_batch": True,
         "swin_version": 2,
     }
-    default_args.update(**kwargs)
-    return MixMAE(**default_args)
+    args.update(kwargs)
+    return MixMAE(**args)
