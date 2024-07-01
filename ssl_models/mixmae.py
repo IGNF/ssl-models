@@ -288,7 +288,7 @@ class MixMAEBlock(nn.Module):
     def __init__(
         self,
         dim: int,
-        input_resolution,
+        input_resolution: tuple[int, int],
         num_heads: int,
         window_size: int,
         mlp_ratio: float,
@@ -411,7 +411,7 @@ class MixMAELayer(nn.Module):
     def __init__(  # noqa: PLR0913
         self,
         dim: int,
-        input_resolution,
+        input_resolution: tuple[int, int],
         depth: int,
         num_heads: int,
         window_size: int,
@@ -484,7 +484,7 @@ class MixMAELayer(nn.Module):
             input_resolution={self.input_resolution},\
             depth={self.depth}"
 
-    def _init_respostnorm(self) -> None:
+    def init_respostnorm(self) -> None:
         for blk in self.blocks:
             nn.init.constant_(blk.norm1.bias, 0)
             nn.init.constant_(blk.norm1.weight, 0)
@@ -633,7 +633,7 @@ class MixMAE(nn.Module):
         self.initialize_weights()
         if self.swin_version == 2:  # noqa: PLR2004
             for bly in self.layers:
-                bly._init_respostnorm()
+                bly.init_respostnorm()
 
         self.mask_batch = mask_batch
 
