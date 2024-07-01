@@ -35,7 +35,7 @@ class SSLModule(LightningModule):
         band_groups: dict[str, list] | None = None,
         type_head: str = "attentive",
         swin_version: int | None = None,
-        mask_batch: bool | None = None,
+        mask_batch: bool = False,
     ) -> None:
         super().__init__()
 
@@ -60,6 +60,8 @@ class SSLModule(LightningModule):
         else:
             msg = f"Invalid model name {model}. Not implemented"
             raise ValueError(msg)
+
+        self.model_type = model
 
         if model_size in model_map:
             model_args = {
@@ -148,16 +150,19 @@ class SSLModule(LightningModule):
     ) -> dict:
         """Probing/finetuning step."""
         _, _, _, head_logits = self.model(batch, ssl_phase=self.trainer.ssl_phase)
-
         masked, pred = None, None
         loss = 0
         for dataset in self.num_classes:
             if torch.all(batch[f"target_{dataset}"] == self.missing_val):
                 continue
-            inds = (batch[f"target_{dataset}"] != self.missing_val).nonzero().squeeze()
+            if self.model_type == "mixmae":
+                targets = batch[f"target_{dataset}"][:len(batch[f"target_{dataset}"]) // 4]
+            else:
+                targets = batch[f"target_{dataset}"]
+            inds = (targets != self.missing_val).nonzero().squeeze()
             logits = torch.index_select(head_logits[dataset], dim=0, index=inds)
             target = torch.index_select(
-                batch[f"target_{dataset}"],
+                targets,
                 dim=0,
                 index=inds,
             )

@@ -21,7 +21,9 @@ from timm.models.vision_transformer import Block, DropPath, Mlp, PatchEmbed
 from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
-from ssl_models.utils import get_2d_sincos_pos_embed, posemb_sincos_2d
+from ssl_models.geopile_data import GeoPileDataset
+from ssl_models.head import AttentiveHead, LinearHead
+from ssl_models.utils import posemb_sincos_2d
 
 
 class WindowAttentionSwinV2(nn.Module):
@@ -93,16 +95,13 @@ class WindowAttentionSwinV2(nn.Module):
         coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
         coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
         relative_coords = (
-            coords_flatten[:, :, None] - coords_flatten[:, None, :],
+            coords_flatten[:, :, None] - coords_flatten[:, None, :]
         )  # 2, Wh*Ww, Wh*Ww
-        print("a")
-        print(type(relative_coords))
         relative_coords = relative_coords.permute(
             1,
             2,
             0,
         ).contiguous()  # Wh*Ww, Wh*Ww, 2
-        print("b")
         relative_coords[:, :, 0] += self.window_size[0] - 1  # shift to start from 0
         relative_coords[:, :, 1] += self.window_size[1] - 1
         relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
@@ -521,6 +520,7 @@ class MixMAE(nn.Module):
         norm_layer: nn.LayerNorm = nn.LayerNorm,
         range_mask_ratio: float = 0.0,
         pretrained_window_sizes: tuple[int, int, int, int] = [0, 0, 0, 0],
+        type_head: str = "attentive",
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__()
@@ -604,17 +604,13 @@ class MixMAE(nn.Module):
         num_patches = self.patch_embed.num_patches
         out_num_patches = (self.image_size // self.encoder_stride) ** 2
         self.out_num_patches = out_num_patches
-        self.absolute_pos_embed = (
-            nn.Parameter(
-                torch.zeros(1, num_patches, self.embed_dim),
-                requires_grad=False,
-            ),
+        self.absolute_pos_embed = nn.Parameter(
+            torch.zeros(1, num_patches, self.embed_dim),
+            requires_grad=False,
         )
-        self.decoder_pos_embed = (
-            nn.Parameter(
-                torch.zeros(1, out_num_patches, decoder_dim),
-                requires_grad=False,
-            ),
+        self.decoder_pos_embed = nn.Parameter(
+            torch.zeros(1, out_num_patches, decoder_dim),
+            requires_grad=False,
         )
 
         self.decoder_embed = nn.Linear(self.num_features, decoder_dim)
@@ -641,14 +637,28 @@ class MixMAE(nn.Module):
 
         self.mask_batch = mask_batch
 
+        self.num_classes = GeoPileDataset.NUM_CLASSES
+        self.head = nn.ModuleDict(
+            [
+                [
+                    dataset,
+                    AttentiveHead(
+                        self.embed_dim * 2 ** (self.num_layers - 1),
+                        num_classes,
+                    )
+                    if type_head == "attentive"
+                    else LinearHead(
+                        self.embed_dim * 2 ** (self.num_layers - 1),
+                        num_classes,
+                    ),
+                ]
+                for dataset, num_classes in self.num_classes.items()
+            ],
+        )
+
     def initialize_weights(self) -> None:
         # initialization
         # initialize (and freeze) pos_embed by sin-cos embedding
-        # pos_embed = get_2d_sincos_pos_embed(
-        #     self.absolute_pos_embed.shape[-1], # embed_dim
-        #     int(self.patch_embed.num_patches**0.5), # grid size
-        #     cls_token=False,
-        # )
         pos_embed = posemb_sincos_2d(
             int(self.patch_embed.num_patches**0.5),
             int(self.patch_embed.num_patches**0.5),
@@ -656,14 +666,9 @@ class MixMAE(nn.Module):
         )
 
         self.absolute_pos_embed.data.copy_(
-            torch.from_numpy(pos_embed).float().unsqueeze(0),
+            pos_embed.float().unsqueeze(0),
         )
 
-        # decoder_pos_embed = get_2d_sincos_pos_embed(
-        #     self.decoder_pos_embed.shape[-1],
-        #     int(self.out_num_patches**0.5),
-        #     cls_token=False,
-        # )
         decoder_pos_embed = posemb_sincos_2d(
             int(self.out_num_patches**0.5),
             int(self.out_num_patches**0.5),
@@ -671,7 +676,7 @@ class MixMAE(nn.Module):
         )
 
         self.decoder_pos_embed.data.copy_(
-            torch.from_numpy(decoder_pos_embed).float().unsqueeze(0),
+            decoder_pos_embed.float().unsqueeze(0),
         )
 
     def random_masking(
@@ -679,10 +684,10 @@ class MixMAE(nn.Module):
         x: Tensor,
         mask_batch: bool,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
-        b, _, h, w = x["image"].shape
+        B, _, H, W = x["image"].shape  # noqa: N806
         nb_masks_batch = 1
         if not mask_batch:
-            nb_masks_batch = b // 4
+            nb_masks_batch = B // 4
 
         mask_list = []
         mask_s1_list = []
@@ -690,8 +695,8 @@ class MixMAE(nn.Module):
         mask_s3_list = []
         mask_mix_image_list = []
 
-        out_h = h // self.encoder_stride
-        out_w = w // self.encoder_stride
+        out_h = H // self.encoder_stride
+        out_w = W // self.encoder_stride
         s3_h, s3_w = out_h * 2, out_w * 2
         s2_h, s2_w = out_h * 4, out_w * 4
         s1_h, s1_w = out_h * 8, out_w * 8
@@ -708,7 +713,7 @@ class MixMAE(nn.Module):
             ),
         )
 
-        for _ in range(nb_masks_batch):
+        for i in range(nb_masks_batch):  # noqa: B007
             mask_idx = torch.randperm(seq_l)
             mask_mix_images = torch.reshape(mask_mix_images_init[mask_idx], (1, seq_l))
             mask_mix_images = mask_mix_images.to(device=x["image"].device)
@@ -886,7 +891,7 @@ class MixMAE(nn.Module):
 
         return loss_rec_masked.mean()
 
-    def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    def forward(self, x: Tensor, ssl_phase: str) -> tuple[Tensor, Tensor, Tensor]:
         mask_s1, mask_s2, mask_s3, mask_s4, mask_mix_images = self.random_masking(
             x,
             self.mask_batch,
@@ -899,6 +904,7 @@ class MixMAE(nn.Module):
             mask_s4,
             mask_mix_images,
         )
+
         x_rec = self.forward_decoder(z, mask_s4)
 
         loss = self.forward_loss(x["image"], x_rec, mask_s4)
@@ -942,7 +948,19 @@ class MixMAE(nn.Module):
 
         targets = x["image"][: B // 4, :, :, :]
         pred = x1_rec * mask_output + targets * (1 - mask_output)
-        return loss, masked, pred
+
+        # head logits
+        invert_mask_s4 = ~mask_s4.type(torch.bool).squeeze()
+        encoded_unmasked_patches = (
+            z[invert_mask_s4].reshape(B // 4, z.shape[-1], -1).swapaxes(1, 2)
+        )
+
+        head_logits = {
+            dataset: self.head[dataset](encoded_unmasked_patches, ssl_phase)
+            for dataset in self.num_classes
+        }
+
+        return loss, masked, pred, head_logits
 
 
 def mixmae_tiny(**kwargs) -> MixMAE:  # noqa: ANN003

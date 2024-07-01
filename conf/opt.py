@@ -11,7 +11,7 @@ class OptPretrainConfig:  # noqa: D101
     b1: float = 0.9
     b2: float = 0.99
     wd: float = 0.01
-    epochs: int = 20
+    epochs: int = 2
 
 
 pretrain_store = store(group="opt_pretrain")
