@@ -683,10 +683,11 @@ class MixMAE(nn.Module):
         self,
         x: Tensor,
         mask_batch: bool,
+        phase: str,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         B, _, H, W = x["image"].shape  # noqa: N806
         nb_masks_batch = 1
-        if not mask_batch:
+        if not mask_batch and phase == "pretrain":
             nb_masks_batch = B // 4
 
         mask_list = []
@@ -703,15 +704,17 @@ class MixMAE(nn.Module):
 
         seq_l = out_h * out_w
 
-        # use a shared mask for a batch images
-        mask_mix_images_init = torch.cat(
-            (
-                torch.zeros(int(seq_l / 4)),
-                torch.ones(int(seq_l / 4)),
-                torch.ones(int(seq_l / 4)) * 2,
-                torch.ones(int(seq_l / 4)) * 3,
-            ),
-        )
+        if phase == "pretrain":
+            mask_mix_images_init = torch.cat(
+                (
+                    torch.zeros(int(seq_l / 4)),
+                    torch.ones(int(seq_l / 4)),
+                    torch.ones(int(seq_l / 4)) * 2,
+                    torch.ones(int(seq_l / 4)) * 3,
+                ),
+            )
+        else:
+            mask_mix_images_init = torch.zeros(int(seq_l))
 
         for i in range(nb_masks_batch):  # noqa: B007
             mask_idx = torch.randperm(seq_l)
@@ -842,10 +845,12 @@ class MixMAE(nn.Module):
         mask_s3: Tensor,
         mask_s4: Tensor,
         mask_mix_images: Tensor,
+        phase: str,
     ) -> Tensor:
         x = self.patch_embed(x)
 
-        x = self.mixing_images(x, mask_mix_images)
+        if phase == "pretrain":
+            x = self.mixing_images(x, mask_mix_images)
 
         x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
@@ -880,9 +885,14 @@ class MixMAE(nn.Module):
 
         return self.decoder_pred(x)
 
-    def forward_loss(self, x: Tensor, x_rec: Tensor, mask: Tensor) -> Tensor:
-        # initial batch size is divided by 4
-        new_batch_size = int(x.shape[0] / 4)
+    def forward_loss(
+        self,
+        x: Tensor,
+        x_rec: Tensor,
+        mask: Tensor,
+        phase: str,
+    ) -> Tensor:
+        new_batch_size = int(x.shape[0] / 4) if phase == "pretrain" else x.shape[0]
         x = x[:new_batch_size, :, :, :]
         target = self.patchify(x)
 
@@ -895,6 +905,7 @@ class MixMAE(nn.Module):
         mask_s1, mask_s2, mask_s3, mask_s4, mask_mix_images = self.random_masking(
             x,
             self.mask_batch,
+            ssl_phase,
         )
         z = self.forward_encoder(
             x["image"],
@@ -903,11 +914,12 @@ class MixMAE(nn.Module):
             mask_s3,
             mask_s4,
             mask_mix_images,
+            ssl_phase,
         )
 
         x_rec = self.forward_decoder(z, mask_s4)
 
-        loss = self.forward_loss(x["image"], x_rec, mask_s4)
+        loss = self.forward_loss(x["image"], x_rec, mask_s4, ssl_phase)
 
         # masked
         b_mask, mask_l, _ = mask_s1.shape
@@ -946,18 +958,16 @@ class MixMAE(nn.Module):
             p2=x_rec_w,
         )
 
-        targets = x["image"][: B // 4, :, :, :]
+        if ssl_phase == "pretrain":
+            targets = x["image"][: B // 4, :, :, :]
+        else:
+            targets = x["image"]
+
         pred = x1_rec * mask_output + targets * (1 - mask_output)
 
         # head logits
-        invert_mask_s4 = ~mask_s4.type(torch.bool).squeeze()
-        encoded_unmasked_patches = (
-            z[invert_mask_s4].reshape(B // 4, z.shape[-1], -1).swapaxes(1, 2)
-        )
-
         head_logits = {
-            dataset: self.head[dataset](encoded_unmasked_patches, ssl_phase)
-            for dataset in self.num_classes
+            dataset: self.head[dataset](z, ssl_phase) for dataset in self.num_classes
         }
 
         return loss, masked, pred, head_logits
