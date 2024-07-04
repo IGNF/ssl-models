@@ -155,16 +155,10 @@ class SSLModule(LightningModule):
         for dataset in self.num_classes:
             if torch.all(batch[f"target_{dataset}"] == self.missing_val):
                 continue
-            if self.model_type == "mixmae":
-                targets = batch[f"target_{dataset}"][
-                    : len(batch[f"target_{dataset}"]) // 4
-                ]
-            else:
-                targets = batch[f"target_{dataset}"]
-            inds = (targets != self.missing_val).nonzero().squeeze()
+            inds = (batch[f"target_{dataset}"] != self.missing_val).nonzero().squeeze()
             logits = torch.index_select(head_logits[dataset], dim=0, index=inds)
             target = torch.index_select(
-                targets,
+                batch[f"target_{dataset}"],
                 dim=0,
                 index=inds,
             )
