@@ -35,7 +35,7 @@ class SSLModule(LightningModule):
         band_groups: dict[str, list] | None = None,
         type_head: str = "attentive",
         swin_version: int | None = None,
-        mask_batch: bool | None = None,
+        mask_batch: bool = False,
     ) -> None:
         super().__init__()
 
@@ -60,6 +60,8 @@ class SSLModule(LightningModule):
         else:
             msg = f"Invalid model name {model}. Not implemented"
             raise ValueError(msg)
+
+        self.model_type = model
 
         if model_size in model_map:
             model_args = {
@@ -148,7 +150,6 @@ class SSLModule(LightningModule):
     ) -> dict:
         """Probing/finetuning step."""
         _, _, _, head_logits = self.model(batch, ssl_phase=self.trainer.ssl_phase)
-
         masked, pred = None, None
         loss = 0
         for dataset in self.num_classes:

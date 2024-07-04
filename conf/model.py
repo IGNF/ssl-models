@@ -16,6 +16,8 @@ class ModelConfig:  # noqa: D101
     patch_size: int = 16
     type_head: str = "attentive"
     band_groups: dict = field(default_factory=lambda: {"rgb": [0, 1, 2]})
+    swin_version: int = 2
+    mask_batch: bool = False
 
 
 model_build = builds(SSLModule, builds_bases=(ModelConfig,))

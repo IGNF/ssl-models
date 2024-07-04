@@ -41,6 +41,7 @@ class GeoPileData(LightningDataModule):
             batch_size=batch_size,
             num_workers=num_workers,
             shuffle=True,
+            drop_last=True,
         )
 
         val_path = Path(root_dir) / "val.csv"
@@ -50,6 +51,7 @@ class GeoPileData(LightningDataModule):
             batch_size=batch_size,
             num_workers=num_workers,
             shuffle=True,
+            drop_last=True,
         )
 
     def train_dataloader(self) -> DataLoader:
