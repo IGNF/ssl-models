@@ -12,17 +12,13 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from einops import rearrange
 from timm.models.layers import to_2tuple, trunc_normal_
-from timm.models.swin_transformer import (
-    PatchMerging,
-    window_partition,
-    window_reverse,
-)
+from timm.models.swin_transformer import PatchMerging, window_partition, window_reverse
 from timm.models.vision_transformer import Block, DropPath, Mlp, PatchEmbed
 from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
-from ssl_models.geopile_data import GeoPileDataset
 from ssl_models.head import AttentiveHead, LinearHead
+from ssl_models.odeon_data import OdeonData
 from ssl_models.utils import posemb_sincos_2d
 
 
@@ -637,7 +633,7 @@ class MixMAE(nn.Module):
 
         self.mask_batch = mask_batch
 
-        self.num_classes = GeoPileDataset.NUM_CLASSES
+        self.num_classes = OdeonData.NUM_CLASSES
         self.head = nn.ModuleDict(
             [
                 [

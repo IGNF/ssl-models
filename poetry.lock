@@ -1696,8 +1696,8 @@ torch = ">=1.6"
 [package.source]
 type = "git"
 url = "https://github.com/IGNF/odeon"
-reference = "0.5.0"
-resolved_reference = "ef42e71eda3f84a2d66278afaf5c0d6fa1a9719d"
+reference = "HEAD"
+resolved_reference = "c925acb054b9a5b336d58f39afff38937d549488"
 
 [[package]]
 name = "omegaconf"
@@ -3591,4 +3591,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.12"
-content-hash = "999a3cb9a285140f8f48f60c0305beeaaa1feace1ea59b3b64c76e354c55814d"
+content-hash = "525019cf6206ab7f0671513d79a8303e174278fad54ac7a2f6b7feeba4930203"

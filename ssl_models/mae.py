@@ -6,8 +6,8 @@ from einops import rearrange, reduce, repeat
 from torch import Tensor, nn
 from vit_pytorch.vit import Transformer
 
-from ssl_models.geopile_data import GeoPileDataset
 from ssl_models.head import AttentiveHead, LinearHead
+from ssl_models.odeon_data import OdeonData
 from ssl_models.utils import (
     downsampling_from_patch_size,
     posemb_sincos_1d,
@@ -694,7 +694,7 @@ class MAE(nn.Module):
             band_groups=band_groups,
         )
 
-        self.num_classes = GeoPileDataset.NUM_CLASSES
+        self.num_classes = OdeonData.NUM_CLASSES
         self.head = nn.ModuleDict(
             [
                 [

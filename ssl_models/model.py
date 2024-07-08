@@ -8,7 +8,6 @@ from pytorch_lightning import LightningModule
 from torch import Tensor, nn
 from torchmetrics import MeanMetric
 
-from ssl_models.geopile_data import GeoPileDataset
 from ssl_models.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.mixmae import (
     mixmae_base,
@@ -17,6 +16,7 @@ from ssl_models.mixmae import (
     mixmae_small,
     mixmae_tiny,
 )
+from ssl_models.odeon_data import OdeonData
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -82,8 +82,8 @@ class SSLModule(LightningModule):
             msg = f"Invalid model size {model_size}. Expected one of {model_map.keys()}"
             raise ValueError(msg)
 
-        self.num_classes = GeoPileDataset.NUM_CLASSES
-        self.missing_val = GeoPileDataset.MISSING_VAL
+        self.num_classes = OdeonData.NUM_CLASSES
+        self.missing_val = OdeonData.MISSING_VAL
         self.acc_metric = nn.ModuleDict(
             [
                 [
