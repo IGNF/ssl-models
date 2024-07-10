@@ -49,7 +49,7 @@ def run_experiment(
         task.set_parameters_as_dict(config)
 
     LOGGER.info("Pretrain")
-    trainer_pretrain.fit(model, datamodule=data_pretrain)
+    # trainer_pretrain.fit(model, datamodule=data_pretrain)
 
     if run.probe > 0:
         LOGGER.info("Probe")

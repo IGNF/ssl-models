@@ -54,6 +54,7 @@ class OdeonData(Input):
                 A.RandomRotate90(p=0.5),
                 A.HorizontalFlip(p=0.5),
                 A.VerticalFlip(p=0.5),
+                A.Resize(height=224, width=224),
             ]
         else:
             transform = None

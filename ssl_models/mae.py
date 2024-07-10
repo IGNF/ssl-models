@@ -14,6 +14,8 @@ from ssl_models.utils import (
     posemb_sincos_2d,
 )
 
+from torchvision import models
+
 
 class Patchify(nn.Module):
     """Patchify the input cube & create embeddings per patch."""
@@ -265,13 +267,13 @@ class Encoder(nn.Module):
         self.pos_encoding = self.pos_encoding.requires_grad_(requires_grad=False)
         self.band_encoding = self.band_encoding.requires_grad_(requires_grad=False)
 
-        self.transformer = Transformer(
-            dim=dim,
-            depth=depth,
-            heads=heads,
-            dim_head=dim_head,
-            mlp_dim=dim * mlp_ratio,
-        )
+        match dim:
+            case 768:
+                self.transformer = models.vit_b_16(pretrained=True)
+            case 1024:
+                self.transformer = models.vit_l_16(pretrained=True)
+            case _:
+                raise NotImplementedError
 
     def to_patch_embed(self, cube: Tensor) -> tuple[Tensor, dict]:
         """Patchify the input cube & create embeddings per patch."""
@@ -402,10 +404,19 @@ class Encoder(nn.Module):
             ssl_phase,
         )  # [B GL:(1 - mask_ratio) D], [(1-mask_ratio)], [mask_ratio], [B G L]
 
+        unmasked_patches = cube["image"]
+
         # pass the unmasked patches through the transformer
-        encoded_unmasked_patches = self.transformer(
-            unmasked_patches,
-        )  # [B (GL:(1 - mask_ratio)) D]
+
+        x = unmasked_patches
+        x = self.transformer._process_input(x)
+        n = x.shape[0]
+
+        # Expand the class token to the full batch
+        batch_class_token = self.transformer.class_token.expand(n, -1, -1)
+        x = torch.cat([batch_class_token, x], dim=1)
+
+        encoded_unmasked_patches = self.transformer.encoder(x)[:, 1:]
 
         return (
             encoded_unmasked_patches,
