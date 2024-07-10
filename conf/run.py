@@ -16,7 +16,7 @@ class RunConfig:  # noqa: D101
     logged_images_per_epoch: int = 10
     use_clearml: bool = True
     clearml_project_name: str = "ssl"
-    clearml_tags: list[str] = field(default_factory=lambda: ["mae", "geopile", "hydra"])
+    clearml_tags: list[str] = field(default_factory=lambda: ["geopile", "hydra"])
     clearml_offline_mode: bool = False
 
 
