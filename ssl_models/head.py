@@ -27,22 +27,24 @@ class AttentiveHead(Head):
     def __init__(
         self,
         dim: int,
+        heads: int,
         num_classes: int,
-        heads: int = 8,
-        dim_head: int = 64,
     ) -> None:
         super().__init__()
-        inner_dim = dim_head * heads
         self.heads = heads
-        self.scale = dim_head**-0.5
+        self.scale = dim**-0.5
 
         self.norm = nn.LayerNorm(dim)
         self.softmax = nn.Softmax(dim=-1)
 
-        self.to_kv = nn.Linear(dim, inner_dim * 2, bias=False)
-        self.query = nn.Parameter(torch.randn(inner_dim))
+        self.to_kv = nn.Linear(dim, dim * 2, bias=False)
+        self.query = nn.Parameter(torch.randn(dim))
 
-        self.linear = nn.Linear(inner_dim, num_classes)
+        self.linear_mlp = nn.Linear(dim, dim)
+        self.norm_mlp = nn.LayerNorm(dim)
+        self.act_mlp = nn.ReLU()
+
+        self.linear = nn.Linear(dim, num_classes)
 
     def forward(self, x: Tensor, ssl_phase: int) -> Tensor:
         out = self.maybe_detach_features(x, ssl_phase)
@@ -58,6 +60,11 @@ class AttentiveHead(Head):
 
         out = torch.matmul(attn, v)
         out = rearrange(out, "B H 1 D -> B (H D)")
+
+        out = self.linear_mlp(out)
+        out = self.norm_mlp(out)
+        out = self.act_mlp(out)
+
         out = self.linear(out)
         return self.maybe_detach_prediction(out, ssl_phase)
 
@@ -67,10 +74,19 @@ class LinearHead(Head):
 
     def __init__(self, dim: int, num_classes: int) -> None:
         super().__init__()
+        self.linear_mlp = nn.Linear(dim, dim)
+        self.norm_mlp = nn.LayerNorm(dim)
+        self.act_mlp = nn.ReLU()
+
         self.linear = nn.Linear(dim, num_classes)
 
     def forward(self, x: Tensor, ssl_phase: str) -> Tensor:
         out = self.maybe_detach_features(x, ssl_phase)
         out = torch.mean(out, dim=1)
+
+        out = self.linear_mlp(out)
+        out = self.norm_mlp(out)
+        out = self.act_mlp(out)
+
         out = self.linear(out)
         return self.maybe_detach_prediction(out, ssl_phase)

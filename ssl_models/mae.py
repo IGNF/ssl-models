@@ -699,9 +699,9 @@ class MAE(nn.Module):
             [
                 [
                     dataset,
-                    AttentiveHead(dim, num_classes)
+                    AttentiveHead(dim=dim, heads=heads, num_classes=num_classes)
                     if type_head == "attentive"
-                    else LinearHead(dim, num_classes),
+                    else LinearHead(dim=dim, num_classes=num_classes),
                 ]
                 for dataset, num_classes in self.num_classes.items()
             ],
