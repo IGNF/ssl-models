@@ -14,8 +14,8 @@ class DataConfig:  # noqa: D101
     batch_size: int = 64
     num_workers: int = 32
     use_transform: bool = True
-    use_mixup: bool = False
-    rand_augment: bool = False
+    use_mixup: bool = True
+    rand_augment: bool = True
 
 
 data_build = pbuilds(GeoPileData, builds_bases=(DataConfig,))

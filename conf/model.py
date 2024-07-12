@@ -14,8 +14,8 @@ class ModelConfig:  # noqa: D101
     mask_ratio: float = 0.75
     image_size: int = 256
     patch_size: int = 16
-    type_head: str = "attentive"
-    final_mlp: bool = False
+    type_head: str = "linear"
+    final_mlp: bool = True
     unpool: bool = False
     band_groups: dict = field(default_factory=lambda: {"rgb": [0, 1, 2]})
     swin_version: int = 2
