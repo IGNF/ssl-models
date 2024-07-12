@@ -155,16 +155,20 @@ class SSLModule(LightningModule):
         for dataset in self.num_classes:
             if torch.all(batch[f"target_{dataset}"] == self.missing_val):
                 continue
-            inds = (batch[f"target_{dataset}"] != self.missing_val).nonzero().squeeze()
+            inds = (
+                (batch[f"target_{dataset}"] != self.missing_val)
+                .nonzero()
+                .squeeze(dim=1)
+            )
             logits = torch.index_select(head_logits[dataset], dim=0, index=inds)
             target = torch.index_select(
-                batch[f"target_{dataset}"],
+                batch[f"one_hot_{dataset}"],
                 dim=0,
                 index=inds,
             )
             loss += F.cross_entropy(logits, target)
 
-            acc = logits.argmax(dim=1) == target
+            acc = logits.argmax(dim=1) == target.argmax(dim=1)
             self.acc_metric[f"{dataset}_{phase}"].update(
                 acc.mean(dtype=torch.float),
                 weight=acc.numel(),

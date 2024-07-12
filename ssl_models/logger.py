@@ -48,13 +48,9 @@ class ImageLogger(Callback):
         return x.detach().cpu().numpy().astype(np.float32)
 
     @staticmethod
-    def should_log(trainer: Trainer, outputs: dict) -> bool:
+    def should_log(trainer: Trainer) -> bool:
         """Check whether images should be logged."""
-        return (
-            trainer.global_rank == 0
-            and outputs["pred"] is not None
-            and outputs["masked"] is not None
-        )
+        return trainer.global_rank == 0
 
     def on_batch_end(
         self,
@@ -75,23 +71,26 @@ class ImageLogger(Callback):
         log_every_n_batches = round(
             num_batches_per_epoch / trainer.logged_images_per_epoch,
         )
+        prefix_idx = batch_idx // log_every_n_batches
         if batch_idx % log_every_n_batches:
             return
 
+        phase_str = f"{trainer.ssl_phase}_{phase}"
         epoch = trainer.current_epoch
-        prefix_idx = batch_idx // log_every_n_batches
+        if outputs["masked"] is not None:
+            trainer.tb_logger.add_image(
+                f"{phase_str}/{prefix_idx}_input",
+                ImageLogger.to_numpy(outputs["masked"][0]),
+                epoch,
+            )
+        if outputs["pred"] is not None:
+            trainer.tb_logger.add_image(
+                f"{phase_str}/{prefix_idx}_pred",
+                ImageLogger.to_numpy(outputs["pred"][0]),
+                epoch,
+            )
         trainer.tb_logger.add_image(
-            f"{phase}/{prefix_idx}_input",
-            ImageLogger.to_numpy(outputs["masked"][0]),
-            epoch,
-        )
-        trainer.tb_logger.add_image(
-            f"{phase}/{prefix_idx}_pred",
-            ImageLogger.to_numpy(outputs["pred"][0]),
-            epoch,
-        )
-        trainer.tb_logger.add_image(
-            f"{phase}/{prefix_idx}_target",
+            f"{phase_str}/{prefix_idx}_target",
             ImageLogger.to_numpy(batch["image"][0]),
             epoch,
         )
@@ -106,7 +105,7 @@ class ImageLogger(Callback):
         dataloader_idx: int = 0,  # noqa: ARG002
     ) -> None:
         """Log train images."""
-        if ImageLogger.should_log(trainer, outputs):
+        if ImageLogger.should_log(trainer):
             self.on_batch_end(
                 trainer,
                 outputs,
@@ -125,7 +124,7 @@ class ImageLogger(Callback):
         dataloader_idx: int = 0,  # noqa: ARG002
     ) -> None:
         """Log validation images."""
-        if ImageLogger.should_log(trainer, outputs):
+        if ImageLogger.should_log(trainer):
             self.on_batch_end(
                 trainer,
                 outputs,

@@ -26,6 +26,7 @@ omegaconf = "^2.3.0"
 clearml = "^1.15.1"
 python-dotenv = "^1.0.1"
 hydra-zen = "^0.13.0"
+pillow = "^10.4.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.1.1"

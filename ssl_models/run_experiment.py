@@ -6,8 +6,8 @@ from hydra_zen.typing import Partial
 from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
 from conf.run import RunConfig
 from ssl_models import LOGGER
+from ssl_models.geopile_data import GeoPileData
 from ssl_models.model import SSLModule
-from ssl_models.odeon_data import OdeonData
 from ssl_models.trainer import SSLTrainer
 
 
@@ -16,7 +16,7 @@ def run_experiment(
     opt_pretrain: OptPretrainConfig,
     opt_probe: OptProbeConfig,
     opt_finetune: OptFinetuneConfig,
-    data: Partial[OdeonData],
+    data: Partial[GeoPileData],
     model: SSLModule,
     trainer: Partial[SSLTrainer],
 ) -> None:
