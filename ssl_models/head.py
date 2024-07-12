@@ -29,6 +29,7 @@ class AttentiveHead(Head):
         dim: int,
         heads: int,
         num_classes: int,
+        final_mlp: bool,
     ) -> None:
         super().__init__()
         self.heads = heads
@@ -40,9 +41,12 @@ class AttentiveHead(Head):
         self.to_kv = nn.Linear(dim, dim * 2, bias=False)
         self.query = nn.Parameter(torch.randn(dim))
 
-        self.linear_mlp = nn.Linear(dim, dim)
-        self.norm_mlp = nn.LayerNorm(dim)
-        self.act_mlp = nn.ReLU()
+        if final_mlp:
+            self.linear_mlp = nn.Linear(dim, dim)
+            self.norm_mlp = nn.LayerNorm(dim)
+            self.act_mlp = nn.ReLU()
+        else:
+            self.linear_mlp = self.norm_mlp = self.act_mlp = nn.Identity()
 
         self.linear = nn.Linear(dim, num_classes)
 
@@ -72,11 +76,14 @@ class AttentiveHead(Head):
 class LinearHead(Head):
     """Attentive head, with a mean pooling reduction."""
 
-    def __init__(self, dim: int, num_classes: int) -> None:
+    def __init__(self, dim: int, num_classes: int, final_mlp: bool) -> None:
         super().__init__()
-        self.linear_mlp = nn.Linear(dim, dim)
-        self.norm_mlp = nn.LayerNorm(dim)
-        self.act_mlp = nn.ReLU()
+        if final_mlp:
+            self.linear_mlp = nn.Linear(dim, dim)
+            self.norm_mlp = nn.LayerNorm(dim)
+            self.act_mlp = nn.ReLU()
+        else:
+            self.linear_mlp = self.norm_mlp = self.act_mlp = nn.Identity()
 
         self.linear = nn.Linear(dim, num_classes)
 

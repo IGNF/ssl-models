@@ -657,6 +657,7 @@ class MAE(nn.Module):
         decoder_mlp_ratio: float,
         band_groups: dict | None = None,
         type_head: str = "attentive",
+        final_mlp: bool = False,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__()
@@ -699,9 +700,9 @@ class MAE(nn.Module):
             [
                 [
                     dataset,
-                    AttentiveHead(dim=dim, heads=heads, num_classes=num_classes)
+                    AttentiveHead(dim=dim, heads=heads, num_classes=num_classes, final_mlp=final_mlp)
                     if type_head == "attentive"
-                    else LinearHead(dim=dim, num_classes=num_classes),
+                    else LinearHead(dim=dim, num_classes=num_classes, final_mlp=final_mlp),
                 ]
                 for dataset, num_classes in self.num_classes.items()
             ],

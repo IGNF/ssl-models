@@ -54,7 +54,7 @@ class GeoPileData(LightningDataModule):
             root_dir,
             ssl_phase,
             transform,
-            rand_augment,
+            rand_augment=rand_augment,
         )
         self.train_loader = DataLoader(
             train_dataset,
@@ -71,7 +71,7 @@ class GeoPileData(LightningDataModule):
             root_dir,
             ssl_phase,
             transform,
-            rand_augment,
+            rand_augment=False,
         )
         self.val_loader = DataLoader(
             val_dataset,
