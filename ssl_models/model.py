@@ -35,6 +35,7 @@ class SSLModule(LightningModule):
         band_groups: dict[str, list] | None = None,
         type_head: str = "attentive",
         final_mlp: bool = False,
+        loss: str = "l2",
         swin_version: int | None = None,
         mask_batch: bool = False,
     ) -> None:
@@ -71,6 +72,7 @@ class SSLModule(LightningModule):
                 "patch_size": patch_size,
                 "type_head": type_head,
                 "final_mlp": final_mlp,
+                "loss": loss,
                 "mask_batch": mask_batch,
                 "swin_version": swin_version,
                 "unpool": unpool,

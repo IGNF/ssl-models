@@ -658,6 +658,7 @@ class MAE(nn.Module):
         band_groups: dict | None = None,
         type_head: str = "attentive",
         final_mlp: bool = False,
+        loss: str = "l2",
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__()
@@ -716,6 +717,24 @@ class MAE(nn.Module):
                 for dataset, num_classes in self.num_classes.items()
             ],
         )
+        match loss:
+            case "l1":
+                norm_pix_loss = False
+                loss_fn = torch.abs
+            case "l2":
+                norm_pix_loss = False
+                loss_fn = torch.square
+            case "l1_norm":
+                norm_pix_loss = True
+                loss_fn = torch.abs
+            case "l2_norm":
+                norm_pix_loss = True
+                loss_fn = torch.square
+            case _:
+                msg = f"Invalid loss {loss}."
+                raise ValueError(msg)
+        self.norm_pix_loss = norm_pix_loss
+        self.loss_fn = loss_fn
 
     def per_pixel_loss(
         self,
@@ -731,7 +750,12 @@ class MAE(nn.Module):
             P2=self.patch_size,
         )  # [B C L PP]
 
-        loss = F.l1_loss(patches, pixels, reduction="none")  # loss per pixel
+        if self.norm_pix_loss:
+            mean = patches.mean(dim=(1, 3), keepdim=True)
+            var = patches.var(dim=(1, 3), keepdim=True)
+            patches = (patches - mean) / (var + 1.0e-6) ** 0.5
+
+        loss = self.loss_fn(patches - pixels)  # loss per pixel
         loss = reduce(loss, "B C L PP -> B C L", reduction="mean")  # loss per patch
 
         # mask out the loss for unmasked patches
