@@ -51,7 +51,7 @@ def run_experiment(
     LOGGER.info("Pretrain")
     trainer_pretrain.fit(model, datamodule=data_pretrain)
 
-    if run.probe > 0:
+    if opt_probe.epochs > 0:
         LOGGER.info("Probe")
         data_probe = data(ssl_phase="probe")
         trainer_probe = trainer(
@@ -61,7 +61,7 @@ def run_experiment(
         )
         trainer_probe.fit(model, datamodule=data_probe)
 
-    if run.finetune > 0:
+    if opt_finetune.epochs > 0:
         LOGGER.info("Finetune")
         data_finetune = data(ssl_phase="finetune")
         trainer_finetune = trainer(
