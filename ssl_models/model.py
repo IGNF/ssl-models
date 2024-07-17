@@ -31,7 +31,7 @@ class SSLModule(LightningModule):
         mask_ratio: float = 0.75,
         image_size: int = 256,
         patch_size: int = 16,
-        unpool: bool = False,
+        upsample: str | None = None,
         band_groups: dict[str, list] | None = None,
         type_head: str = "attentive",
         final_mlp: bool = False,
@@ -75,7 +75,7 @@ class SSLModule(LightningModule):
                 "loss": loss,
                 "mask_batch": mask_batch,
                 "swin_version": swin_version,
-                "unpool": unpool,
+                "upsample": upsample,
             }
             if band_groups:
                 model_args["band_groups"] = band_groups

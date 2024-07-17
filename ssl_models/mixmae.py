@@ -517,6 +517,7 @@ class MixMAE(nn.Module):
         range_mask_ratio: float = 0.0,
         pretrained_window_sizes: tuple[int, int, int, int] = [0, 0, 0, 0],
         type_head: str = "attentive",
+        final_mlp: bool = False,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__()
@@ -640,12 +641,15 @@ class MixMAE(nn.Module):
                     dataset,
                     AttentiveHead(
                         self.embed_dim * 2 ** (self.num_layers - 1),
-                        num_classes,
+                        heads=num_heads,
+                        num_classes=num_classes,
+                        final_mlp=final_mlp,
                     )
                     if type_head == "attentive"
                     else LinearHead(
                         self.embed_dim * 2 ** (self.num_layers - 1),
-                        num_classes,
+                        num_classes=num_classes,
+                        final_mlp=final_mlp,
                     ),
                 ]
                 for dataset, num_classes in self.num_classes.items()

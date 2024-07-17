@@ -52,14 +52,14 @@ def posemb_sincos_1d(
     return pe.to(dtype)
 
 
-def downsampling_from_patch_size(unpool: bool, patch_size: int) -> int:
-    """Infer number of unpooling downsamplings associated with a given patch size."""
-    if unpool:
+def downsampling_from_patch_size(upsample: str | None, patch_size: int) -> int:
+    """Infer number of upsampling/downsamplings associated with a given patch size."""
+    if upsample in ("unpool", "linear"):
         num_downsampling = round(np.log2(patch_size))
         if 2**num_downsampling != patch_size:
             msg = (
                 f"Invalid patch size {patch_size}."
-                " Expected power of 2 when using unpooling."
+                " Expected power of 2 when using upsampling."
             )
             raise ValueError(msg)
     else:

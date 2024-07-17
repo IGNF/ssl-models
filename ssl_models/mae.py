@@ -1,7 +1,6 @@
 """MAE module. Adapted from clay foundation model: https://github.com/Clay-foundation/model."""
 
 import torch
-import torch.nn.functional as F  # noqa: N812
 from einops import rearrange, reduce, repeat
 from torch import Tensor, nn
 from vit_pytorch.vit import Transformer
@@ -23,12 +22,12 @@ class Patchify(nn.Module):
         in_chans: int,
         embed_dim: int,
         patch_size: int,
-        unpool: bool,
+        upsample: str | None,
     ) -> None:
         super().__init__()
         self.patch_size = patch_size
-        self.unpool = unpool
-        self.num_downsampling = downsampling_from_patch_size(unpool, patch_size)
+        self.upsample = upsample
+        self.num_downsampling = downsampling_from_patch_size(upsample, patch_size)
 
         self.conv_skip = nn.Conv2d(
             in_chans,
@@ -37,7 +36,7 @@ class Patchify(nn.Module):
             stride=self.patch_size,
         )
         self.norm_skip = nn.GroupNorm(1, embed_dim)
-        if self.unpool:
+        if self.upsample in ("unpool", "linear"):
             channels = []
             for idx in range(self.num_downsampling):
                 pow_in = idx
@@ -54,8 +53,9 @@ class Patchify(nn.Module):
                             channels_in,
                             channels_out,
                             kernel_size=2,
+                            stride=2 if self.upsample == "linear" else 1,
                             padding_mode="reflect",
-                            padding="same",
+                            padding="valid" if self.upsample == "linear" else "same",
                         ),
                     ]
                     for idx, (channels_in, channels_out) in enumerate(channels)
@@ -86,7 +86,7 @@ class Patchify(nn.Module):
         )
 
         inds = []
-        if self.unpool:
+        if self.upsample in ("unpool", "linear"):
             xb = rearrange(
                 xb,
                 "B C (H P1) (W P2) -> (B H W) C P1 P2",
@@ -96,8 +96,9 @@ class Patchify(nn.Module):
             for idx in range(self.num_downsampling):
                 xb = self.convs[f"conv_{idx}"](xb)
                 xb = self.norms[f"norm_{idx}"](xb)
-                xb, ind = self.max_pool(xb)
-                inds.append(ind)
+                if self.upsample == "unpool":
+                    xb, ind = self.max_pool(xb)
+                    inds.append(ind)
 
             xb = self.conv(xb)
             xb = self.norm(xb)
@@ -121,19 +122,19 @@ class Pixelify(nn.Module):
         embed_dim: int,
         out_chans: int,
         patch_size: int,
-        unpool: bool,
+        upsample: str | None,
     ) -> None:
         super().__init__()
         self.patch_size = patch_size
-        self.unpool = unpool
-        self.num_downsampling = downsampling_from_patch_size(unpool, patch_size)
+        self.upsample = upsample
+        self.num_downsampling = downsampling_from_patch_size(upsample, patch_size)
 
         self.conv_skip = nn.Conv2d(
             embed_dim,
             out_chans * self.patch_size**2,
             kernel_size=1,
         )
-        if self.unpool:
+        if self.upsample in ("unpool", "linear"):
             channels = []
             for idx in range(self.num_downsampling):
                 pow_in = self.num_downsampling - idx
@@ -148,7 +149,22 @@ class Pixelify(nn.Module):
                 kernel_size=1,
             )
             self.norm = nn.GroupNorm(1, 4 * 2**self.num_downsampling)
-            self.max_unpool = nn.MaxUnpool2d(kernel_size=2, stride=2)
+            self.unpool = nn.MaxUnpool2d(kernel_size=2, stride=2)
+            if self.upsample == "linear":
+                self.linear = nn.ModuleDict(
+                    [
+                        [
+                            f"linear_{idx}",
+                            nn.Conv2d(
+                                channels_in,
+                                4 * channels_in,
+                                kernel_size=1,
+                                bias=False,
+                            ),
+                        ]
+                        for idx, (channels_in, channels_out) in enumerate(channels)
+                    ],
+                )
             self.convs = nn.ModuleDict(
                 [
                     [
@@ -159,6 +175,7 @@ class Pixelify(nn.Module):
                             kernel_size=2,
                             padding_mode="reflect",
                             padding="same",
+                            bias=False,
                         ),
                     ]
                     for idx, (channels_in, channels_out) in enumerate(channels)
@@ -186,11 +203,20 @@ class Pixelify(nn.Module):
             P1=self.patch_size,
             P2=self.patch_size,
         )
-        if self.unpool:
+        if self.upsample in ("unpool", "linear"):
             xb = self.conv(xb)
             xb = self.norm(xb)
-            for idx, ind in enumerate(inds[::-1]):
-                xb = self.max_unpool(xb, ind)
+            for idx in range(self.num_downsampling):
+                if self.upsample == "unpool":
+                    xb = self.unpool(xb, inds[::-1][idx])
+                else:
+                    xb = self.linear[f"linear_{idx}"](xb)
+                    xb = rearrange(
+                        xb,
+                        "B (C p1 p2) H W -> B C (H p1) (W p2)",
+                        p1=2,
+                        p2=2,
+                    )
                 xb = self.convs[f"conv_{idx}"](xb)
                 xb = self.norms[f"norm_{idx}"](xb)
             xb = self.fc(xb)
@@ -209,7 +235,7 @@ class Encoder(nn.Module):
         mask_ratio: float,
         image_size: int,
         patch_size: int,
-        unpool: bool,
+        upsample: str | None,
         dim: int,
         depth: int,
         heads: int,
@@ -237,7 +263,7 @@ class Encoder(nn.Module):
         pos_dim = band_dim = dim // 2
         self.patch_embedding = nn.ModuleDict(
             {
-                name: Patchify(len(bands), dim, patch_size, unpool)
+                name: Patchify(len(bands), dim, patch_size, upsample)
                 for name, bands in self.band_groups.items()
             },
         )
@@ -424,7 +450,7 @@ class Decoder(nn.Module):
         mask_ratio: float,
         image_size: int,
         patch_size: int,
-        unpool: bool,
+        upsample: str | None,
         encoder_dim: int,
         dim: int,
         depth: int,
@@ -484,7 +510,7 @@ class Decoder(nn.Module):
 
         self.embed_to_pixels = nn.ModuleDict(
             {
-                name: Pixelify(dim, len(bands), patch_size, unpool)
+                name: Pixelify(dim, len(bands), patch_size, upsample)
                 for name, bands in self.band_groups.items()
             },
         )
@@ -642,7 +668,7 @@ class MAE(nn.Module):
         mask_ratio: float,
         image_size: int,
         patch_size: int,
-        unpool: bool,
+        upsample: str | None,
         # encoder
         dim: int,
         depth: int,
@@ -673,7 +699,7 @@ class MAE(nn.Module):
             mask_ratio=mask_ratio,
             image_size=image_size,
             patch_size=patch_size,
-            unpool=unpool,
+            upsample=upsample,
             dim=dim,
             depth=depth,
             heads=heads,
@@ -686,7 +712,7 @@ class MAE(nn.Module):
             mask_ratio=mask_ratio,
             image_size=image_size,
             patch_size=patch_size,
-            unpool=unpool,
+            upsample=upsample,
             encoder_dim=dim,
             dim=decoder_dim,
             depth=decoder_depth,

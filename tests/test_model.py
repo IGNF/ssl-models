@@ -31,5 +31,5 @@ def test_ssl_mixmae(stage, model_size, swin_version, mask_batch):
 
 
 @pytest.mark.xfail
-def test_unpool_should_fail():
-    _ = SSLModule(model="MAE", model_size="small", patch_size=14, unpool=True)
+def test_upsample_should_fail():
+    _ = SSLModule(model="MAE", model_size="small", patch_size=14, upsample="unpool")

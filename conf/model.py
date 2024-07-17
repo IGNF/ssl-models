@@ -17,7 +17,7 @@ class ModelConfig:  # noqa: D101
     type_head: str = "linear"
     final_mlp: bool = False
     loss: str = "l2_norm"
-    unpool: bool = False
+    upsample: str | None = None
     band_groups: dict = field(default_factory=lambda: {"rgb": [0, 1, 2]})
     swin_version: int = 2
     mask_batch: bool = False
