@@ -2,8 +2,9 @@
 
 from dataclasses import dataclass, field
 
-from hydra_zen import builds, store
+from hydra_zen import store
 
+from conf import pbuilds
 from ssl_models.model import SSLModule
 
 
@@ -23,7 +24,7 @@ class ModelConfig:  # noqa: D101
     mask_batch: bool = False
 
 
-model_build = builds(SSLModule, builds_bases=(ModelConfig,))
+model_build = pbuilds(SSLModule, builds_bases=(ModelConfig,))
 
 model_store = store(group="model")
 model_store(model_build, name="default_model")

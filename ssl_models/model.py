@@ -101,6 +101,7 @@ class SSLModule(LightningModule):
             ],
         )
         self.tb_logger = None
+        self.save_hyperparameters()
 
     def configure_optimizers(self) -> dict:
         """Configure optimizer."""

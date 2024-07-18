@@ -1,9 +1,6 @@
 """Trainer module."""
 
-from pathlib import Path
-
 import pytorch_lightning as pl
-from hydra.core.hydra_config import HydraConfig
 from pytorch_lightning import Callback
 from pytorch_lightning.callbacks import (
     LearningRateMonitor,
@@ -14,6 +11,7 @@ from pytorch_lightning.loggers.logger import Logger
 
 from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
 from conf.run import RunConfig
+from ssl_models.hydra_utils import get_hydra_timestamp
 from ssl_models.logger import ImageLogger, TensorBoardLogger
 
 
@@ -33,7 +31,7 @@ class SSLTrainer(pl.Trainer):
         self.ssl_phase = ssl_phase
         self.exp_dir = run.exp_dir
         self.exp_name = run.exp_name
-        self.exp_version = self.hydra_timestamp()
+        self.exp_version = get_hydra_timestamp()
 
         self.logged_images_per_epoch = run.logged_images_per_epoch
 
@@ -74,12 +72,11 @@ class SSLTrainer(pl.Trainer):
                 logging_interval="step",
             ),
         )
-        callbacks.append(ModelCheckpoint(filename=self.ssl_phase + "-{epoch}"))
+        callbacks.append(
+            ModelCheckpoint(
+                filename=self.ssl_phase + "-{epoch}",
+                save_weights_only=True,
+            ),
+        )
         callbacks.append(ImageLogger())
         return callbacks
-
-    @staticmethod
-    def hydra_timestamp() -> str:
-        """Get hydra timestamp, specifying log folder version."""
-        hydra_cfg = HydraConfig.get()
-        return Path(hydra_cfg.runtime.output_dir).stem
