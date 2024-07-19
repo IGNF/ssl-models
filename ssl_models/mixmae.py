@@ -165,9 +165,14 @@ class WindowAttentionSwinV2(nn.Module):
 
         if mask is not None:
             mask = mask.reshape(b_, 1, 1, n)
-            mask_new = mask * mask.transpose(2, 3) + (1 - mask) * (1 - mask).transpose(
-                2,
-                3,
+            mask_new = torch.sum(
+                torch.stack(
+                    [
+                        (mask == i).long() * (mask == i).long().transpose(2, 3)
+                        for i in range(4)
+                    ],
+                ),
+                dim=0,
             )
             mask_new = 1 - mask_new
             if mask_new.dtype == torch.float16:
@@ -261,10 +266,16 @@ class WindowAttention(nn.Module):
 
         if mask is not None:
             mask = mask.reshape(B_, 1, 1, N)
-            mask_new = mask * mask.transpose(2, 3) + (1 - mask) * (1 - mask).transpose(
-                2,
-                3,
+            mask_new = torch.sum(
+                torch.stack(
+                    [
+                        (mask == i).long() * (mask == i).long().transpose(2, 3)
+                        for i in range(4)
+                    ],
+                ),
+                dim=0,
             )
+
             mask_new = 1 - mask_new
             if mask_new.dtype == torch.float16:
                 attn = attn - 65500 * mask_new
@@ -717,10 +728,7 @@ class MixMAE(nn.Module):
             mask_mix_images = torch.reshape(mask_mix_images_init[mask_idx], (1, seq_l))
             mask_mix_images = mask_mix_images.to(device=x["image"].device)
 
-            mask = mask_mix_images.clone()
-            mask[mask != 0] = 1
-
-            mask = mask.reshape(1, 1, out_h, out_w)
+            mask = mask_mix_images.reshape(1, 1, out_h, out_w)
             mask_mix_images = mask_mix_images.reshape(1, 1, out_h, out_w)
             mask_s1 = torch.nn.functional.interpolate(
                 mask,
@@ -765,7 +773,7 @@ class MixMAE(nn.Module):
             1,
         ).contiguous()
 
-        return mask_s1, mask_s2, mask_s3, mask, mask_mix_images
+        return mask_s1, mask_s2, mask_s3, mask
 
     def patchify(self, imgs: Tensor) -> Tensor:
         """Patchify the input.
@@ -840,13 +848,12 @@ class MixMAE(nn.Module):
         mask_s2: Tensor,
         mask_s3: Tensor,
         mask_s4: Tensor,
-        mask_mix_images: Tensor,
         phase: str,
     ) -> Tensor:
         x = self.patch_embed(x)
 
         if phase == "pretrain":
-            x = self.mixing_images(x, mask_mix_images)
+            x = self.mixing_images(x, mask_s1)
 
         x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
@@ -865,10 +872,11 @@ class MixMAE(nn.Module):
 
     def forward_decoder(self, x: Tensor, mask: Tensor) -> Tensor:
         # embed tokens
+
         x = self.decoder_embed(x)
         B, L, _ = x.shape  # noqa: N806
 
-        mask_tokens = self.mask_token.expand(B, L, -1)
+        mask_tokens = self.mask_token.expand(1, L, -1)
         x = x * (1 - mask) + mask_tokens * mask
 
         # add pos embed
@@ -886,54 +894,74 @@ class MixMAE(nn.Module):
         x: Tensor,
         x_rec: Tensor,
         mask: Tensor,
-        phase: str,
     ) -> Tensor:
-        new_batch_size = int(x.shape[0] / 4) if phase == "pretrain" else x.shape[0]
-        x = x[:new_batch_size, :, :, :]
         target = self.patchify(x)
 
         loss_rec = (x_rec - target) ** 2
+
         loss_rec_masked = torch.masked_select(loss_rec, mask.bool())
 
         return loss_rec_masked.mean()
 
     def forward(self, x: Tensor, ssl_phase: str) -> tuple[Tensor, Tensor, Tensor]:
-        mask_s1, mask_s2, mask_s3, mask_s4, mask_mix_images = self.random_masking(
+        mask_s1, mask_s2, mask_s3, mask_s4 = self.random_masking(
             x,
             self.mask_batch,
             ssl_phase,
         )
+        B, C, H, W = x["image"].shape  # noqa: N806
+
         z = self.forward_encoder(
             x["image"],
             mask_s1,
             mask_s2,
             mask_s3,
             mask_s4,
-            mask_mix_images,
             ssl_phase,
         )
+
+        if ssl_phase == "pretrain":
+            part_idx = torch.Tensor([0, 1, 2, 3]).repeat_interleave(B // 4, dim=0)
+
+            mask_s4 = mask_s4.repeat((4, 1, 1))
+            mask_s4 = torch.stack(
+                [(mask == i).float() for (mask, i) in zip(mask_s4, part_idx)],
+            )
+            mask_s4 = 1 - mask_s4
+
+            mask_s1 = mask_s1.repeat((4, 1, 1))
+            mask_s1 = torch.stack(
+                [(mask == i).float() for (mask, i) in zip(mask_s1, part_idx)],
+            )
+            mask_s1 = 1 - mask_s1
+
+            z = z.repeat((4, 1, 1))
 
         x_rec = self.forward_decoder(z, mask_s4)
 
         loss = self.forward_loss(x["image"], x_rec, mask_s4, ssl_phase)
 
-        # masked
+        # masked #
         b_mask, mask_l, _ = mask_s1.shape
         mask_w = mask_h = int(mask_l**0.5)
         mask_input = mask_s1.view(b_mask, 1, mask_h, mask_w)
-        B, C, H, W = x["image"].shape  # noqa: N806
         mask_input = torch.nn.functional.interpolate(
             mask_input,
             size=(H, W),
             mode="nearest",
         )
-        masked = x["image"][: mask_input.shape[0], :, :, :] * (1 - mask_input)
+
+        masked = x["image"][:, :, :, :] * (1 - mask_input)
         masked = torch.where(masked != 0, masked, 1)
 
         # pred
         _, mask_l, _ = mask_s4.shape
         mask_w = mask_h = int(mask_l**0.5)
-        mask_output = mask_s4.view(b_mask, 1, mask_h, mask_w)
+        if ssl_phase == "pretrain":
+            mask_output = mask_s4.view(B, 1, mask_h, mask_w)
+        else:
+            mask_output = mask_s4.view(1, 1, mask_h, mask_w)
+
         mask_output = torch.nn.functional.interpolate(
             mask_output,
             size=(H, W),
@@ -954,18 +982,12 @@ class MixMAE(nn.Module):
             p2=x_rec_w,
         )
 
-        if ssl_phase == "pretrain":
-            targets = x["image"][: B // 4, :, :, :]
-        else:
-            targets = x["image"]
-
-        pred = x1_rec * mask_output + targets * (1 - mask_output)
+        pred = x1_rec * mask_output + x["image"] * (1 - mask_output)
 
         # head logits
         head_logits = {
             dataset: self.head[dataset](z, ssl_phase) for dataset in self.num_classes
         }
-
         return loss, masked, pred, head_logits
 
 
@@ -1059,7 +1081,7 @@ def mixmae_large(**kwargs) -> MixMAE:  # noqa: ANN003
         "embed_dim": 192,
         "depths": [2, 2, 18, 2],
         "num_heads": [6, 12, 24, 48],
-        "window_size": [14, 14, 14, 7],
+        "window_size": [16, 16, 16, 8],
         "mlp_ratio": 4,
         "qkv_bias": True,
         "drop_rate": 0.0,
@@ -1086,7 +1108,7 @@ def mixmae_huge(**kwargs) -> MixMAE:  # noqa: ANN003
         "embed_dim": 352,
         "depths": [2, 2, 18, 2],
         "num_heads": [11, 22, 44, 88],
-        "window_size": [14, 14, 14, 7],
+        "window_size": [16, 16, 16, 8],
         "mlp_ratio": 4,
         "qkv_bias": True,
         "drop_rate": 0.0,

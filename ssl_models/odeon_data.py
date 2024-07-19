@@ -66,6 +66,7 @@ class OdeonData(Input):
                 "batch_size": batch_size,
                 "num_workers": num_workers,
                 "shuffle": True,
+                "drop_last": True,
             },
         }
         super().__init__(
