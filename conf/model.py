@@ -14,11 +14,12 @@ class ModelConfig:  # noqa: D101
     mask_ratio: float = 0.75
     image_size: int = 224
     patch_size: int = 16
-    type_head: str = "attentive"
+    type_head: str = "linear"
     unpool: bool = False
     band_groups: dict = field(default_factory=lambda: {"rgb": [0, 1, 2]})
     swin_version: int = 2
     mask_batch: bool = False
+    pretrained: bool = False
 
 
 model_build = builds(SSLModule, builds_bases=(ModelConfig,))

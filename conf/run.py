@@ -9,8 +9,6 @@ from hydra_zen import MISSING, store
 class RunConfig:  # noqa: D101
     exp_dir: str = MISSING
     exp_name: str = MISSING
-    probe: bool = True
-    finetune: bool = True
     reproducible: bool = True
     seed: int = 42
     logged_images_per_epoch: int = 10

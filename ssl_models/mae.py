@@ -218,6 +218,7 @@ class Encoder(nn.Module):
         dim_head: int,
         mlp_ratio: float,
         band_groups: dict,
+        pretrained: bool,
     ) -> None:
         super().__init__()
         if image_size % patch_size:
@@ -269,9 +270,13 @@ class Encoder(nn.Module):
 
         match dim:
             case 768:
-                self.transformer = models.vit_b_16(pretrained=True)
+                self.transformer = models.vit_b_16(
+                    weights="DEFAULT" if pretrained else None
+                )
             case 1024:
-                self.transformer = models.vit_l_16(pretrained=True)
+                self.transformer = models.vit_l_16(
+                    pretrained="DEFAULT" if pretrained else None
+                )
             case _:
                 raise NotImplementedError
 
@@ -387,9 +392,9 @@ class Encoder(nn.Module):
             cube["image"],
         )  # [B G L D] - patchify & create embeddings per patch
 
-        patches = self.add_encodings(
-            patches,
-        )  # [B G L D] - add position & band encoding to the embeddings
+        # patches = self.add_encodings(
+        #     patches,
+        # )  # [B G L D] - add position & band encoding to the embeddings
 
         patches = rearrange(patches, "B G L D -> B (G L) D")  # [B (GL) D]
 
@@ -416,7 +421,8 @@ class Encoder(nn.Module):
         batch_class_token = self.transformer.class_token.expand(n, -1, -1)
         x = torch.cat([batch_class_token, x], dim=1)
 
-        encoded_unmasked_patches = self.transformer.encoder(x)[:, 1:]
+        encoder = self.transformer.encoder
+        encoded_unmasked_patches = encoder.ln(encoder.layers(encoder.dropout(x)))[:, 1:]
 
         return (
             encoded_unmasked_patches,
@@ -668,6 +674,7 @@ class MAE(nn.Module):
         decoder_mlp_ratio: float,
         band_groups: dict | None = None,
         type_head: str = "attentive",
+        pretrained: bool = False,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__()
@@ -689,6 +696,7 @@ class MAE(nn.Module):
             dim_head=dim_head,
             mlp_ratio=mlp_ratio,
             band_groups=band_groups,
+            pretrained=pretrained,
         )
 
         self.decoder = Decoder(
