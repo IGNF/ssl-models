@@ -939,9 +939,9 @@ class MixMAE(nn.Module):
 
         x_rec = self.forward_decoder(z, mask_s4)
 
-        loss = self.forward_loss(x["image"], x_rec, mask_s4, ssl_phase)
+        loss = self.forward_loss(x["image"], x_rec, mask_s4)
 
-        # masked #
+        # masked
         b_mask, mask_l, _ = mask_s1.shape
         mask_w = mask_h = int(mask_l**0.5)
         mask_input = mask_s1.view(b_mask, 1, mask_h, mask_w)
