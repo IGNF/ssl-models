@@ -35,6 +35,7 @@ class SSLModule(LightningModule):
         band_groups: dict[str, list] | None = None,
         type_head: str = "attentive",
         swin_version: int | None = None,
+        nb_mix_images: int | None = None,
         mask_batch: bool = False,
     ) -> None:
         super().__init__()
@@ -56,7 +57,6 @@ class SSLModule(LightningModule):
             }
             if swin_version not in (1, 2):
                 msg = f"Invalid swin version {swin_version}. Expected one of '1' or '2'"
-                raise ValueError(msg)
         else:
             msg = f"Invalid model name {model}. Not implemented"
             raise ValueError(msg)
@@ -71,6 +71,7 @@ class SSLModule(LightningModule):
                 "type_head": type_head,
                 "mask_batch": mask_batch,
                 "swin_version": swin_version,
+                "nb_mix_images": nb_mix_images,
                 "unpool": unpool,
             }
             if band_groups:
