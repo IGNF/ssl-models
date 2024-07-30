@@ -23,18 +23,30 @@ def model_map():
 
 
 @pytest.mark.parametrize(
-    "model_size, image_size, mask_batch, swin_version",
+    "model_size, image_size, mask_batch, swin_version, norm_pix_loss, nb_mix_images",
     itertools.product(
         ("tiny",),
         (128, 256),
         (True, False),
         (1, 2),
+        (True, False),
+        (2, 4),
     ),
 )
-def test_mixmae(model_map, model_size, image_size, mask_batch, swin_version):
+def test_mixmae(
+    model_map,
+    model_size,
+    image_size,
+    mask_batch,
+    swin_version,
+    norm_pix_loss,
+    nb_mix_images,
+):
     model_args = {
         "image_size": image_size,
         "mask_batch": mask_batch,
         "swin_version": swin_version,
+        "norm_pix_loss": norm_pix_loss,
+        "nb_mix_images": nb_mix_images,
     }
     model_map[model_size](**model_args)
