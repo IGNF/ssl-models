@@ -19,6 +19,8 @@ class ModelConfig:  # noqa: D101
     band_groups: dict = field(default_factory=lambda: {"rgb": [0, 1, 2]})
     swin_version: int = 2
     mask_batch: bool = False
+    nb_mix_images: int = 4
+    norm_pix_loss: bool = True
 
 
 model_build = builds(SSLModule, builds_bases=(ModelConfig,))

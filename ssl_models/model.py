@@ -35,7 +35,9 @@ class SSLModule(LightningModule):
         band_groups: dict[str, list] | None = None,
         type_head: str = "attentive",
         swin_version: int | None = None,
+        nb_mix_images: int | None = None,
         mask_batch: bool = False,
+        norm_pix_loss: bool | None = None,
     ) -> None:
         super().__init__()
 
@@ -71,7 +73,9 @@ class SSLModule(LightningModule):
                 "type_head": type_head,
                 "mask_batch": mask_batch,
                 "swin_version": swin_version,
+                "nb_mix_images": nb_mix_images,
                 "unpool": unpool,
+                "norm_pix_loss": norm_pix_loss,
             }
             if band_groups:
                 model_args["band_groups"] = band_groups
