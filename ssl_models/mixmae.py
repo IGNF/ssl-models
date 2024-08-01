@@ -296,7 +296,7 @@ class WindowAttention(nn.Module):
 class MixMAEBlock(nn.Module):
     """MixMAE block."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         dim: int,
         input_resolution: tuple[int, int],
@@ -312,6 +312,7 @@ class MixMAEBlock(nn.Module):
         pretrained_window_size: int,
         swin_version: int,
         nb_mix_images: int,
+        shift_size: int,
     ) -> None:
         super().__init__()
         self.dim = dim
@@ -321,10 +322,16 @@ class MixMAEBlock(nn.Module):
         self.mlp_ratio = mlp_ratio
         self.swin_version = swin_version
         self.nb_mix_images = nb_mix_images
+        self.shift_size = shift_size
         if min(self.input_resolution) <= self.window_size:
             # if window size is larger than input resolution,\
             # we don't partition windows
             self.window_size = min(self.input_resolution)
+            self.shift_size = 0
+
+        if not 0 <= self.shift_size < self.window_size:
+            msg = f"shift_size must be in 0-window_size. Not {shift_size}"
+            raise ValueError(msg)
 
         self.norm1 = norm_layer(dim)
 
@@ -369,6 +376,16 @@ class MixMAEBlock(nn.Module):
             x = self.norm1(x)
         x = x.view(B, H, W, C)
 
+        # cyclic shift
+        if self.shift_size > 0:
+            x = torch.roll(x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2))
+
+            attn_mask = torch.roll(
+                attn_mask.view(-1, H, W),
+                shifts=(-self.shift_size, -self.shift_size),
+                dims=(1, 2),
+            ).reshape(-1, H * W, 1)
+
         # partition windows
         x_windows = window_partition(
             x,
@@ -405,6 +422,10 @@ class MixMAEBlock(nn.Module):
             C,
         )
         x = window_reverse(attn_windows, self.window_size, H, W)  # B H' W' c
+
+        # reverse cyclic shift
+        if self.shift_size > 0:
+            x = torch.roll(x, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
 
         x = x.view(B, H * W, C)
 
@@ -471,6 +492,7 @@ class MixMAELayer(nn.Module):
                     pretrained_window_size=pretrained_window_size,
                     swin_version=self.swin_version,
                     nb_mix_images=self.nb_mix_images,
+                    shift_size=0 if (i % 2 == 0) else window_size // 2,
                 ),
             )
         # patch merging layer
@@ -1004,7 +1026,7 @@ def mixmae_tiny(**kwargs) -> MixMAE:  # noqa: ANN003
         "embed_dim": 96,
         "depths": [2, 2, 6, 2],
         "num_heads": [3, 6, 12, 24],
-        "window_size": [16, 16, 16, 8],
+        "window_size": [8, 8, 8, 8],
         "mlp_ratio": 4,
         "qkv_bias": True,
         "drop_rate": 0.0,
@@ -1028,7 +1050,7 @@ def mixmae_small(**kwargs) -> MixMAE:  # noqa: ANN003
         "embed_dim": 96,
         "depths": [2, 2, 18, 2],
         "num_heads": [3, 6, 12, 24],
-        "window_size": [16, 16, 16, 8],
+        "window_size": [8, 8, 8, 8],
         "mlp_ratio": 4,
         "qkv_bias": True,
         "drop_rate": 0.0,
@@ -1052,7 +1074,7 @@ def mixmae_base(**kwargs) -> MixMAE:  # noqa: ANN003
         "embed_dim": 128,
         "depths": [2, 2, 18, 2],
         "num_heads": [4, 8, 16, 32],
-        "window_size": [16, 16, 16, 8],
+        "window_size": [8, 8, 8, 8],
         "mlp_ratio": 4,
         "qkv_bias": True,
         "drop_rate": 0.0,
@@ -1076,7 +1098,7 @@ def mixmae_large(**kwargs) -> MixMAE:  # noqa: ANN003
         "embed_dim": 192,
         "depths": [2, 2, 18, 2],
         "num_heads": [6, 12, 24, 48],
-        "window_size": [16, 16, 16, 8],
+        "window_size": [8, 8, 8, 8],
         "mlp_ratio": 4,
         "qkv_bias": True,
         "drop_rate": 0.0,
@@ -1100,7 +1122,7 @@ def mixmae_huge(**kwargs) -> MixMAE:  # noqa: ANN003
         "embed_dim": 352,
         "depths": [2, 2, 18, 2],
         "num_heads": [11, 22, 44, 88],
-        "window_size": [16, 16, 16, 8],
+        "window_size": [8, 8, 8, 8],
         "mlp_ratio": 4,
         "qkv_bias": True,
         "drop_rate": 0.0,
