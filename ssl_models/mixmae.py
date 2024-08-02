@@ -548,6 +548,7 @@ class MixMAE(nn.Module):
         self.decoder_num_heads = decoder_num_heads
 
         # encoder args
+        self.patch_size = patch_size
         self.encoder_stride = 8 * patch_size
         self.embed_dim = embed_dim
         self.patch_norm = patch_norm
@@ -937,62 +938,37 @@ class MixMAE(nn.Module):
             mask_s1 = self.random_unmasking(mask_s1, B)
             mask_s4 = self.random_unmasking(mask_s4, B)
 
-        x_rec = self.forward_decoder(z, mask_s4, ssl_phase)
+            x_rec = self.forward_decoder(z, mask_s4, ssl_phase)
+            loss = self.forward_loss(x["image"], x_rec, mask_s4)
 
-        loss = self.forward_loss(x["image"], x_rec, mask_s4)
-
-        # masked
-        mask_input = mask_s1.view(
-            mask_s1.shape[0],
-            1,
-            H // self.encoder_stride * 8,
-            W // self.encoder_stride * 8,
-        )
-        mask_input = torch.nn.functional.interpolate(
-            mask_input,
-            size=(H, W),
-            mode="nearest",
-        )
-
-        masked = torch.where(mask_input == 0, x["image"], 1)
-
-        # pred
-        if ssl_phase == "pretrain":
-            mask_output = mask_s4.view(
-                B,
+            mask_input = mask_s1.view(
+                mask_s1.shape[0],
                 1,
-                H // self.encoder_stride,
-                W // self.encoder_stride,
+                H // self.patch_size,
+                W // self.patch_size,
             )
-        else:
-            mask_output = mask_s4.view(
-                1,
-                1,
-                H // self.encoder_stride,
-                W // self.encoder_stride,
+            mask_input = F.interpolate(
+                mask_input,
+                size=(H, W),
+                mode="nearest",
+            )
+            masked = torch.where(mask_input == 0, x["image"], 1)
+
+            x_rec = rearrange(
+                x_rec,
+                "b (h w) (p1 p2 c) -> b c (h p1) (w p2)",
+                h=H // self.encoder_stride,
+                p1=self.encoder_stride,
+                p2=self.encoder_stride,
             )
 
-        mask_output = torch.nn.functional.interpolate(
-            mask_output,
-            size=(H, W),
-            mode="nearest",
-        )
+            pred = x_rec * mask_input + x["image"] * (1 - mask_input)
+            return loss, masked, pred, None
 
-        x_rec = rearrange(
-            x_rec,
-            "b (h w) (p1 p2 c) -> b c (h p1) (w p2)",
-            h=H // int((x_rec.shape[2] / C) ** 0.5),
-            p1=int((x_rec.shape[2] / C) ** 0.5),
-            p2=int((x_rec.shape[2] / C) ** 0.5),
-        )
-
-        pred = x_rec * mask_output + x["image"] * (1 - mask_output)
-
-        # head logits
         head_logits = {
             dataset: self.head[dataset](z, ssl_phase) for dataset in self.num_classes
         }
-        return loss, masked, pred, head_logits
+        return None, None, None, head_logits
 
 
 def mixmae_tiny(**kwargs) -> MixMAE:  # noqa: ANN003

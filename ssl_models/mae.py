@@ -786,26 +786,29 @@ class MAE(nn.Module):
             ssl_phase,
         )  # [B (GL:(1 - mask_ratio)) D], [(1-mask_ratio)], [mask_ratio], [B G L]
 
-        # decoder
-        pixels = self.decoder(
-            encoded_unmasked_patches,
-            embed_inds,
-            unmasked_indices,
-            masked_indices,
-            ssl_phase,
-        )  # [B C L PP]
+        if ssl_phase == "pretrain":
+            # decoder
+            pixels = self.decoder(
+                encoded_unmasked_patches,
+                embed_inds,
+                unmasked_indices,
+                masked_indices,
+                ssl_phase,
+            )  # [B C L PP]
 
-        # loss
-        rec_loss, masked, pred = self.per_pixel_loss(
-            cube["image"],
-            pixels,
-            masked_matrix,
-        )
+            # loss
+            rec_loss, masked, pred = self.per_pixel_loss(
+                cube["image"],
+                pixels,
+                masked_matrix,
+            )
+            return rec_loss, masked, pred, None
+
         head_logits = {
             dataset: self.head[dataset](encoded_unmasked_patches, ssl_phase)
             for dataset in self.num_classes
         }
-        return rec_loss, masked, pred, head_logits
+        return None, None, None, head_logits
 
 
 def mae_tiny(**kwargs) -> MAE:  # noqa: ANN003
