@@ -37,9 +37,7 @@ class WindowAttentionSwinV2(nn.Module):
         nb_mix_images: int,
     ) -> None:
         super().__init__()
-        self.dim = dim
         self.window_size = window_size  # Wh, Ww
-        self.pretrained_window_size = pretrained_window_size
         self.num_heads = num_heads
         self.nb_mix_images = nb_mix_images
 
@@ -203,11 +201,9 @@ class WindowAttention(nn.Module):
         nb_mix_images: int,
     ) -> None:
         super().__init__()
-        self.dim = dim
         self.window_size = window_size  # Wh, Ww
         self.num_heads = num_heads
-        head_dim = dim // num_heads
-        self.scale = head_dim**-0.5
+        self.scale = (dim // num_heads) ** -0.5
         self.nb_mix_images = nb_mix_images
 
         # define a parameter table of relative position bias
@@ -314,13 +310,9 @@ class MixMAEBlock(nn.Module):
         nb_mix_images: int,
     ) -> None:
         super().__init__()
-        self.dim = dim
-        self.input_resolution = input_resolution
-        self.num_heads = num_heads
-        self.window_size = window_size
-        self.mlp_ratio = mlp_ratio
         self.swin_version = swin_version
-        self.nb_mix_images = nb_mix_images
+        self.input_resolution = input_resolution
+        self.window_size = window_size
         if min(self.input_resolution) <= self.window_size:
             # if window size is larger than input resolution,\
             # we don't partition windows
@@ -328,7 +320,7 @@ class MixMAEBlock(nn.Module):
 
         self.norm1 = norm_layer(dim)
 
-        if self.swin_version == 2:  # noqa: PLR2004
+        if swin_version == 2:  # noqa: PLR2004
             self.attn = WindowAttentionSwinV2(
                 dim,
                 window_size=to_2tuple(self.window_size),
@@ -337,7 +329,7 @@ class MixMAEBlock(nn.Module):
                 attn_drop=attn_drop,
                 proj_drop=drop,
                 pretrained_window_size=to_2tuple(pretrained_window_size),
-                nb_mix_images=self.nb_mix_images,
+                nb_mix_images=nb_mix_images,
             )
         else:
             self.attn = WindowAttention(
@@ -347,15 +339,14 @@ class MixMAEBlock(nn.Module):
                 qkv_bias=qkv_bias,
                 attn_drop=attn_drop,
                 proj_drop=drop,
-                nb_mix_images=self.nb_mix_images,
+                nb_mix_images=nb_mix_images,
             )
 
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.norm2 = norm_layer(dim)
-        mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(
             in_features=dim,
-            hidden_features=mlp_hidden_dim,
+            hidden_features=int(dim * mlp_ratio),
             act_layer=act_layer,
             drop=drop,
         )
@@ -443,12 +434,8 @@ class MixMAELayer(nn.Module):
         nb_mix_images: int,
     ) -> None:
         super().__init__()
-        self.dim = dim
         self.input_resolution = input_resolution
-        self.depth = depth
         self.use_checkpoint = use_checkpoint
-        self.swin_version = swin_version
-        self.nb_mix_images = nb_mix_images
 
         # build blocks
         self.blocks = nn.ModuleList()
@@ -469,8 +456,8 @@ class MixMAELayer(nn.Module):
                     act_layer=nn.GELU,
                     norm_layer=norm_layer,
                     pretrained_window_size=pretrained_window_size,
-                    swin_version=self.swin_version,
-                    nb_mix_images=self.nb_mix_images,
+                    swin_version=swin_version,
+                    nb_mix_images=nb_mix_images,
                 ),
             )
         # patch merging layer
@@ -496,11 +483,6 @@ class MixMAELayer(nn.Module):
 
         return x
 
-    def extra_repr(self) -> str:
-        return f"dim={self.dim},\
-            input_resolution={self.input_resolution},\
-            depth={self.depth}"
-
     def init_respostnorm(self) -> None:
         for blk in self.blocks:
             nn.init.constant_(blk.norm1.bias, 0)
@@ -517,7 +499,7 @@ class MixMAE(nn.Module):
         decoder_dim: int,
         decoder_depth: int,
         decoder_num_heads: int,
-        mlp_ratio: int,
+        mlp_ratio: float,
         norm_pix_loss: bool,
         image_size: int,
         patch_size: int,
@@ -536,39 +518,22 @@ class MixMAE(nn.Module):
         nb_mix_images: int,
         attn_drop_rate: float = 0.0,
         norm_layer: nn.LayerNorm = nn.LayerNorm,
-        range_mask_ratio: float = 0.0,
         pretrained_window_sizes: tuple[int, int, int, int] = [0, 0, 0, 0],
         type_head: str = "attentive",
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__()
-        # decoder args
-        self.decoder_dim = decoder_dim
-        self.decoder_depth = decoder_depth
-        self.decoder_num_heads = decoder_num_heads
 
         # encoder args
         self.patch_size = patch_size
         self.encoder_stride = 8 * patch_size
-        self.embed_dim = embed_dim
-        self.patch_norm = patch_norm
-        self.depths = depths
-        self.num_layers = len(depths)
-        self.num_heads = num_heads
-        self.qkv_bias = qkv_bias
-        self.drop_rate = drop_rate
-        self.attn_drop_rate = attn_drop_rate
         self.use_checkpoint = use_checkpoint
         self.image_size = image_size
-        self.mlp_ratio = mlp_ratio
-        self.window_size = window_size
-        self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
-        self.swin_version = swin_version
         self.nb_mix_images = nb_mix_images
+        self.mask_batch = mask_batch
 
         # reconstruction args
         self.norm_pix_loss = norm_pix_loss
-        self.range_mask_ratio = range_mask_ratio
 
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed(
@@ -576,65 +541,71 @@ class MixMAE(nn.Module):
             patch_size=patch_size,
             in_chans=in_chans,
             embed_dim=embed_dim,
-            norm_layer=norm_layer if self.patch_norm else None,
+            norm_layer=norm_layer if patch_norm else None,
             flatten=True,
         )
-        num_patches = self.patch_embed.num_patches
         self.patch_grid = self.patch_embed.grid_size
+        self.num_patches = self.patch_embed.num_patches
+        self.out_patch_grid = (self.image_size // self.encoder_stride,) * 2
+        self.out_num_patches = (self.image_size // self.encoder_stride) ** 2
 
-        self.dpr = [
+        num_layers = len(depths)
+        num_features = embed_dim * 2 ** (num_layers - 1)
+        dpr = [
             x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))
         ]  # stochastic depth decay rule
 
         # build layers
         self.layers = nn.ModuleList()
-        for i_layer in range(self.num_layers):
+        for i_layer in range(num_layers):
             self.layers.append(
                 MixMAELayer(
-                    dim=int(self.embed_dim * 2**i_layer),
+                    dim=embed_dim * 2**i_layer,
                     input_resolution=(
                         self.patch_grid[0] // (2**i_layer),
                         self.patch_grid[1] // (2**i_layer),
                     ),
-                    depth=self.depths[i_layer],
-                    num_heads=self.num_heads[i_layer],
-                    window_size=self.window_size[i_layer],
-                    mlp_ratio=self.mlp_ratio,
-                    qkv_bias=self.qkv_bias,
-                    drop=self.drop_rate,
-                    attn_drop=self.attn_drop_rate,
-                    drop_path=self.dpr[
-                        sum(self.depths[:i_layer]) : sum(self.depths[: i_layer + 1])
-                    ],
+                    depth=depths[i_layer],
+                    num_heads=num_heads[i_layer],
+                    window_size=window_size[i_layer],
+                    mlp_ratio=mlp_ratio,
+                    qkv_bias=qkv_bias,
+                    drop=drop_rate,
+                    attn_drop=attn_drop_rate,
+                    drop_path=dpr[sum(depths[:i_layer]) : sum(depths[: i_layer + 1])],
                     norm_layer=norm_layer,
-                    downsample=(
-                        PatchMerging if (i_layer < self.num_layers - 1) else None
-                    ),
-                    use_checkpoint=self.use_checkpoint,
+                    downsample=(PatchMerging if (i_layer < num_layers - 1) else None),
+                    use_checkpoint=use_checkpoint,
                     pretrained_window_size=pretrained_window_sizes[i_layer],
-                    swin_version=self.swin_version,
-                    nb_mix_images=self.nb_mix_images,
+                    swin_version=swin_version,
+                    nb_mix_images=nb_mix_images,
                 ),
             )
         self.pos_drop = nn.Dropout(p=drop_rate)
-        self.norm = norm_layer(self.num_features)
+        self.norm = norm_layer(num_features)
 
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, self.decoder_dim))
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, decoder_dim))
         trunc_normal_(self.mask_token, mean=0.0, std=0.02)
-
-        num_patches = self.patch_embed.num_patches
-        out_num_patches = (self.image_size // self.encoder_stride) ** 2
-        self.out_num_patches = out_num_patches
 
         self.register_buffer(
             name="absolute_pos_embed",
-            tensor=torch.zeros(1, num_patches, self.embed_dim),
+            tensor=posemb_sincos_2d(
+                *self.patch_grid,
+                embed_dim,
+            )
+            .float()
+            .unsqueeze(0),
             persistent=False,
         )
 
         self.register_buffer(
             name="decoder_pos_embed",
-            tensor=torch.zeros(1, out_num_patches, decoder_dim),
+            tensor=posemb_sincos_2d(
+                *self.out_patch_grid,
+                decoder_dim,
+            )
+            .float()
+            .unsqueeze(0),
             persistent=False,
         )
 
@@ -646,7 +617,7 @@ class MixMAE(nn.Module):
             requires_grad=False,
         )
 
-        self.decoder_embed = nn.Linear(self.num_features, decoder_dim)
+        self.decoder_embed = nn.Linear(num_features, decoder_dim)
         self.decoder_blocks = nn.ModuleList(
             [
                 Block(
@@ -663,12 +634,9 @@ class MixMAE(nn.Module):
         self.decoder_norm = norm_layer(decoder_dim)
         self.decoder_pred = nn.Linear(decoder_dim, self.encoder_stride**2 * 3)
 
-        self.initialize_weights()
-        if self.swin_version == 2:  # noqa: PLR2004
+        if swin_version == 2:  # noqa: PLR2004
             for bly in self.layers:
                 bly.init_respostnorm()
-
-        self.mask_batch = mask_batch
 
         self.num_classes = OdeonData.NUM_CLASSES
         self.head = nn.ModuleDict(
@@ -676,12 +644,12 @@ class MixMAE(nn.Module):
                 [
                     dataset,
                     AttentiveHead(
-                        self.embed_dim * 2 ** (self.num_layers - 1),
+                        embed_dim * 2 ** (num_layers - 1),
                         num_classes,
                     )
                     if type_head == "attentive"
                     else LinearHead(
-                        self.embed_dim * 2 ** (self.num_layers - 1),
+                        embed_dim * 2 ** (num_layers - 1),
                         num_classes,
                     ),
                 ]
@@ -689,57 +657,32 @@ class MixMAE(nn.Module):
             ],
         )
 
-    def initialize_weights(self) -> None:
-        # initialization
-        # initialize (and freeze) pos_embed by sin-cos embedding
-        pos_embed = posemb_sincos_2d(
-            int(self.patch_embed.num_patches**0.5),
-            int(self.patch_embed.num_patches**0.5),
-            self.absolute_pos_embed.shape[-1],
-        )
-
-        self.absolute_pos_embed.data.copy_(
-            pos_embed.float().unsqueeze(0),
-        )
-
-        decoder_pos_embed = posemb_sincos_2d(
-            int(self.out_num_patches**0.5),
-            int(self.out_num_patches**0.5),
-            self.decoder_pos_embed.shape[-1],
-        )
-
-        self.decoder_pos_embed.data.copy_(
-            decoder_pos_embed.float().unsqueeze(0),
-        )
-
     def random_masking(
         self,
         x: Tensor,
-        phase: str,
+        ssl_phase: str,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         B, _, H, W = x["image"].shape  # noqa: N806
-        nb_masks_batch = 1
-        if not self.mask_batch and phase == "pretrain":
+        if not self.mask_batch and ssl_phase == "pretrain":
             nb_masks_batch = B // self.nb_mix_images
+        else:
+            nb_masks_batch = 1
 
-        mask_list = []
         mask_s1_list = []
         mask_s2_list = []
         mask_s3_list = []
+        mask_s4_list = []
 
-        out_h = H // self.encoder_stride
-        out_w = W // self.encoder_stride
-        s3_h, s3_w = out_h * 2, out_w * 2
-        s2_h, s2_w = out_h * 4, out_w * 4
-        s1_h, s1_w = out_h * 8, out_w * 8
+        s4_h, s4_w = self.out_patch_grid
+        s3_h, s3_w = s4_h * 2, s4_w * 2
+        s2_h, s2_w = s4_h * 4, s4_w * 4
+        s1_h, s1_w = s4_h * 8, s4_w * 8
 
-        seq_l = out_h * out_w
-
-        if phase == "pretrain":
+        if ssl_phase == "pretrain":
             mask_init = torch.cat(
                 [
                     torch.full(
-                        [seq_l // self.nb_mix_images],
+                        [self.out_num_patches // self.nb_mix_images],
                         i,
                         dtype=torch.float32,
                         device=x["image"].device,
@@ -748,58 +691,57 @@ class MixMAE(nn.Module):
                 ],
             )
         else:
-            mask_init = torch.zeros(seq_l, device=x["image"].device)
+            mask_init = torch.zeros(self.out_num_patches, device=x["image"].device)
 
         for i in range(nb_masks_batch):  # noqa: B007
-            mask_idx = torch.randperm(seq_l)
-            mask = torch.reshape(mask_init[mask_idx], (1, seq_l))
+            mask_idx = torch.randperm(self.out_num_patches)
+            mask_s4 = torch.reshape(mask_init[mask_idx], (1, self.out_num_patches))
+            mask_s4 = mask_s4.reshape(1, 1, *self.out_patch_grid)
 
-            mask = mask.reshape(1, 1, out_h, out_w)
             mask_s1 = torch.nn.functional.interpolate(
-                mask,
+                mask_s4,
                 size=(s1_h, s1_w),
                 mode="nearest",
             )
             mask_s2 = torch.nn.functional.interpolate(
-                mask,
+                mask_s4,
                 size=(s2_h, s2_w),
                 mode="nearest",
             )
             mask_s3 = torch.nn.functional.interpolate(
-                mask,
+                mask_s4,
                 size=(s3_h, s3_w),
                 mode="nearest",
             )
-            mask_list.append(mask)
             mask_s1_list.append(mask_s1)
             mask_s2_list.append(mask_s2)
             mask_s3_list.append(mask_s3)
+            mask_s4_list.append(mask_s4)
 
-        mask = torch.cat(tuple(mask_list), dim=0)
-        mask_s1 = torch.cat(tuple(mask_s1_list), dim=0)
-        mask_s2 = torch.cat(tuple(mask_s2_list), dim=0)
-        mask_s3 = torch.cat(tuple(mask_s3_list), dim=0)
+        mask_s1 = torch.cat(mask_s1_list, dim=0)
+        mask_s2 = torch.cat(mask_s2_list, dim=0)
+        mask_s3 = torch.cat(mask_s3_list, dim=0)
+        mask_s4 = torch.cat(mask_s4_list, dim=0)
 
-        mask = mask.reshape(nb_masks_batch, out_h * out_w, 1).contiguous()
         mask_s1 = mask_s1.reshape(nb_masks_batch, s1_h * s1_w, 1).contiguous()
         mask_s2 = mask_s2.reshape(nb_masks_batch, s2_h * s2_w, 1).contiguous()
         mask_s3 = mask_s3.reshape(nb_masks_batch, s3_h * s3_w, 1).contiguous()
+        mask_s4 = mask_s4.reshape(nb_masks_batch, s4_h * s4_w, 1).contiguous()
 
-        return mask_s1, mask_s2, mask_s3, mask
+        return mask_s1, mask_s2, mask_s3, mask_s4
 
     def patchify(self, imgs: Tensor) -> Tensor:
         """Patchify the input.
 
         imgs: (N, 3, H, W)
         """
-        p = self.encoder_stride
         if imgs.shape[2] != imgs.shape[3]:
             msg = (
                 f"Invalid image shape {imgs.shape}."
                 f" Expected same size for H and W.",
             )
             raise ValueError(msg)
-        if imgs.shape[2] % p != 0:
+        if imgs.shape[2] % self.encoder_stride != 0:
             msg = (
                 f"Invalid patch size {imgs.shape}."
                 f" Expected divisor of image_size {imgs.shape[2]}",
@@ -859,11 +801,11 @@ class MixMAE(nn.Module):
         mask_s2: Tensor,
         mask_s3: Tensor,
         mask_s4: Tensor,
-        phase: str,
+        ssl_phase: str,
     ) -> Tensor:
         x = self.patch_embed(x)
 
-        if phase == "pretrain":
+        if ssl_phase == "pretrain":
             x = self.mix_images(x, mask_s1)
 
         x = x + self.absolute_pos_embed
@@ -913,17 +855,17 @@ class MixMAE(nn.Module):
             target = (target - mean) / (var + 1.0e-6) ** 0.5
 
         loss_rec = (target - x_rec) ** 2
-
         loss_rec_masked = torch.masked_select(loss_rec, mask.bool())
 
         return loss_rec_masked.mean()
 
     def forward(self, x: Tensor, ssl_phase: str) -> tuple[Tensor, Tensor, Tensor]:
+        B, C, H, W = x["image"].shape  # noqa: N806
+
         mask_s1, mask_s2, mask_s3, mask_s4 = self.random_masking(
             x,
             ssl_phase,
         )
-        B, C, H, W = x["image"].shape  # noqa: N806
 
         z = self.forward_encoder(
             x["image"],
@@ -958,6 +900,7 @@ class MixMAE(nn.Module):
                 x_rec,
                 "b (h w) (p1 p2 c) -> b c (h p1) (w p2)",
                 h=H // self.encoder_stride,
+                w=W // self.encoder_stride,
                 p1=self.encoder_stride,
                 p2=self.encoder_stride,
             )
@@ -974,8 +917,6 @@ class MixMAE(nn.Module):
 def mixmae_tiny(**kwargs) -> MixMAE:  # noqa: ANN003
     """Construct MixMAE tiny."""
     args = {
-        "image_size": 256,
-        "patch_size": 4,
         "in_chans": 3,
         "embed_dim": 96,
         "depths": [2, 2, 6, 2],
@@ -998,8 +939,6 @@ def mixmae_tiny(**kwargs) -> MixMAE:  # noqa: ANN003
 def mixmae_small(**kwargs) -> MixMAE:  # noqa: ANN003
     """Construct MixMAE small."""
     args = {
-        "image_size": kwargs["image_size"],
-        "patch_size": 4,
         "in_chans": 3,
         "embed_dim": 96,
         "depths": [2, 2, 18, 2],
@@ -1022,8 +961,6 @@ def mixmae_small(**kwargs) -> MixMAE:  # noqa: ANN003
 def mixmae_base(**kwargs) -> MixMAE:  # noqa: ANN003
     """Construct MixMAE base."""
     args = {
-        "image_size": kwargs["image_size"],
-        "patch_size": 4,
         "in_chans": 3,
         "embed_dim": 128,
         "depths": [2, 2, 18, 2],
@@ -1046,8 +983,6 @@ def mixmae_base(**kwargs) -> MixMAE:  # noqa: ANN003
 def mixmae_large(**kwargs) -> MixMAE:  # noqa: ANN003
     """Construct MixMAE large."""
     args = {
-        "image_size": 224,
-        "patch_size": 4,
         "in_chans": 3,
         "embed_dim": 192,
         "depths": [2, 2, 18, 2],
@@ -1070,8 +1005,6 @@ def mixmae_large(**kwargs) -> MixMAE:  # noqa: ANN003
 def mixmae_huge(**kwargs) -> MixMAE:  # noqa: ANN003
     """Construct MixMAE huge."""
     args = {
-        "image_size": 224,
-        "patch_size": 4,
         "in_chans": 3,
         "embed_dim": 352,
         "depths": [2, 2, 18, 2],
