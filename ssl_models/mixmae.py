@@ -166,7 +166,7 @@ class WindowAttentionSwinV2(nn.Module):
         attn = attn + relative_position_bias.unsqueeze(0)
 
         if mask is not None:
-            mask = mask.reshape(b_, 1, 1, n)
+            mask = mask.reshape(-1, 1, 1, n)
             mask = torch.sum(
                 torch.stack(
                     [
@@ -379,12 +379,42 @@ class MixMAEBlock(nn.Module):
         # cyclic shift
         if self.shift_size > 0:
             x = torch.roll(x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2))
-
             attn_mask = torch.roll(
                 attn_mask.view(-1, H, W),
                 shifts=(-self.shift_size, -self.shift_size),
                 dims=(1, 2),
-            ).reshape(-1, H * W, 1)
+            )
+            H += self.shift_size * 2  # noqa: N806
+            W += self.shift_size * 2  # noqa: N806
+
+            x = F.pad(
+                x,
+                (
+                    0,
+                    0,
+                    self.shift_size,
+                    self.shift_size,
+                    self.shift_size,
+                    self.shift_size,
+                ),
+                mode="constant",
+                value=-1,
+            )
+            attn_mask = F.pad(
+                attn_mask,
+                (
+                    self.shift_size,
+                    self.shift_size,
+                    self.shift_size,
+                    self.shift_size,
+                ),
+                mode="constant",
+                value=-1,
+            ).reshape(
+                -1,
+                H * W,
+                1,
+            )
 
         # partition windows
         x_windows = window_partition(
@@ -397,9 +427,10 @@ class MixMAEBlock(nn.Module):
             self.window_size * self.window_size,
             C,
         )  # nW*B, window_size*window_size, c
+
         if attn_mask is not None:
             if attn_mask.shape[0] == 1:
-                attn_mask = attn_mask.repeat(B, 1, 1)  # B, N, 1
+                attn_mask = attn_mask.repeat(B, 1, 1)
             attn_mask = attn_mask.view(B, H, W, 1)
             attn_mask = window_partition(attn_mask, self.window_size)
             attn_mask = attn_mask.view(
@@ -421,11 +452,25 @@ class MixMAEBlock(nn.Module):
             self.window_size,
             C,
         )
-        x = window_reverse(attn_windows, self.window_size, H, W)  # B H' W' c
 
-        # reverse cyclic shift
+        x = window_reverse(
+            attn_windows,
+            self.window_size,
+            H,
+            W,
+        )  # B H' W' c
+
         if self.shift_size > 0:
+            # reverse padding
+            x = x[
+                :,
+                self.shift_size : -self.shift_size,
+                self.shift_size : -self.shift_size,
+                :,
+            ]
+            # reverse cyclic shift
             x = torch.roll(x, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
+            H, W = self.input_resolution  # noqa: N806
 
         x = x.view(B, H * W, C)
 
