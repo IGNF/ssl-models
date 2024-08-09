@@ -16,6 +16,13 @@ from ssl_models.mixmae import (
     mixmae_small,
     mixmae_tiny,
 )
+from ssl_models.simmim import (
+    simmim_tiny,
+    simmim_small,
+    simmim_base,
+    simmim_large,
+    simmim_huge,
+)
 from ssl_models.odeon_data import OdeonData
 
 torch.set_float32_matmul_precision(precision="medium")
@@ -59,6 +66,15 @@ class SSLModule(LightningModule):
             if swin_version not in (1, 2):
                 msg = f"Invalid swin version {swin_version}. Expected one of '1' or '2'"
                 raise ValueError(msg)
+
+        elif model == "simmim":
+            model_map = {
+                "tiny": simmim_tiny,
+                "small": simmim_small,
+                "base": simmim_base,
+                "large": simmim_large,
+                "huge": simmim_huge,
+            }
         else:
             msg = f"Invalid model name {model}. Not implemented"
             raise ValueError(msg)
