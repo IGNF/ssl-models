@@ -378,15 +378,6 @@ class MixMAEBlock(nn.Module):
 
         # cyclic shift
         if self.shift_size > 0:
-            x = torch.roll(x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2))
-            attn_mask = torch.roll(
-                attn_mask.view(-1, H, W),
-                shifts=(-self.shift_size, -self.shift_size),
-                dims=(1, 2),
-            )
-            H += self.shift_size * 2  # noqa: N806
-            W += self.shift_size * 2  # noqa: N806
-
             x = F.pad(
                 x,
                 (
@@ -401,7 +392,7 @@ class MixMAEBlock(nn.Module):
                 value=-1,
             )
             attn_mask = F.pad(
-                attn_mask,
+                attn_mask.view(-1, H, W),
                 (
                     self.shift_size,
                     self.shift_size,
@@ -410,7 +401,12 @@ class MixMAEBlock(nn.Module):
                 ),
                 mode="constant",
                 value=-1,
-            ).reshape(
+            )
+
+            H += self.shift_size * 2  # noqa: N806
+            W += self.shift_size * 2  # noqa: N806
+
+            attn_mask = attn_mask.reshape(
                 -1,
                 H * W,
                 1,
@@ -468,11 +464,9 @@ class MixMAEBlock(nn.Module):
                 self.shift_size : -self.shift_size,
                 :,
             ]
-            # reverse cyclic shift
-            x = torch.roll(x, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
             H, W = self.input_resolution  # noqa: N806
 
-        x = x.view(B, H * W, C)
+        x = x.reshape(B, H * W, C)
 
         if self.swin_version == 1:
             x = shortcut + self.drop_path(x)
