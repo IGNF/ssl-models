@@ -21,6 +21,7 @@ class ModelConfig:  # noqa: D101
     mask_batch: bool = False
     nb_mix_images: int = 4
     norm_pix_loss: bool = True
+    mask_patch_size: int = 32
 
 
 model_build = builds(SSLModule, builds_bases=(ModelConfig,))

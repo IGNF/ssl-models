@@ -57,7 +57,7 @@ class SwinTransformerForSimMIM(SwinTransformerV2):
             H,
             W,
             C,
-        )  # TODO
+        )
 
         for layer in self.layers:
             x = layer(x)

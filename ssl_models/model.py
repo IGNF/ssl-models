@@ -16,14 +16,14 @@ from ssl_models.mixmae import (
     mixmae_small,
     mixmae_tiny,
 )
-from ssl_models.simmim import (
-    simmim_tiny,
-    simmim_small,
-    simmim_base,
-    simmim_large,
-    simmim_huge,
-)
 from ssl_models.odeon_data import OdeonData
+from ssl_models.simmim import (
+    simmim_base,
+    simmim_huge,
+    simmim_large,
+    simmim_small,
+    simmim_tiny,
+)
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -45,6 +45,7 @@ class SSLModule(LightningModule):
         nb_mix_images: int | None = None,
         mask_batch: bool = False,
         norm_pix_loss: bool | None = None,
+        mask_patch_size: int | None = None,
     ) -> None:
         super().__init__()
 
@@ -92,6 +93,7 @@ class SSLModule(LightningModule):
                 "nb_mix_images": nb_mix_images,
                 "unpool": unpool,
                 "norm_pix_loss": norm_pix_loss,
+                "mask_patch_size": mask_patch_size,
             }
             if band_groups:
                 model_args["band_groups"] = band_groups
