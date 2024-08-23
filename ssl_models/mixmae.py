@@ -166,21 +166,14 @@ class WindowAttentionSwinV2(nn.Module):
         attn = attn + relative_position_bias.unsqueeze(0)
 
         if mask is not None:
-            mask = mask.reshape(-1, 1, 1, n)
-            mask = torch.sum(
-                torch.stack(
-                    [
-                        (mask == i).long() * (mask == i).long().transpose(2, 3)
-                        for i in range(self.nb_mix_images)
-                    ],
-                ),
-                dim=0,
+            mask = rearrange(
+                mask,
+                "bn h w c -> bn c h w",
             )
-            mask = 1 - mask
             if mask.dtype == torch.float16:
-                attn = attn - 65500 * mask
+                attn = attn + 65500 * mask
             else:
-                attn = attn - 1e30 * mask
+                attn = attn + 1e30 * mask
         attn = self.softmax(attn)
         attn = self.attn_drop(attn)
 
@@ -269,22 +262,14 @@ class WindowAttention(nn.Module):
         attn = attn + relative_position_bias.unsqueeze(0)
 
         if mask is not None:
-            mask = mask.reshape(B_, 1, 1, N)
-            mask = torch.sum(
-                torch.stack(
-                    [
-                        (mask == i).long() * (mask == i).long().transpose(2, 3)
-                        for i in range(self.nb_mix_images)
-                    ],
-                ),
-                dim=0,
+            mask = rearrange(
+                mask,
+                "bn h w c -> bn c h w",
             )
-
-            mask = 1 - mask
             if mask.dtype == torch.float16:
-                attn = attn - 65500 * mask
+                attn = attn + 65500 * mask
             else:
-                attn = attn - 1e30 * mask
+                attn = attn + 1e30 * mask
         attn = self.softmax(attn)
         attn = self.attn_drop(attn)
 
@@ -378,38 +363,69 @@ class MixMAEBlock(nn.Module):
 
         # cyclic shift
         if self.shift_size > 0:
-            x = F.pad(
-                x,
-                (
-                    0,
-                    0,
-                    self.shift_size,
-                    self.shift_size,
-                    self.shift_size,
-                    self.shift_size,
-                ),
-                mode="constant",
-                value=-1,
-            )
-            attn_mask = F.pad(
+            x = torch.roll(x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2))
+
+            attn_mask_roll = torch.roll(
                 attn_mask.view(-1, H, W),
-                (
-                    self.shift_size,
-                    self.shift_size,
-                    self.shift_size,
-                    self.shift_size,
-                ),
-                mode="constant",
-                value=-1,
+                shifts=(-self.shift_size, -self.shift_size),
+                dims=(1, 2),
+            ).reshape(-1, H, W, 1)
+
+            attn_mask = rearrange(
+                attn_mask,
+                "b (h w) c -> b h w c",
+                h=H,
+                w=W,
             )
 
-            H += self.shift_size * 2  # noqa: N806
-            W += self.shift_size * 2  # noqa: N806
+            # calculate attention mask for SW-MSA
+            img_mask = torch.zeros((B, H, W, 1), device=x.device)  # 1 H W 1
+            h_slices = (
+                slice(0, -self.window_size),
+                slice(-self.window_size, -self.shift_size),
+                slice(-self.shift_size, None),
+            )
+            w_slices = (
+                slice(0, -self.window_size),
+                slice(-self.window_size, -self.shift_size),
+                slice(-self.shift_size, None),
+            )
+            cnt = 0
+            for h in h_slices:
+                for w in w_slices:
+                    img_mask[:, h, w, :] = (
+                        cnt * self.nb_mix_images + attn_mask_roll[:, h, w, :]
+                    )
+                    cnt += 1
 
-            attn_mask = attn_mask.reshape(
+            mask_windows = window_partition(
+                img_mask,
+                self.window_size,
+            )  # nW*B, window_size, window_size, 1
+            mask_windows = mask_windows.view(
                 -1,
-                H * W,
+                self.window_size * self.window_size,
+            )  # nW*B, sindow_size*window_size
+            attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
+            attn_mask = attn_mask.masked_fill(attn_mask != 0, -100.0).masked_fill(
+                attn_mask == 0,
+                0.0,
+            )
+            attn_mask = attn_mask.unsqueeze(3)
+        else:
+            if attn_mask.shape[0] == 1:
+                attn_mask = attn_mask.repeat(B, 1, 1)
+            attn_mask = attn_mask.view(B, H, W, 1)
+            attn_mask = window_partition(attn_mask, self.window_size)
+            attn_mask = attn_mask.view(
+                -1,
+                self.window_size * self.window_size,
                 1,
+            )
+            attn_mask = attn_mask.unsqueeze(1) - attn_mask.unsqueeze(2)
+            attn_mask = attn_mask.masked_fill(attn_mask != 0, -100.0).masked_fill(
+                attn_mask == 0,
+                0.0,
             )
 
         # partition windows
@@ -423,17 +439,6 @@ class MixMAEBlock(nn.Module):
             self.window_size * self.window_size,
             C,
         )  # nW*B, window_size*window_size, c
-
-        if attn_mask is not None:
-            if attn_mask.shape[0] == 1:
-                attn_mask = attn_mask.repeat(B, 1, 1)
-            attn_mask = attn_mask.view(B, H, W, 1)
-            attn_mask = window_partition(attn_mask, self.window_size)
-            attn_mask = attn_mask.view(
-                -1,
-                self.window_size * self.window_size,
-                1,
-            )
 
         # W-MSA/SW-MSA
         attn_windows = self.attn(
@@ -457,14 +462,7 @@ class MixMAEBlock(nn.Module):
         )  # B H' W' c
 
         if self.shift_size > 0:
-            # reverse padding
-            x = x[
-                :,
-                self.shift_size : -self.shift_size,
-                self.shift_size : -self.shift_size,
-                :,
-            ]
-            H, W = self.input_resolution  # noqa: N806
+            x = torch.roll(x, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
 
         x = x.reshape(B, H * W, C)
 
