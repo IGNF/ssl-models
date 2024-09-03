@@ -16,7 +16,7 @@ def run_experiment(
     opt_pretrain: OptPretrainConfig,
     opt_probe: OptProbeConfig,
     opt_finetune: OptFinetuneConfig,
-    data: Partial[GeoPileData],
+    data: Partial[OdeonData],
     model: Partial[SSLModule],
     trainer: Partial[SSLTrainer],
 ) -> None:
