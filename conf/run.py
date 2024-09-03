@@ -9,8 +9,10 @@ from hydra_zen import MISSING, store
 class RunConfig:  # noqa: D101
     exp_dir: str = MISSING
     exp_name: str = MISSING
-    probe: bool = True
-    finetune: bool = True
+    exp_uuid: str | None = None
+    load_name: str | None = None
+    load_uuid: str | None = None
+    load_ckpt_path: str | None = None
     reproducible: bool = True
     seed: int = 42
     logged_images_per_epoch: int = 10
@@ -21,4 +23,10 @@ class RunConfig:  # noqa: D101
 
 
 run_store = store(group="run")
-run_store(RunConfig, name="default_run")
+run_store(
+    RunConfig,
+    exp_uuid=None,
+    load_uuid=None,
+    load_ckpt_path=None,
+    name="default_run",
+)

@@ -16,11 +16,16 @@ def run_experiment(
     opt_pretrain: OptPretrainConfig,
     opt_probe: OptProbeConfig,
     opt_finetune: OptFinetuneConfig,
-    data: Partial[OdeonData],
-    model: SSLModule,
+    data: Partial[GeoPileData],
+    model: Partial[SSLModule],
     trainer: Partial[SSLTrainer],
 ) -> None:
     """Run experiment, with arguments set up using hydra zen."""
+    if run.load_ckpt_path:
+        model = SSLModule.load_from_checkpoint(run.load_ckpt_path)
+    else:
+        model = model()
+
     data_pretrain = data(ssl_phase="pretrain")
     trainer_pretrain = trainer(
         run=run,
