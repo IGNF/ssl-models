@@ -16,7 +16,7 @@ def run_experiment(
     opt_pretrain: OptPretrainConfig,
     opt_probe: OptProbeConfig,
     opt_finetune: OptFinetuneConfig,
-    data: Partial[GeoPileData],
+    data: Partial[OdeonData],
     model: Partial[SSLModule],
     trainer: Partial[SSLTrainer],
 ) -> None:
@@ -56,7 +56,7 @@ def run_experiment(
     LOGGER.info("Pretrain")
     trainer_pretrain.fit(model, datamodule=data_pretrain)
 
-    if run.probe > 0:
+    if opt_probe.epochs > 0:
         LOGGER.info("Probe")
         data_probe = data(ssl_phase="probe")
         trainer_probe = trainer(
@@ -66,7 +66,7 @@ def run_experiment(
         )
         trainer_probe.fit(model, datamodule=data_probe)
 
-    if run.finetune > 0:
+    if opt_finetune.epochs > 0:
         LOGGER.info("Finetune")
         data_finetune = data(ssl_phase="finetune")
         trainer_finetune = trainer(

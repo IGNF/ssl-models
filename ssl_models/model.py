@@ -24,7 +24,7 @@ torch.set_float32_matmul_precision(precision="medium")
 class SSLModule(LightningModule):
     """SSL module."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         model: str,
         model_size: str,
@@ -33,37 +33,55 @@ class SSLModule(LightningModule):
         patch_size: int = 16,
         unpool: bool = False,
         band_groups: dict[str, list] | None = None,
-        type_head: str = "attentive",
-        swin_version: int | None = None,
+        type_head: str = "linear",
+        loss: str = "l2_norm",
+        swin_version: int | None = 1,
+        v2_attn: bool = True,
+        num_levels: int = 3,
         nb_mix_images: int | None = None,
         mask_batch: bool = False,
-        norm_pix_loss: bool | None = None,
+        abs_pos_embed: bool = False,
     ) -> None:
         super().__init__()
-
-        if model == "mae":
-            model_map = {
-                "tiny": mae_tiny,
-                "small": mae_small,
-                "medium": mae_medium,
-                "large": mae_large,
-            }
-        elif model == "mixmae":
-            model_map = {
-                "tiny": mixmae_tiny,
-                "small": mixmae_small,
-                "base": mixmae_base,
-                "large": mixmae_large,
-                "huge": mixmae_huge,
-            }
-            if swin_version not in (1, 2):
-                msg = f"Invalid swin version {swin_version}. Expected one of '1' or '2'"
+        match model:
+            case "mae":
+                model_map = {
+                    "tiny": mae_tiny,
+                    "small": mae_small,
+                    "medium": mae_medium,
+                    "large": mae_large,
+                }
+            case "mixmae":
+                model_map = {
+                    "tiny": mixmae_tiny,
+                    "small": mixmae_small,
+                    "base": mixmae_base,
+                    "large": mixmae_large,
+                    "huge": mixmae_huge,
+                }
+                if swin_version not in (1, 2):
+                    msg = f"Invalid swin version {swin_version}. Expected one of '1' or '2'"  # noqa: E501
+                    raise ValueError(msg)
+            case _:
+                msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)
-        else:
-            msg = f"Invalid model name {model}. Not implemented"
-            raise ValueError(msg)
 
-        self.model_type = model
+        match loss:
+            case "l1":
+                norm_pix_loss = False
+                loss_fn = torch.abs
+            case "l2":
+                norm_pix_loss = False
+                loss_fn = torch.square
+            case "l1_norm":
+                norm_pix_loss = True
+                loss_fn = torch.abs
+            case "l2_norm":
+                norm_pix_loss = True
+                loss_fn = torch.square
+            case _:
+                msg = f"Invalid loss {loss}."
+                raise ValueError(msg)
 
         if model_size in model_map:
             model_args = {
@@ -71,11 +89,15 @@ class SSLModule(LightningModule):
                 "image_size": image_size,
                 "patch_size": patch_size,
                 "type_head": type_head,
-                "mask_batch": mask_batch,
-                "swin_version": swin_version,
-                "nb_mix_images": nb_mix_images,
                 "unpool": unpool,
+                "loss_fn": loss_fn,
                 "norm_pix_loss": norm_pix_loss,
+                "swin_version": swin_version,
+                "v2_attn": v2_attn,
+                "num_levels": num_levels,
+                "nb_mix_images": nb_mix_images,
+                "mask_batch": mask_batch,
+                "abs_pos_embed": abs_pos_embed,
             }
             if band_groups:
                 model_args["band_groups"] = band_groups

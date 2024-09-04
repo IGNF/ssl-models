@@ -1,7 +1,8 @@
 """MAE module. Adapted from clay foundation model: https://github.com/Clay-foundation/model."""
 
+from typing import Callable
+
 import torch
-import torch.nn.functional as F  # noqa: N812
 from einops import rearrange, reduce, repeat
 from torch import Tensor, nn
 from vit_pytorch.vit import Transformer
@@ -656,7 +657,9 @@ class MAE(nn.Module):
         decoder_dim_head: int,
         decoder_mlp_ratio: float,
         band_groups: dict | None = None,
-        type_head: str = "attentive",
+        type_head: str = "linear",
+        loss_fn: Callable = torch.square,
+        norm_pix_loss: bool = True,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__()
@@ -666,6 +669,9 @@ class MAE(nn.Module):
         if not band_groups:
             band_groups = {"rgb": [0, 1, 2]}
         self.band_groups = band_groups
+
+        self.loss_fn = loss_fn
+        self.norm_pix_loss = norm_pix_loss
 
         self.encoder = Encoder(
             mask_ratio=mask_ratio,
@@ -721,7 +727,12 @@ class MAE(nn.Module):
             P2=self.patch_size,
         )  # [B C L PP]
 
-        loss = F.l1_loss(patches, pixels, reduction="none")  # loss per pixel
+        if self.norm_pix_loss:
+            mean = patches.mean(dim=(1, 3), keepdim=True)
+            var = patches.var(dim=(1, 3), keepdim=True)
+            patches = (patches - mean) / (var + 1.0e-6) ** 0.5
+
+        loss = self.loss_fn(patches - pixels)  # loss per pixel
         loss = reduce(loss, "B C L PP -> B C L", reduction="mean")  # loss per patch
 
         # mask out the loss for unmasked patches
@@ -815,15 +826,15 @@ def mae_tiny(**kwargs) -> MAE:  # noqa: ANN003
     """Construct MAE tiny."""
     args = {
         "dim": 192,
-        "depth": 6,
-        "heads": 4,
-        "dim_head": 48,
+        "depth": 12,
+        "heads": 3,
+        "dim_head": 64,
         "mlp_ratio": 2,
-        "decoder_dim": 96,
-        "decoder_depth": 3,
-        "decoder_heads": 2,
-        "decoder_dim_head": 48,
-        "decoder_mlp_ratio": 2,
+        "decoder_dim": 512,
+        "decoder_depth": 2,
+        "decoder_heads": 16,
+        "decoder_dim_head": 32,
+        "decoder_mlp_ratio": 4,
     }
     args.update(kwargs)
     return MAE(**args)
@@ -833,15 +844,15 @@ def mae_small(**kwargs) -> MAE:  # noqa: ANN003
     """Construct MAE small."""
     args = {
         "dim": 384,
-        "depth": 6,
+        "depth": 12,
         "heads": 6,
         "dim_head": 64,
         "mlp_ratio": 2,
-        "decoder_dim": 192,
+        "decoder_dim": 512,
         "decoder_depth": 4,
-        "decoder_heads": 4,
-        "decoder_dim_head": 64,
-        "decoder_mlp_ratio": 2,
+        "decoder_heads": 16,
+        "decoder_dim_head": 32,
+        "decoder_mlp_ratio": 4,
     }
     args.update(kwargs)
     return MAE(**args)
@@ -857,8 +868,8 @@ def mae_medium(**kwargs) -> MAE:  # noqa: ANN003
         "mlp_ratio": 4,
         "decoder_dim": 512,
         "decoder_depth": 6,
-        "decoder_heads": 6,
-        "decoder_dim_head": 64,
+        "decoder_heads": 16,
+        "decoder_dim_head": 32,
         "decoder_mlp_ratio": 4,
     }
     args.update(kwargs)
@@ -875,8 +886,8 @@ def mae_large(**kwargs) -> MAE:  # noqa: ANN003
         "mlp_ratio": 4,
         "decoder_dim": 512,
         "decoder_depth": 8,
-        "decoder_heads": 8,
-        "decoder_dim_head": 64,
+        "decoder_heads": 16,
+        "decoder_dim_head": 32,
         "decoder_mlp_ratio": 4,
     }
     args.update(kwargs)
