@@ -2,8 +2,11 @@
 
 import pytorch_lightning as pl
 from pytorch_lightning import Callback
-from pytorch_lightning.callbacks import (LearningRateMonitor, ModelCheckpoint,
-                                         TQDMProgressBar)
+from pytorch_lightning.callbacks import (
+    LearningRateMonitor,
+    ModelCheckpoint,
+    TQDMProgressBar,
+)
 from pytorch_lightning.loggers.logger import Logger
 
 from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
