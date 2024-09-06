@@ -14,8 +14,8 @@ from timm.models.swin_transformer import PatchMerging
 from timm.models.vision_transformer import Block
 from torch import Tensor, nn
 
-from ssl_models.mim import BaseMIM
-from ssl_models.swin import MixMAELayer
+from ssl_models.layers.swin import MixMAELayer
+from ssl_models.ssl.mim import BaseMIM
 
 
 class MixMAE(BaseMIM):

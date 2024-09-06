@@ -6,10 +6,10 @@ import torch
 from einops import rearrange, repeat
 from torch import Tensor, nn
 
-from ssl_models.embed import Patchify, Pixelify
-from ssl_models.head import AttentiveHead, LinearHead
-from ssl_models.odeon_data import OdeonData
-from ssl_models.utils import posemb_sincos_2d
+from ssl_models.data.odeon_data import OdeonData
+from ssl_models.layers.embed import Patchify, Pixelify
+from ssl_models.layers.head import AttentiveHead, LinearHead
+from ssl_models.layers.utils import posemb_sincos_2d
 
 
 class BaseMIM(nn.Module):

@@ -3,7 +3,7 @@
 from einops import rearrange
 from torch import Tensor, nn
 
-from ssl_models.utils import downsampling_from_patch_size
+from ssl_models.layers.utils import downsampling_from_patch_size
 
 
 class Patchify(nn.Module):

@@ -6,8 +6,8 @@ from hydra_zen.typing import Partial
 from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
 from conf.run import RunConfig
 from ssl_models import LOGGER
-from ssl_models.model import SSLModule
-from ssl_models.odeon_data import OdeonData
+from ssl_models.data.odeon_data import OdeonData
+from ssl_models.ssl.model import SSLModule
 from ssl_models.trainer import SSLTrainer
 
 
