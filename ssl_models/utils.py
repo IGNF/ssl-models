@@ -31,27 +31,6 @@ def posemb_sincos_2d(
     return pe.to(dtype)
 
 
-def posemb_sincos_1d(
-    length: int,
-    dim: int,
-    temperature: int = 10000,
-    dtype: torch.dtype = torch.float32,
-) -> Tensor:
-    """Create 1d positional encodings."""
-    if dim % 2:
-        msg = f"Invalid pos embedding dim {dim}. Expected multiple of 2"
-        raise ValueError(msg)
-    position = torch.arange(length)
-
-    omega = torch.arange(dim // 2) / (dim // 2 - 1)
-    omega = 1.0 / (temperature**omega)
-
-    scaled_pos = position[:, None] * omega[None, :]
-    pe = torch.cat((scaled_pos.sin(), scaled_pos.cos()), dim=1)
-
-    return pe.to(dtype)
-
-
 def downsampling_from_patch_size(unpool: bool, patch_size: int) -> int:
     """Infer number of unpooling downsamplings associated with a given patch size."""
     if unpool:

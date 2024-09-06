@@ -1,6 +1,6 @@
 """Model conf."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from hydra_zen import store
 
@@ -18,13 +18,11 @@ class ModelConfig:  # noqa: D101
     type_head: str = "linear"
     loss: str = "l2_norm"
     unpool: bool = False
-    band_groups: dict = field(default_factory=lambda: {"rgb": [0, 1, 2]})
     swin_version: int = 1
     v2_attn: bool = True
     num_levels: int = 3
     nb_mix_images: int = 4
-    mask_batch: bool = False
-    abs_pos_embed: bool = False
+    swin_abs_enc: bool = False
 
 
 model_build = pbuilds(SSLModule, builds_bases=(ModelConfig,))

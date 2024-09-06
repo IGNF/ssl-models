@@ -24,7 +24,7 @@ torch.set_float32_matmul_precision(precision="medium")
 class SSLModule(LightningModule):
     """SSL module."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         model: str,
         model_size: str,
@@ -32,39 +32,15 @@ class SSLModule(LightningModule):
         image_size: int = 256,
         patch_size: int = 16,
         unpool: bool = False,
-        band_groups: dict[str, list] | None = None,
         type_head: str = "linear",
         loss: str = "l2_norm",
         swin_version: int | None = 1,
         v2_attn: bool = True,
         num_levels: int = 3,
         nb_mix_images: int | None = None,
-        mask_batch: bool = False,
-        abs_pos_embed: bool = False,
+        swin_abs_enc: bool = False,
     ) -> None:
         super().__init__()
-        match model:
-            case "mae":
-                model_map = {
-                    "tiny": mae_tiny,
-                    "small": mae_small,
-                    "medium": mae_medium,
-                    "large": mae_large,
-                }
-            case "mixmae":
-                model_map = {
-                    "tiny": mixmae_tiny,
-                    "small": mixmae_small,
-                    "base": mixmae_base,
-                    "large": mixmae_large,
-                    "huge": mixmae_huge,
-                }
-                if swin_version not in (1, 2):
-                    msg = f"Invalid swin version {swin_version}. Expected one of '1' or '2'"  # noqa: E501
-                    raise ValueError(msg)
-            case _:
-                msg = f"Invalid model name {model}. Not implemented"
-                raise ValueError(msg)
 
         match loss:
             case "l1":
@@ -83,26 +59,56 @@ class SSLModule(LightningModule):
                 msg = f"Invalid loss {loss}."
                 raise ValueError(msg)
 
+        match model:
+            case "mae":
+                num_levels = 1
+                fac_abs_enc = 1.0  # abs pos encodings are necessary
+                out_patch_size = patch_size
+
+                model_map = {
+                    "tiny": mae_tiny,
+                    "small": mae_small,
+                    "medium": mae_medium,
+                    "large": mae_large,
+                }
+            case "mixmae":
+                if num_levels not in (3, 4):
+                    msg = f"Invalid number of levels {num_levels}. Expected '3' or '4'."
+                    raise ValueError(msg)
+                if swin_version not in (1, 2):
+                    msg = f"Invalid swin version {swin_version}. Expected '1' or '2'"
+                    raise ValueError(msg)
+                fac_abs_enc = 1.0 if swin_abs_enc else 0.0  # optional abs pos encodings
+                out_patch_size = patch_size * 2 ** (num_levels - 1)
+
+                model_map = {
+                    "tiny": mixmae_tiny,
+                    "small": mixmae_small,
+                    "base": mixmae_base,
+                    "large": mixmae_large,
+                    "huge": mixmae_huge,
+                }
+            case _:
+                msg = f"Invalid model name {model}. Not implemented"
+                raise ValueError(msg)
+
         if model_size in model_map:
             model_args = {
+                "in_chans": 3,
                 "mask_ratio": mask_ratio,
+                "nb_mix_images": nb_mix_images,
                 "image_size": image_size,
                 "patch_size": patch_size,
-                "type_head": type_head,
+                "out_patch_size": out_patch_size,
                 "unpool": unpool,
-                "loss_fn": loss_fn,
-                "norm_pix_loss": norm_pix_loss,
+                "num_levels": num_levels,
                 "swin_version": swin_version,
                 "v2_attn": v2_attn,
-                "num_levels": num_levels,
-                "nb_mix_images": nb_mix_images,
-                "mask_batch": mask_batch,
-                "abs_pos_embed": abs_pos_embed,
+                "type_head": type_head,
+                "loss_fn": loss_fn,
+                "norm_pix_loss": norm_pix_loss,
+                "fac_abs_enc": fac_abs_enc,
             }
-            if band_groups:
-                model_args["band_groups"] = band_groups
-            if mask_batch:
-                model_args["mask_batch"] = mask_batch
             self.model = model_map[model_size](**model_args)
         else:
             msg = f"Invalid model size {model_size}. Expected one of {model_map.keys()}"
@@ -161,7 +167,10 @@ class SSLModule(LightningModule):
         phase: str,
     ) -> dict:
         """Pretraining step."""
-        loss, masked, pred, _ = self.model(batch, ssl_phase=self.trainer.ssl_phase)
+        loss, masked, pred, _ = self.model(
+            batch["image"],
+            ssl_phase=self.trainer.ssl_phase,
+        )
         self.log(
             name="rec_loss",
             value=loss,
@@ -176,7 +185,10 @@ class SSLModule(LightningModule):
         phase: str,
     ) -> dict:
         """Probing/finetuning step."""
-        _, _, _, head_logits = self.model(batch, ssl_phase=self.trainer.ssl_phase)
+        _, _, _, head_logits = self.model(
+            batch["image"],
+            ssl_phase=self.trainer.ssl_phase,
+        )
         masked, pred = None, None
         loss = 0
         for dataset in self.num_classes:
@@ -215,7 +227,7 @@ class SSLModule(LightningModule):
             case _:
                 msg = (
                     f"Invalid ssl phase {self.trainer.ssl_phase}."
-                    " Expected one of 'pretrain' or 'probe' or 'finetune'"
+                    " Expected 'pretrain' or 'probe' or 'finetune'"
                 )
                 raise ValueError(msg)
 
