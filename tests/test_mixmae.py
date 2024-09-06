@@ -3,8 +3,13 @@ import itertools
 import pytest
 import torch
 
-from ssl_models.ssl.mixmae import (mixmae_base, mixmae_huge, mixmae_large,
-                                   mixmae_small, mixmae_tiny)
+from ssl_models.ssl.mixmae import (
+    mixmae_base,
+    mixmae_huge,
+    mixmae_large,
+    mixmae_small,
+    mixmae_tiny,
+)
 
 
 @pytest.fixture
