@@ -143,7 +143,7 @@ class MixMAE(BaseMIM):
         noise = torch.randn((B_enc, L), device=x.device)  # [B L]
         random_indices = torch.argsort(noise, dim=-1)  # [B L]
 
-        mask = torch.arange(self.nb_mix_images, dtype=torch.float, device=x.device)
+        mask = torch.arange(self.nb_mix_images, dtype=x.dtype, device=x.device)
         mask = mask[None, :].repeat((B_enc, ceil(L / self.nb_mix_images)))[:, :L]
         mask = torch.gather(
             mask,

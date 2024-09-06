@@ -87,7 +87,7 @@ class MAE(BaseMIM):
         reverse_indices = torch.argsort(random_indices, dim=-1)
 
         num_masked_patches = round(self.mask_ratio * L)  # Number of patches to mask
-        mask_rec = torch.zeros((B, L), device=x.device)
+        mask_rec = torch.zeros((B, L), dtype=x.dtype, device=x.device)
         mask_rec[:, :num_masked_patches] = 1
         mask_rec = torch.gather(
             mask_rec,
@@ -99,7 +99,7 @@ class MAE(BaseMIM):
         # encode only unmasked tokens
         batch_indices = rearrange(torch.arange(B, device=x.device), "b -> b 1")
         unmasked_indices = random_indices[:, num_masked_patches:]
-        unmasked_indices = unmasked_indices.sort(dim=1)
+        unmasked_indices, _ = unmasked_indices.sort(dim=1)
         x_enc = x[batch_indices, unmasked_indices, :]  # [B L:(1 - mask_ratio) C]
         return x_enc, None, None, None, None, mask_rec
 
@@ -116,12 +116,12 @@ class MAE(BaseMIM):
             [L - L_enc, L_enc],
             dim=1,
         )
-        unmasked_indices = unmasked_indices.sort(dim=1)
+        unmasked_indices, _ = unmasked_indices.sort(dim=1)
 
         # collate encoded patches and mask tokens
         batch_indices = rearrange(torch.arange(B, device=x.device), "b -> b 1")
-        x_dec = torch.zeros((B, L, C), device=x.device)
-        x_dec[batch_indices, masked_indices, :] = self.mask_token
+        x_dec = torch.zeros((B, L, C), dtype=x.dtype, device=x.device)
+        x_dec[batch_indices, masked_indices, :] = self.mask_token.to(x.dtype)
         x_dec[batch_indices, unmasked_indices, :] = x
         return x_dec
 
