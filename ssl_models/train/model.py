@@ -10,13 +10,8 @@ from torchmetrics import MeanMetric
 
 from ssl_models.data.odeon_data import OdeonData
 from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
-from ssl_models.ssl.mixmae import (
-    mixmae_base,
-    mixmae_huge,
-    mixmae_large,
-    mixmae_small,
-    mixmae_tiny,
-)
+from ssl_models.ssl.mixmae import (mixmae_base, mixmae_huge, mixmae_large,
+                                   mixmae_small, mixmae_tiny)
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -136,7 +131,8 @@ class SSLModule(LightningModule):
         total_steps = self.trainer.estimated_stepping_batches
         lr = (
             # use sqrt scaling rule with Adam
-            self.trainer.base_lr * self.trainer.train_dataloader.batch_size**0.5
+            self.trainer.base_lr
+            * self.trainer.train_dataloader.batch_size**0.5
         )
         optimizer = torch.optim.AdamW(
             self.model.parameters(),

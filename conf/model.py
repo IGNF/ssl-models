@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from hydra_zen import store
 
 from conf import pbuilds
-from ssl_models.ssl.model import SSLModule
+from ssl_models.train.model import SSLModule
 
 
 @dataclass
