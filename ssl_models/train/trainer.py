@@ -12,7 +12,7 @@ from pytorch_lightning.loggers.logger import Logger
 from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
 from conf.run import RunConfig
 from ssl_models.hydra_utils import get_hydra_timestamp
-from ssl_models.logger import ImageLogger, TensorBoardLogger
+from ssl_models.train.logger import ImageLogger, TensorBoardLogger
 
 
 class SSLTrainer(pl.Trainer):

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from hydra_zen import MISSING, store
 
 from conf import pbuilds
-from ssl_models.odeon_data import OdeonData
+from ssl_models.data.odeon_data import OdeonData
 
 
 @dataclass
