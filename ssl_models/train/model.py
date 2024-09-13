@@ -7,8 +7,10 @@ import torch.nn.functional as F  # noqa: N812
 from pytorch_lightning import LightningModule
 from torch import Tensor, nn
 from torchmetrics import MeanMetric
+from einops import rearrange
 
 from ssl_models.data.geopile_data import GeoPileDataset
+from ssl_models.data.treesatai_ts_data import TreeSatAITSDataset
 from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.ssl.mixmae import (
     mixmae_base,
@@ -114,8 +116,8 @@ class SSLModule(LightningModule):
             msg = f"Invalid model size {model_size}. Expected one of {model_map.keys()}"
             raise ValueError(msg)
 
-        self.num_classes = GeoPileDataset.NUM_CLASSES
-        self.missing_val = GeoPileDataset.MISSING_VAL
+        self.num_classes = TreeSatAITSDataset.NUM_CLASSES
+        self.missing_val = TreeSatAITSDataset.MISSING_VAL
         self.acc_metric = nn.ModuleDict(
             [
                 [
@@ -189,21 +191,36 @@ class SSLModule(LightningModule):
             batch["image"],
             ssl_phase=self.trainer.ssl_phase,
         )
+
         masked, pred = None, None
         loss = 0
         for dataset in self.num_classes:
-            if torch.all(batch[f"target_{dataset}"] == self.missing_val):
+            a = rearrange(
+                torch.stack(batch[f"target_{dataset}"], dim=0),
+                'l b -> b l'
+                )
+            batch[f"target_{dataset}"] = a
+
+            # if torch.all(batch[f"target_{dataset}"] == self.missing_val):
+            if torch.all(torch.all(batch[f"target_{dataset}"] == self.missing_val)):
                 continue
-            inds = (batch[f"target_{dataset}"] != self.missing_val).nonzero().squeeze()
+            # inds = (batch[f"target_{dataset}"] != self.missing_val).nonzero().squeeze()
+            inds = torch.any(batch[f"target_{dataset}"] != self.missing_val, dim=1).nonzero().squeeze()
             logits = torch.index_select(head_logits[dataset], dim=0, index=inds)
             target = torch.index_select(
                 batch[f"target_{dataset}"],
                 dim=0,
                 index=inds,
             )
-            loss += F.cross_entropy(logits, target)
 
-            acc = logits.argmax(dim=1) == target
+            loss += F.binary_cross_entropy_with_logits(logits, target.float())
+
+            acc = torch.sigmoid(logits)
+            acc[acc >= 0.5] = 1
+            acc[acc < 0.5] = 0
+
+
+            # acc = logits.argmax(dim=1) == target
             self.acc_metric[f"{dataset}_{phase}"].update(
                 acc.mean(dtype=torch.float),
                 weight=acc.numel(),
