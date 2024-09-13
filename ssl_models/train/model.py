@@ -19,7 +19,7 @@ from ssl_models.ssl.mixmae import (
     mixmae_small,
     mixmae_tiny,
 )
-
+from torcheval.metrics.functional import multilabel_accuracy
 torch.set_float32_matmul_precision(precision="medium")
 
 
@@ -94,9 +94,11 @@ class SSLModule(LightningModule):
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)
 
+        self.in_chans = TreeSatAITSDataset.IN_CHANS
+
         if model_size in model_map:
             model_args = {
-                "in_chans": 3,
+                "in_chans": self.in_chans,
                 "mask_ratio": mask_ratio,
                 "nb_mix_images": nb_mix_images,
                 "image_size": image_size,
@@ -216,13 +218,18 @@ class SSLModule(LightningModule):
             loss += F.binary_cross_entropy_with_logits(logits, target.float())
 
             acc = torch.sigmoid(logits)
+
             acc[acc >= 0.5] = 1
             acc[acc < 0.5] = 0
 
+            #acc = multilabel_accuracy(acc, target, criteria="hamming")
+
+            acc = logits == target
 
             # acc = logits.argmax(dim=1) == target
             self.acc_metric[f"{dataset}_{phase}"].update(
                 acc.mean(dtype=torch.float),
+                #acc,
                 weight=acc.numel(),
             )
 

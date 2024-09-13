@@ -82,6 +82,7 @@ class TreeSatAITSDataset(Dataset):
         "treesat": 15,
     }
     MISSING_VAL: int = 0
+    IN_CHANS: int = 4
 
     CLASSES = [
         "Pinus",
@@ -107,9 +108,11 @@ class TreeSatAITSDataset(Dataset):
         root_dir: str | Path,
         ssl_phase: str,
         transform: A.Compose | None,
+        #modality: str,  # TODO
     ) -> None:
         self.root_dir = Path(root_dir)
         self.transform = transform
+        self.modality = "aerial"
 
         match ssl_phase:
             case "pretrain":
@@ -120,7 +123,13 @@ class TreeSatAITSDataset(Dataset):
                     (csv_data[self.CLASSES] != self.MISSING_VAL).any(axis=1)
                 ]
 
-        self.file_name = csv_data["image"].tolist()
+        self.file_name = list(
+            map(
+                lambda x: self.modality + "/" + x,
+                csv_data["image"].tolist()
+            )
+        )
+
         self.targets = {
             dataset: csv_data[self.CLASSES].values.tolist()
             for dataset in self.NUM_CLASSES
@@ -141,7 +150,7 @@ class TreeSatAITSDataset(Dataset):
             for dataset, target in self.targets.items()
         }
 
-        return {"image": image[:3], **targets}  # TODO 4 channels au lieu de 3
+        return {"image": image, **targets}
 
     def __len__(self) -> int:
         """Return length of dataset."""
