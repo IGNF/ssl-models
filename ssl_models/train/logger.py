@@ -28,7 +28,7 @@ class TensorBoardLogger(TensorBoardLogger):
 
     def add_image(self, tag: str, image: Tensor, epoch: int) -> None:
         """Add image to tensorboard logger."""
-        self._experiment.add_image(tag, image, epoch)
+        self._experiment.add_image(tag, image[:3, :, :], epoch)
 
     @rank_zero_only
     def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
