@@ -6,7 +6,7 @@ from hydra_zen import MISSING, store
 
 from conf import pbuilds
 from ssl_models.data.geopile_data import GeoPileData
-from ssl_models.data.flair_data import FLAIRData
+
 
 @dataclass
 class DataConfig:  # noqa: D101
@@ -16,7 +16,7 @@ class DataConfig:  # noqa: D101
     num_workers: int = 32
 
 
-data_build = pbuilds(FLAIRData, builds_bases=(DataConfig,))
+data_build = pbuilds(GeoPileData, builds_bases=(DataConfig,))
 
 data_store = store(group="data")
 data_store(data_build, name="default_data")
