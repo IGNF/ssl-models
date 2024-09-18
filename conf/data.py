@@ -15,6 +15,10 @@ class DataConfig:  # noqa: D101
     use_transform: bool = True
     batch_size: int = 64
     num_workers: int = 32
+    modality: str = "aerial"
+    filter_mask: bool = True
+    average_month: bool = False
+    clip_ts_val: int = 50
 
 
 data_build = pbuilds(TreeSatAITSData, builds_bases=(DataConfig,))

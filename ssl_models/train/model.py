@@ -7,7 +7,6 @@ import torch.nn.functional as F  # noqa: N812
 from pytorch_lightning import LightningModule
 from torch import Tensor, nn
 from torchmetrics import MeanMetric
-from einops import rearrange
 
 from ssl_models.data.geopile_data import GeoPileDataset
 from ssl_models.data.treesatai_ts_data import TreeSatAITSDataset
@@ -19,7 +18,7 @@ from ssl_models.ssl.mixmae import (
     mixmae_small,
     mixmae_tiny,
 )
-from torcheval.metrics.functional import multilabel_accuracy
+
 torch.set_float32_matmul_precision(precision="medium")
 
 
@@ -193,45 +192,23 @@ class SSLModule(LightningModule):
             batch["image"],
             ssl_phase=self.trainer.ssl_phase,
         )
-
         masked, pred = None, None
-        loss = 0
-        for dataset in self.num_classes:
-            a = rearrange(
-                torch.stack(batch[f"target_{dataset}"], dim=0),
-                'l b -> b l'
-                )
-            batch[f"target_{dataset}"] = a
+        dataset = next(iter(self.num_classes.keys()))
+        logits = head_logits[dataset]
+        target = batch["target"]
 
-            # if torch.all(batch[f"target_{dataset}"] == self.missing_val):
-            if torch.all(torch.all(batch[f"target_{dataset}"] == self.missing_val)):
-                continue
-            # inds = (batch[f"target_{dataset}"] != self.missing_val).nonzero().squeeze()
-            inds = torch.any(batch[f"target_{dataset}"] != self.missing_val, dim=1).nonzero().squeeze()
-            logits = torch.index_select(head_logits[dataset], dim=0, index=inds)
-            target = torch.index_select(
-                batch[f"target_{dataset}"],
-                dim=0,
-                index=inds,
-            )
+        loss = F.binary_cross_entropy_with_logits(logits, target.float())
 
-            loss += F.binary_cross_entropy_with_logits(logits, target.float())
+        acc = torch.sigmoid(logits)
 
-            acc = torch.sigmoid(logits)
-
-            acc[acc >= 0.5] = 1
-            acc[acc < 0.5] = 0
-
-            #acc = multilabel_accuracy(acc, target, criteria="hamming")
-
-            acc = logits == target
-
-            # acc = logits.argmax(dim=1) == target
-            self.acc_metric[f"{dataset}_{phase}"].update(
-                acc.mean(dtype=torch.float),
-                #acc,
-                weight=acc.numel(),
-            )
+        # TODO
+        acc[acc >= 0.5] = 1
+        acc[acc < 0.5] = 0
+        acc = logits == target
+        self.acc_metric[f"{dataset}_{phase}"].update(
+            acc.mean(dtype=torch.float),
+            weight=acc.numel(),
+        )
 
         self.log(
             name="cross_entropy_loss",
