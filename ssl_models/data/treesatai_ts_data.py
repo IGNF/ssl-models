@@ -192,10 +192,10 @@ class TreeSatAITSDataset(Dataset):
     def _get_tiff_data(self, path: str, modality: str) -> Tensor:
         image = rasterio.open(path).read()
         image = image.astype(np.float32) / self.MODALITIES[modality]["norm_factor"]
-        if self.transform is not None:
-            image = image.transpose([1, 2, 0])
-            image = self.transform(image=image)["image"]
-            image = image.transpose([2, 0, 1])
+        # if self.transform is not None:
+        #     image = image.transpose([1, 2, 0])
+        #     image = self.transform(image=image)["image"]
+        #     image = image.transpose([2, 0, 1])
         return image[: self.MODALITIES[modality]["in_chans"], :, :]
 
     def __getitem__(self, idx: int) -> dict[str, Tensor]:
@@ -337,6 +337,9 @@ class TreeSatAITSDataset(Dataset):
                     )
 
                 output.update({"s2-data": s2_data, "s2-dates": s2_dates_diff})
+
+        if self.transform is not None:
+            
 
         return output
 
