@@ -4,7 +4,7 @@ import pytest
 from odeon.core.app_utils import Stages
 
 from ssl_models import LOGGER
-from ssl_models.data.odeon_data import OdeonData
+from ssl_models.data.odeon import OdeonData
 from tests import TEST_DATA_DIR
 
 

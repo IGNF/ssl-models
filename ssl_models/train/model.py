@@ -8,7 +8,7 @@ from pytorch_lightning import LightningModule
 from torch import Tensor, nn
 from torchmetrics import MeanMetric
 
-from ssl_models.data.geopile_data import GeoPileDataset
+from ssl_models.data.geopile import GeoPileDataset
 from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.ssl.mixmae import (
     mixmae_base,

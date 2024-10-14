@@ -10,6 +10,13 @@ from pytorch_lightning import LightningDataModule
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 
+from conf.datasets.flair import FLAIRConfig
+from conf.datasets.geopile import GeoPileConfig
+from conf.datasets.hi_ucd import HiUCDConfig
+from conf.datasets.pastis_hd import PASTISHDConfig
+from conf.datasets.s2_naip import S2NAIPConfig
+from conf.datasets.treesatai_ts import TreeSatAITSConfig
+
 
 class GeoPileData(LightningDataModule):
     """GeoPile data module."""
@@ -17,10 +24,18 @@ class GeoPileData(LightningDataModule):
     def __init__(
         self,
         ssl_phase: str,
-        root_dir: str,
         batch_size: int,
         num_workers: int,
         use_transform: bool,
+        root_dir: str,
+        datasets_pretrain: list[str],
+        datasets_finetune: list[str],
+        geopile: GeoPileConfig,
+        flair: FLAIRConfig,
+        pastis_hd: PASTISHDConfig,
+        treesatai_ts: TreeSatAITSConfig,
+        s2_naip: S2NAIPConfig,
+        hi_ucd: HiUCDConfig,
     ) -> None:
         super().__init__()
         if use_transform:
