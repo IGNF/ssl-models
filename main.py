@@ -8,6 +8,7 @@ From the project root directory, do:
 from hydra_zen import store, zen
 
 import conf.data
+import conf.dataset
 import conf.experiment
 import conf.hydra_conf
 import conf.model

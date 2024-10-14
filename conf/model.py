@@ -4,9 +4,6 @@ from dataclasses import dataclass
 
 from hydra_zen import store
 
-from conf import pbuilds
-from ssl_models.train.model import SSLModule
-
 
 @dataclass
 class ModelConfig:  # noqa: D101
@@ -25,7 +22,5 @@ class ModelConfig:  # noqa: D101
     swin_abs_enc: bool = False
 
 
-model_build = pbuilds(SSLModule, builds_bases=(ModelConfig,))
-
 model_store = store(group="model")
-model_store(model_build, name="default_model")
+model_store(ModelConfig, name="default_model")

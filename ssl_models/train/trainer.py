@@ -75,7 +75,9 @@ class SSLTrainer(pl.Trainer):
         callbacks.append(
             ModelCheckpoint(
                 filename=self.ssl_phase + "-{epoch}",
-                save_weights_only=True,
+                save_last=True,
+                every_n_train_steps=0,  # no intermediate checkpoints, only last
+                save_weights_only=True,  # do not save optimizer state
             ),
         )
         callbacks.append(ImageLogger())
