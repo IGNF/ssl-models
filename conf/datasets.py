@@ -44,6 +44,28 @@ class DatasetsConfig:
                 msg = f"Invalid dataset name {name_dataset}. Not an attribute."
                 raise ValueError(msg)
 
+        # temporary restriction to single datasets with single modality and single date
+        names_dataset = set(self.filter_pretrain + self.filter_finetune)
+        name_dataset = next(names_dataset)
+        dataset = getattr(self, name_dataset)
+        mod = getattr(dataset, next(dataset.filter_input))
+
+        if len(names_dataset) > 1:
+            msg = "Multi-dataset pretraining/finetuning not yet implemented."
+            raise NotImplementedError(msg)
+
+        if len(dataset.filter_input) != 1:
+            msg = "Multi-modality pretraining/finetuning not yet implemented."
+            raise NotImplementedError(msg)
+
+        if len(mod.num_dates) != 1:
+            msg = "Multi-dates pretraining/finetuning not yet implemented."
+            raise NotImplementedError(msg)
+
+        self.dataset_class = DATASET_MAP[name_dataset]
+        self.dataset = dataset
+        self.mod = mod
+
 
 dataset_build = builds(
     DatasetsConfig,

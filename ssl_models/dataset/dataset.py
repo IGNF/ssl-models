@@ -7,8 +7,12 @@ import numpy as np
 from scipy import ndimage
 from torch.utils.data import Dataset
 
-from conf.dataset.utils import (RASTER_TARGETS, DatasetConfig, InputModConfig,
-                                TargetModConfig)
+from conf.dataset.utils import (
+    RASTER_TARGETS,
+    DatasetConfig,
+    InputModConfig,
+    TargetModConfig,
+)
 
 
 class GenericDataset(Dataset, ABC):
@@ -19,20 +23,20 @@ class GenericDataset(Dataset, ABC):
         transform: A.Compose | None,
         dataset: DatasetConfig,
     ) -> None:
-        names_input = dataset.filter_input
-        if len(dataset.filter_input) != 1:
-            msg = "Multi-modality pretraining/finetuning not yet implemented."
-            raise NotImplementedError(msg)
+        self.rng = np.random.default_rng()
 
-        mod_input = getattr(dataset, next(names_input))
-        if len(mod_input.num_dates) != 1:
-            msg = "Multi-dates pretraining/finetuning not yet implemented."
-            raise NotImplementedError(msg)
-
+        self.gsd = dataset.gsd
         self.mods = {
             name_mod: getattr(dataset, name_mod)
             for name_mod in dataset.filter_input + dataset.filter_target
         }
+        self.names_raster = [
+            name_mod
+            for name_mod, mod in self.mods.items()
+            if isinstance(mod, InputModConfig)
+            or isinstance(mod, TargetModConfig)
+            and mod.type_target in RASTER_TARGETS
+        ]
         self.transform = transform
 
     def resample_and_normalize(
@@ -72,7 +76,8 @@ class GenericDataset(Dataset, ABC):
         if mod.use_mask:  # mask
             mask_mod = inputs[f"{name_mod}_mask"].astype(bool)
             mask_mod = self.resample_and_normalize(
-                mask_mod, resample_fac=mod.resample_fac,
+                mask_mod,
+                resample_fac=mod.resample_fac,
             )
             mask_mod = mask_mod & ~mask_mod.all(axis=0, keepdim=True)
             input_mod = np.where(mask_mod, np.nan, input_mod)
@@ -93,6 +98,30 @@ class GenericDataset(Dataset, ABC):
                 ]
         return inputs_mod
 
+    def crop(
+        self, inputs: dict[str, np.ndarray | list]
+    ) -> dict[str, np.ndarray | list]:
+        inputs_mod = {}
+        for axis in (-2, -1):
+            sizes = {
+                name_mod: inputs[name_mod].shape[axis] for name_mod in self.names_raster
+            }
+            name_min = min(sizes, key=sizes.get)
+            mod_min, size_min = self.mods[name_min], self.sizes[name_min]
+            crop_min = self.rng.integers(size_min - mod_min.image_size + 1)
+            for name_mod in self.names_raster:
+                size_fac = sizes[name_mod] / size_min
+                if not size_fac.is_integer():
+                    msg = (
+                        f"Size of modality {name_mod}"
+                        f"is not a multiple of size of modality {name_min}"
+                    )
+                    raise ValueError(msg)
+                crop = crop_min * round(size_fac)
+                inds = range(crop, crop + self.mods[name_mod].image_size)
+                inputs_mod[name_mod] = np.take(inputs[name_mod], inds, axis=axis)
+        return inputs_mod
+
     def preprocess(
         self,
         inputs: dict[str, np.ndarray | list],
@@ -107,18 +136,18 @@ class GenericDataset(Dataset, ABC):
             )
             inputs_processed.update(inputs_mod)
 
+        inputs_cropped = self.crop(inputs_processed)
+        inputs_processed.update(inputs_cropped)
+
         if self.transform is not None:
             inputs_transformed = {
                 name_mod: inputs[name_mod].transpose([1, 2, 0])
-                for name_mod, mod in self.mods.items()
-                if isinstance(mod, InputModConfig)
-                or isinstance(mod, TargetModConfig)
-                and mod.type_target in RASTER_TARGETS
+                for name_mod in self.names_raster
             }
             inputs_transformed = self.transform(inputs_transformed)
             inputs_transformed = {
                 name_mod: inputs[name_mod].transpose([2, 0, 1])
-                for name_mod in inputs_transformed
+                for name_mod in self.names_raster
             }
         inputs_processed.update(inputs_transformed)
 

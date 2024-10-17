@@ -8,7 +8,7 @@ from pytorch_lightning import LightningDataModule
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from conf.datasets import DATASET_MAP, DatasetsConfig
+from conf.datasets import DatasetsConfig
 
 
 def batch_collate(batch):
@@ -44,25 +44,13 @@ class SSLDataModule(LightningDataModule):
         else:
             transform = None
 
-        match ssl_phase:
-            case "pretrain":
-                names_dataset = datasets.filter_pretrain
-            case "probe" | "finetune":
-                names_dataset = datasets.filter_finetune
-        if len(names_dataset) > 1:
-            msg = "Multi-dataset pretraining/finetuning not yet implemented."
-            raise NotImplementedError(msg)
-
-        name_dataset = next(names_dataset)
-        dataset = getattr(datasets, name_dataset)
-        root_dir = Path(datasets.root_dir) / dataset.rel_dir
-
-        train_dataset = DATASET_MAP[name_dataset](
+        root_dir = Path(datasets.root_dir) / datasets.dataset.rel_dir
+        train_dataset = datasets.dataset_class(
             root_dir,
             root_dir / "train.csv",
             ssl_phase,
             transform,
-            dataset,
+            datasets.dataset,
         )
         self.train_loader = DataLoader(
             train_dataset,
@@ -72,12 +60,12 @@ class SSLDataModule(LightningDataModule):
             drop_last=True,
         )
 
-        val_dataset = DATASET_MAP[name_dataset](
+        val_dataset = datasets.dataset_class(
             root_dir,
             root_dir / "val.csv",
             ssl_phase,
             transform,
-            dataset,
+            datasets.dataset,
         )
         self.val_loader = DataLoader(
             val_dataset,

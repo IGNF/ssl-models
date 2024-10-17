@@ -2,8 +2,12 @@
 
 from dataclasses import dataclass, field
 
-from conf.dataset.utils import (DatasetConfig, InputModConfig, PatchSizeConfig,
-                                TargetModConfig)
+from conf.dataset.utils import (
+    DatasetConfig,
+    InputModConfig,
+    PatchSizeConfig,
+    TargetModConfig,
+)
 
 
 @dataclass
@@ -60,7 +64,8 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     )
 
     def __post_init__(self) -> None:
-        """Define non configurable target modality."""
+        """Define non configurable attributes."""
+        self.gsd = 0.2
         self.segment = TargetModConfig(
             type_target="segment",
             num_classes=19,

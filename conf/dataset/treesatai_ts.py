@@ -2,8 +2,12 @@
 
 from dataclasses import dataclass, field
 
-from conf.dataset.utils import (DatasetConfig, InputModConfig, PatchSizeConfig,
-                                TargetModConfig)
+from conf.dataset.utils import (
+    DatasetConfig,
+    InputModConfig,
+    PatchSizeConfig,
+    TargetModConfig,
+)
 
 
 @dataclass
@@ -55,7 +59,9 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     )
 
     def __post_init__(self) -> None:
-        """Define non configurable target modality."""
+        """Define non configurable attributes."""
+        self.gsd = 0.2
+
         self.multilabel_classif = TargetModConfig(
             type_target="multilabel_classif",
             num_classes=20,

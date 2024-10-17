@@ -17,6 +17,7 @@ from ssl_models.ssl.mixmae import (
     mixmae_small,
     mixmae_tiny,
 )
+from conf.datasets import DatasetsConfig
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -26,6 +27,7 @@ class SSLModule(LightningModule):
 
     def __init__(
         self,
+        datasets: DatasetsConfig,
         model: str,
         model_size: str,
         mask_ratio: float = 0.75,
@@ -61,6 +63,9 @@ class SSLModule(LightningModule):
 
         match model:
             case "mae":
+                image_size = datasets.mod.image_size
+                patch_size = datasets.mod.patch_size.mae
+
                 num_levels = 1
                 fac_abs_enc = 1.0  # abs pos encodings are necessary
                 out_patch_size = patch_size
@@ -72,6 +77,9 @@ class SSLModule(LightningModule):
                     "large": mae_large,
                 }
             case "mixmae":
+                image_size = datasets.mod.image_size
+                patch_size = datasets.mod.patch_size.mixmae
+
                 if num_levels not in (3, 4):
                     msg = f"Invalid number of levels {num_levels}. Expected '3' or '4'."
                     raise ValueError(msg)
