@@ -1,18 +1,19 @@
-"""MIM base module, which is inherited in specialized MIM modules."""
+"""Generic MIM base module, inherited in specialized MIM modules."""
 
+from abc import ABC, abstractmethod
 from typing import Callable
 
 import torch
 from einops import rearrange, repeat
 from torch import Tensor, nn
 
-from ssl_models.data.geopile import GeoPileDataset
+from ssl_models.dataset.geopile import GeoPileDataset
 from ssl_models.layers.embed import Patchify, Pixelify
 from ssl_models.layers.head import AttentiveHead, LinearHead
 from ssl_models.layers.utils import posemb_sincos_2d
 
 
-class BaseMIM(nn.Module):
+class BaseMIM(nn.Module, ABC):
     """Masked Auto Encoder (MAE)."""
 
     def __init__(
@@ -83,14 +84,16 @@ class BaseMIM(nn.Module):
             [
                 [
                     dataset,
-                    AttentiveHead(
-                        embed_dim * 2 ** (num_levels - 1),
-                        num_classes,
-                    )
-                    if type_head == "attentive"
-                    else LinearHead(
-                        embed_dim * 2 ** (num_levels - 1),
-                        num_classes,
+                    (
+                        AttentiveHead(
+                            embed_dim * 2 ** (num_levels - 1),
+                            num_classes,
+                        )
+                        if type_head == "attentive"
+                        else LinearHead(
+                            embed_dim * 2 ** (num_levels - 1),
+                            num_classes,
+                        )
                     ),
                 ]
                 for dataset, num_classes in self.num_classes.items()
@@ -208,3 +211,23 @@ class BaseMIM(nn.Module):
             for dataset in self.num_classes
         }
         return None, None, None, head_logits
+
+    @abstractmethod
+    def mask_or_mix(self, x: Tensor):  # noqa: ANN201
+        """Abstract method for masking/mixing."""
+
+    @abstractmethod
+    def unmask_or_unmix(self, x: Tensor, mask_rec: Tensor) -> Tensor:
+        """Abstract method for unmasking/unmixing."""
+
+    @abstractmethod
+    def encode(self, x: Tensor, *args) -> Tensor:  # noqa: ANN002
+        """Abstract method for encoding."""
+
+    @abstractmethod
+    def encoder_to_decoder(self, x: Tensor) -> Tensor:
+        """Abstract method for encoder to decoder step."""
+
+    @abstractmethod
+    def decode(self, x: Tensor) -> Tensor:
+        """Abstract method for decoding."""

@@ -9,6 +9,7 @@ from math import ceil
 from typing import Callable
 
 import torch
+import torch.nn.functional as F  # noqa: N812
 from timm.models.layers import trunc_normal_
 from timm.models.swin_transformer import PatchMerging
 from timm.models.vision_transformer import Block
@@ -157,22 +158,22 @@ class MixMAE(BaseMIM):
         mask_rec = 1 - mask_rec.reshape((B, L, 1)).float()
 
         mask = mask.reshape((B_enc, 1, *self.out_patch_grid))
-        mask_s1 = torch.nn.functional.interpolate(
+        mask_s1 = F.interpolate(
             mask,
             size=(H, W),
             mode="nearest",
         )
-        mask_s2 = torch.nn.functional.interpolate(
+        mask_s2 = F.interpolate(
             mask,
             size=(H // 2, W // 2),
             mode="nearest",
         )
-        mask_s3 = torch.nn.functional.interpolate(
+        mask_s3 = F.interpolate(
             mask,
             size=(H // 4, W // 4),
             mode="nearest",
         )
-        mask_s4 = torch.nn.functional.interpolate(
+        mask_s4 = F.interpolate(
             mask,
             size=(H // 8, W // 8),
             mode="nearest",

@@ -3,7 +3,7 @@ import itertools
 import pytest
 
 from ssl_models import LOGGER
-from ssl_models.data.geopile import GeoPileData
+from ssl_models.dataset.geopile import GeoPileDataset
 from tests import TEST_DATA_DIR
 
 

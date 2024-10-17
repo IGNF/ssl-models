@@ -1,7 +1,7 @@
 """Utils module."""
 
-import datetime as dt
 import json
+from datetime import datetime, timezone
 from typing import Literal
 
 import numpy as np
@@ -36,17 +36,17 @@ def get_day_number_in_year(date_arr: Tensor, place: int = 2) -> Tensor:
     """Convert date to day of year."""
     day_number = []
     for date_string in date_arr:
-        date_object = dt.datetime.strptime(
+        date_object = datetime.strptime(
             str(date_string).split("_")[place][:8],
             "%Y%m%d",
-        ).replace(tzinfo=dt.timezone.utc)
+        ).replace(tzinfo=timezone.utc)
         day_number.append(date_object.timetuple().tm_yday)
     return day_number
 
 
 def average_monthly_image(
     data: Tensor,
-    dates: list[dt.datetime],
+    dates: list[datetime],
     diff_dates: list[float],
 ) -> tuple[np.ndarray, np.ndarray]:
     """Average monthly time series images."""
@@ -107,24 +107,24 @@ def clip_ts(
     return np.take(data, random_indices, axis=0), np.take(diff_dates, random_indices)
 
 
-def str_to_datetime(datetime_strs: list[str]) -> list[dt.datetime]:
+def str_to_datetime(datetime_strs: list[str]) -> list[datetime]:
     """Convert list of datetime strings to list of datetimes."""
     return [
-        dt.datetime.strptime(  # noqa: DTZ007
+        datetime.strptime(  # noqa: DTZ007
             datetime_str.decode().split("_")[2][:8],
             "%Y%m%d",
-        ).date()
+        )
         for datetime_str in datetime_strs
     ]
 
 
-def dict_to_datetime(datetime_strs: str) -> list[dt.datetime]:
+def dict_to_datetime(datetime_strs: str) -> list[datetime]:
     """Convert list of datetime strings to list of datetimes."""
     datetime_dict = json.loads(datetime_strs)
     return [
-        dt.datetime.strptime(  # noqa: DTZ007
+        datetime.strptime(  # noqa: DTZ007
             datetime_dict[str(idx)],
             "%Y%m%d",
-        ).date()
+        )
         for idx in range(len(datetime_dict))
     ]

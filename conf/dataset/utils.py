@@ -8,29 +8,35 @@ from hydra_zen import MISSING
 ALLOWED_TARGETS = [
     "classif",
     "multilabel_classif",
+    "regress",
+    "segment",
+    "change_detect",
+]
+RASTER_TARGETS = [
     "segment",
     "change_detect",
 ]
 
 
 @dataclass
-class PatchSize:
-    """Patch size data class."""
+class PatchSizeConfig:
+    """Patch size config."""
 
     mae: int = MISSING
     mixmae: int = MISSING
 
 
 @dataclass
-class InputModality:
-    """Input modality data class."""
+class InputModConfig:
+    """Input modality config."""
 
-    pixel_size_fac: float = 1.0
+    resample_fac: float = 1.0
     num_dates: int = 1
 
     image_size: int = MISSING
-    patch_size: PatchSize = MISSING
+    patch_size: PatchSizeConfig = MISSING
     norm_fac: float = MISSING
+    use_mask: bool = False
 
     def __post_init__(self) -> None:
         """Check that attribute values are valid."""
@@ -43,8 +49,8 @@ class InputModality:
 
 
 @dataclass
-class TargetModality:
-    """Target modality data class."""
+class TargetModConfig:
+    """Target modality config."""
 
     type_target: str = MISSING
     num_classes: int | None = None
@@ -61,7 +67,7 @@ class TargetModality:
 
 
 @dataclass
-class SingleDatasetConfig(ABC):
+class DatasetConfig(ABC):
     """Generic dataset config."""
 
     @abstractmethod
@@ -70,7 +76,7 @@ class SingleDatasetConfig(ABC):
 
     def __post_init__(self) -> None:
         """Check that input/target names are valid."""
-        for name in self.input_modalities + self.target_modalities:
-            if name not in self.__dict__:
-                msg = f"Invalid input/target name {name}. Not an attribute."
+        for name_mod in self.filter_input + self.filter_target:
+            if name_mod not in self.__dict__:
+                msg = f"Invalid modality name {name_mod}. Not an attribute."
                 raise ValueError(msg)

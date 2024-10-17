@@ -1,53 +1,49 @@
-"""GeoPile data conf."""
+"""GeoPile config."""
 
 from dataclasses import dataclass, field
 
-from conf.datasets.utils import (
-    InputModality,
-    PatchSize,
-    SingleDatasetConfig,
-    TargetModality,
-)
+from conf.dataset.utils import (DatasetConfig, InputModConfig, PatchSizeConfig,
+                                TargetModConfig)
 
 
 @dataclass
-class GeoPileConfig(SingleDatasetConfig):  # noqa: D101
+class GeoPileConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "GeoPileV0"
     weight: float = 0.0
 
-    input_modalities: list[str] = field(
+    filter_input: list[str] = field(
         default_factory=lambda: ["rgb"],
     )  # selected input modalities
-    target_modalities: list[str] = field(
+    filter_target: list[str] = field(
         default_factory=lambda: ["mlrsnet", "patternnet", "rsd46_whu", "resisc45"],
     )  # selected target modalities
 
-    rgb: InputModality = field(
-        default_factory=lambda: InputModality(
+    rgb: InputModConfig = field(
+        default_factory=lambda: InputModConfig(
             image_size=256,
-            patch_size=PatchSize(mae=16, mixmae=4),
+            patch_size=PatchSizeConfig(mae=16, mixmae=4),
             norm_fac=255.0,
         ),
     )
 
     def __post_init__(self) -> None:
         """Define non configurable target modalities."""
-        self.mlrsnet = TargetModality(
+        self.mlrsnet = TargetModConfig(
             type_target="classif",
             num_classes=46,
             missing_val=-1,
         )
-        self.patternnet = TargetModality(
+        self.patternnet = TargetModConfig(
             type_target="classif",
             num_classes=38,
             missing_val=-1,
         )
-        self.rsd46_whu = TargetModality(
+        self.rsd46_whu = TargetModConfig(
             type_target="classif",
             num_classes=46,
             missing_val=-1,
         )
-        self.resisc45 = TargetModality(
+        self.resisc45 = TargetModConfig(
             type_target="classif",
             num_classes=45,
             missing_val=-1,
