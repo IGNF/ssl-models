@@ -16,6 +16,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "PASTIS-HD"
     weight: float = 1.0
     image_size: int = 256
+    target_patch_size = 16
 
     filter_inputs: list[str] = field(
         default_factory=lambda: ["spot", "s2", "s1_asc", "s1_des"],

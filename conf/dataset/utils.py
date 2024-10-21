@@ -1,6 +1,6 @@
 """Base classes for modality and single dataset."""
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass
 
 from hydra_zen import MISSING
@@ -8,7 +8,6 @@ from hydra_zen import MISSING
 ALLOWED_TARGETS = [
     "classif",
     "multilabel_classif",
-    "regress",
     "segment",
     "change_detect",
 ]
@@ -44,8 +43,8 @@ class TargetModConfig:
     """Target modality config."""
 
     type_target: str = MISSING
-    num_classes: int | None = None
-    missing_val: int | None = None
+    num_classes: int = MISSING
+    missing_val: int = -1
 
     def __post_init__(self) -> None:
         """Check that attribute values are valid."""
@@ -61,9 +60,7 @@ class TargetModConfig:
 class DatasetConfig(ABC):
     """Generic dataset config."""
 
-    @abstractmethod
-    def __init__(self) -> None:
-        pass
+    target_patch_size: int | None = None
 
     def __post_init__(self) -> None:
         """Check validity of modalities and further define non configurable attrs."""

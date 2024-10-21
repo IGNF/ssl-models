@@ -81,10 +81,7 @@ class TreeSatAITSDataset(GenericDataset):
         ]
         inputs["aerial_dates"] = aerial_dates
 
-        inputs["regress"] = self.targets[idx]
-        inputs["regress_dates"] = aerial_dates
-
-        inputs["multilabel_classif"] = self.targets[idx] > 0
+        inputs["multilabel_classif"] = (self.targets[idx] > 0).astype(int)
         inputs["multilabel_classif_dates"] = aerial_dates
         return super().preprocess(inputs)
 

@@ -1,12 +1,13 @@
 """MAE module. Adapted from clay foundation model: https://github.com/Clay-foundation/model."""
 
-from typing import Callable
+from typing import Literal
 
 import torch
 from einops import rearrange
 from torch import Tensor, nn
 from vit_pytorch.vit import Transformer
 
+from conf.datasets import DatasetsConfig
 from ssl_models.ssl.mim import BaseMIM
 
 
@@ -15,12 +16,13 @@ class MAE(BaseMIM):
 
     def __init__(  # noqa: PLR0913
         self,
+        datasets: DatasetsConfig,
         in_chans: int,
         image_size: int,
         patch_size: int,
         out_patch_size: int,
         unpool: bool,
-        num_levels: int,
+        num_levels: Literal[1],
         embed_dim: int,
         depth: int,
         heads: int,
@@ -32,13 +34,14 @@ class MAE(BaseMIM):
         decoder_dim_head: int,
         decoder_mlp_ratio: float,
         mask_ratio: float = 0.75,
-        type_head: str = "linear",
-        loss_fn: Callable = torch.square,
+        type_head: Literal["linear", "attentive"] = "linear",
+        loss_fn: Literal[torch.square, torch.square] = torch.square,
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
+            datasets=datasets,
             in_chans=in_chans,
             image_size=image_size,
             patch_size=patch_size,

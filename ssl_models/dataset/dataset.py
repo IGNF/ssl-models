@@ -119,6 +119,8 @@ class GenericDataset(Dataset, ABC):
                 name_mod: inputs[name_mod].shape[axis]
                 for name_mod in self.filter_rasters
             }
+            size_min, size_max = min(sizes.values()), max(sizes.values())
+
             for name_input, name_raster in itertools.product(
                 self.filter_inputs,
                 self.filter_rasters,
@@ -127,19 +129,24 @@ class GenericDataset(Dataset, ABC):
                 size_raster = sizes[name_raster]
                 if name_raster in self.filter_inputs:
                     if size_input % size_raster != 0 and size_raster % size_input != 0:
-                        msg = "Sizes of inputs are not multiple of each other."
+                        msg = (
+                            f"Sizes of inputs {name_raster} and {name_input}"
+                            "are not multiples of each other."
+                        )
                         raise ValueError(msg)
-                else:  # noqa: PLR5501
+                else:
+                    if size_raster != size_max:
+                        msg = "Target is not at highest resolution."
+                        raise ValueError(msg)
                     if size_raster % size_input != 0:
-                        msg = "Size of target not multiple of size of input."
+                        msg = (
+                            f"Sizes of target {name_raster} is not a multiple"
+                            f"of size of input {name_input}."
+                        )
                         raise ValueError(msg)
-            size_min, size_max = min(sizes.values()), max(sizes.values())
             image_size_min = (self.image_size * size_min) // size_max
             crop_min = self.rng.integers(size_min - image_size_min + 1)
             for name_mod, size in sizes.items():
-                if not (size / size_min).is_integer():
-                    msg = "Sizes of modalities are not multiple of each other."
-                    raise ValueError(msg)
                 crop = crop_min * (size // size_min)
                 image_size = image_size_min * (size // size_min)
                 inds = range(crop, crop + image_size)

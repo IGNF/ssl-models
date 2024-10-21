@@ -16,6 +16,7 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "Hi-UCD"
     weight: float = 1.0
     image_size: int = 512
+    target_patch_size = 16
 
     filter_inputs: list[str] = field(
         default_factory=lambda: ["image_1", "image_2"],
@@ -47,6 +48,6 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
         self.change_detect = TargetModConfig(
             type_target="change_detect",
             num_classes=None,
-            missing_val=None,
+            missing_val=-1,
         )
         super().__post_init__()

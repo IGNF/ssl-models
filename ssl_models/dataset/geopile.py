@@ -1,65 +1,67 @@
 """GeoPile data module."""
 
 from pathlib import Path
+from typing import Literal
 
 import albumentations as A  # noqa: N812
 import numpy as np
 import pandas as pd
 import rasterio
 from torch import Tensor
-from torch.utils.data import Dataset
+
+from conf.dataset.utils import DatasetConfig
+from ssl_models.dataset.dataset import GenericDataset
 
 
-class GeoPileDataset(Dataset):
+class GeoPileDataset(GenericDataset):
     """GeoPile dataset."""
 
-    NUM_CLASSES: dict[str, int] = {  # noqa: RUF012
-        "mlrsnet": 46,
-        "patternnet": 38,
-        "rsd46_whu": 46,
-        "resisc45": 45,
-    }
-    NORM_FAC: int = 255.0
-    MISSING_VAL: int = -1
+    MISSING_VAL = -1
 
     def __init__(
         self,
-        csv_path: str | Path,
-        root_dir: str | Path,
-        ssl_phase: str,
+        root_dir: Path,
+        csv_path: Path,
         transform: A.Compose | None,
+        dataset: DatasetConfig,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
     ) -> None:
-        self.root_dir = Path(root_dir)
-        self.transform = transform
+        super().__init__(transform=transform, dataset=dataset)
 
+        name_targets = dataset.filter_targets
+        col_targets = [
+            f"class_index_{name_target.replace('_', '-')}"
+            for name_target in name_targets
+        ]
         match ssl_phase:
             case "pretrain":
                 csv_data = pd.read_csv(csv_path)
             case "probe" | "finetune":
-                class_cols = [f"class_index_{dataset}" for dataset in self.NUM_CLASSES]
                 csv_data = pd.read_csv(csv_path)
                 csv_data = csv_data[
-                    (csv_data[class_cols] != self.MISSING_VAL).any(axis=1)
+                    (csv_data[col_targets] != self.MISSING_VAL).any(axis=1)
                 ]
 
+        self.root_dir = Path(root_dir)
         self.file_name = csv_data["image"].tolist()
         self.targets = {
-            dataset: csv_data[f"class_index_{dataset}"].tolist()
-            for dataset in self.NUM_CLASSES
+            name_target: csv_data[col_target].tolist()
+            for name_target, col_target in zip(name_targets, col_targets)
         }
 
     def __getitem__(self, idx: int) -> dict[str, Tensor]:
         """Get dataset item."""
-        file_path = self.root_dir / self.file_name[idx]
-        image = rasterio.open(file_path).read()
-        image = image.astype(np.float32) / self.NORM_FAC
-        if self.transform is not None:
-            image = image.transpose([1, 2, 0])
-            image = self.transform(image=image)["image"]
-            image = image.transpose([2, 0, 1])
+        inputs = {}
 
-        targets = {dataset: target[idx] for dataset, target in self.targets.items()}
-        return {"rgb": image, **targets}
+        file_path = self.root_dir / self.file_name[idx]
+        inputs["rgb"] = rasterio.open(file_path).read()[None,]
+        inputs["rgb_dates"] = [None]
+
+        for name_target, target in self.targets.items():
+            inputs[name_target] = np.array(target[idx])
+            inputs[f"{name_target}_dates"] = [None]
+
+        return super().preprocess(inputs)
 
     def __len__(self) -> int:
         """Return length of dataset."""

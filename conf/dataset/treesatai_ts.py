@@ -21,7 +21,7 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["aerial", "s2", "s1_asc", "s1_des"],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["multilabel_classif", "regress"],
+        default_factory=lambda: ["multilabel_classif"],
     )  # selected target modalities
 
     aerial: InputModConfig = field(
@@ -68,12 +68,7 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
 
         self.multilabel_classif = TargetModConfig(
             type_target="multilabel_classif",
-            num_classes=20,
-            missing_val=None,
-        )
-        self.regress = TargetModConfig(
-            type_target="regress",
-            num_classes=20,
-            missing_val=None,
+            num_classes=15,
+            missing_val=-1,
         )
         super().__post_init__()

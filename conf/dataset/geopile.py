@@ -35,7 +35,7 @@ class GeoPileConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = GeoPileDataset
-        self.groud_size = 256 * 1
+        self.ground_size = None  # GSD set directly in loader as it's not fixed
 
         self.mlrsnet = TargetModConfig(
             type_target="classif",

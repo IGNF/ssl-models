@@ -10,7 +10,6 @@ class ModelConfig:  # noqa: D101
     model: str = "mae"
     model_size: str = "tiny"
     mask_ratio: float = 0.75
-    image_size: int = 256
     type_head: str = "linear"
     loss: str = "l2_norm"
     unpool: bool = False
