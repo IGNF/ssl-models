@@ -16,7 +16,7 @@ class GeoPileDataset(Dataset):
     NUM_CLASSES: dict[str, int] = {  # noqa: RUF012
         "mlrsnet": 46,
         "patternnet": 38,
-        "rsd46-whu": 46,
+        "rsd46_whu": 46,
         "resisc45": 45,
     }
     NORM_FAC: int = 255.0
@@ -58,10 +58,8 @@ class GeoPileDataset(Dataset):
             image = self.transform(image=image)["image"]
             image = image.transpose([2, 0, 1])
 
-        targets = {
-            f"target_{dataset}": target[idx] for dataset, target in self.targets.items()
-        }
-        return {"image": image, **targets}
+        targets = {dataset: target[idx] for dataset, target in self.targets.items()}
+        return {"rgb": image, **targets}
 
     def __len__(self) -> int:
         """Return length of dataset."""

@@ -33,19 +33,10 @@ class InputModConfig:
     resample_fac: float = 1.0
     num_dates: int = 1
 
-    image_size: int = MISSING
     patch_size: PatchSizeConfig = MISSING
     norm_fac: float = MISSING
+    num_bands: int = MISSING
     use_mask: bool = False
-
-    def __post_init__(self) -> None:
-        """Check that attribute values are valid."""
-        if (
-            self.image_size % self.patch_size.mae
-            or self.image_size % self.patch_size.mixmae
-        ):
-            msg = "Invalid choice of patch size. It must be divisor of the image size."
-            raise ValueError(msg)
 
 
 @dataclass
@@ -75,8 +66,14 @@ class DatasetConfig(ABC):
         pass
 
     def __post_init__(self) -> None:
-        """Check that input/target names are valid."""
-        for name_mod in self.filter_input + self.filter_target:
+        """Check validity of modalities and further define non configurable attrs."""
+        for name_mod in self.filter_inputs + self.filter_targets:
             if name_mod not in self.__dict__:
                 msg = f"Invalid modality name {name_mod}. Not an attribute."
                 raise ValueError(msg)
+        self.inputs = {
+            name_mod: getattr(self, name_mod) for name_mod in self.filter_inputs
+        }
+        self.targets = {
+            name_mod: getattr(self, name_mod) for name_mod in self.filter_targets
+        }

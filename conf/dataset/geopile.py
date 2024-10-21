@@ -8,31 +8,34 @@ from conf.dataset.utils import (
     PatchSizeConfig,
     TargetModConfig,
 )
+from ssl_models.dataset.geopile import GeoPileDataset
 
 
 @dataclass
 class GeoPileConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "GeoPileV0"
     weight: float = 0.0
+    image_size: int = 256
 
-    filter_input: list[str] = field(
+    filter_inputs: list[str] = field(
         default_factory=lambda: ["rgb"],
     )  # selected input modalities
-    filter_target: list[str] = field(
+    filter_targets: list[str] = field(
         default_factory=lambda: ["mlrsnet", "patternnet", "rsd46_whu", "resisc45"],
     )  # selected target modalities
 
     rgb: InputModConfig = field(
         default_factory=lambda: InputModConfig(
-            image_size=256,
             patch_size=PatchSizeConfig(mae=16, mixmae=4),
             norm_fac=255.0,
+            num_bands=3,
         ),
     )
 
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
-        self.gsd = 1
+        self.dataset_class = GeoPileDataset
+        self.groud_size = 256 * 1
 
         self.mlrsnet = TargetModConfig(
             type_target="classif",

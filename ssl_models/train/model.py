@@ -5,9 +5,10 @@ import itertools
 import torch
 import torch.nn.functional as F  # noqa: N812
 from pytorch_lightning import LightningModule
-from torch import Tensor, nn
+from torch import Tensor
 from torchmetrics import MeanMetric
 
+from conf.datasets import DatasetsConfig
 from ssl_models.dataset.geopile import GeoPileDataset
 from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.ssl.mixmae import (
@@ -17,7 +18,6 @@ from ssl_models.ssl.mixmae import (
     mixmae_small,
     mixmae_tiny,
 )
-from conf.datasets import DatasetsConfig
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -32,7 +32,6 @@ class SSLModule(LightningModule):
         model_size: str,
         mask_ratio: float = 0.75,
         image_size: int = 256,
-        patch_size: int = 16,
         unpool: bool = False,
         type_head: str = "linear",
         loss: str = "l2_norm",
@@ -63,7 +62,7 @@ class SSLModule(LightningModule):
 
         match model:
             case "mae":
-                image_size = datasets.mod.image_size
+                image_size = datasets.dataset.image_size
                 patch_size = datasets.mod.patch_size.mae
 
                 num_levels = 1
@@ -102,7 +101,8 @@ class SSLModule(LightningModule):
 
         if model_size in model_map:
             model_args = {
-                "in_chans": 3,
+                "datasets": datasets,
+                "in_chans": datasets.mod.num_bands,
                 "mask_ratio": mask_ratio,
                 "nb_mix_images": nb_mix_images,
                 "image_size": image_size,
@@ -136,8 +136,9 @@ class SSLModule(LightningModule):
                 )
             ],
         )
+        self.mod_name = datasets.mod_name
         self.tb_logger = None
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["datasets"])
 
     def configure_optimizers(self) -> dict:
         """Configure optimizer."""

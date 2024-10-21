@@ -8,62 +8,87 @@ from conf.dataset.hi_ucd import HiUCDConfig
 from conf.dataset.pastis_hd import PASTISHDConfig
 from conf.dataset.s2_naip import S2NAIPConfig
 from conf.dataset.treesatai_ts import TreeSatAITSConfig
-from ssl_models.dataset.flair import FLAIRDataset
-from ssl_models.dataset.geopile import GeoPileDataset
-from ssl_models.dataset.hi_ucd import HiUCDDataset
-from ssl_models.dataset.pastis_hd import PASTISHDDataset
-from ssl_models.dataset.s2_naip import S2NAIPDataset
-from ssl_models.dataset.treesatai_ts import TreeSatAITSDataset
 
-DATASET_MAP = {
-    "flair": FLAIRDataset,
-    "geopile": GeoPileDataset,
-    "hi_ucd": HiUCDDataset,
-    "pastis_hd": PASTISHDDataset,
-    "s2_naip": S2NAIPDataset,
-    "treesatai_ts": TreeSatAITSDataset,
-}
-ALLOWED_DATASETS = list(DATASET_MAP.keys())
+ALLOWED_DATASETS = [
+    "flair",
+    "geopile",
+    "hi_ucd",
+    "pastis_hd",
+    "s2_naip",
+    "treesatai_ts",
+]
 
 
+# It does not seems possible to have nested dataclasses at all config levels,
+# so we do not use a dataclass at the top level.
 class DatasetsConfig:
     """Dataset config."""
 
     def __init__(
         self,
-        **kwargs,  # noqa: ANN003
+        root_dir: str,
+        filter_pretrain: list[str],
+        filter_finetune: list[str],
+        geopile: GeoPileConfig,
+        flair: FLAIRConfig,
+        pastis_hd: PASTISHDConfig,
+        treesatai_ts: TreeSatAITSConfig,
+        s2_naip: S2NAIPConfig,
+        hi_ucd: HiUCDConfig,
     ) -> None:
-        """Assign arguments to config attributes."""
-        self.__dict__ = kwargs
+        """Assign args to config attributes."""
+        self.root_dir = root_dir
+        self.filter_pretrain = filter_pretrain
+        self.filter_finetune = filter_finetune
+        self.geopile = geopile
+        self.flair = flair
+        self.pastis_hd = pastis_hd
+        self.treesatai_ts = treesatai_ts
+        self.s2_naip = s2_naip
+        self.hi_ucd = hi_ucd
         self.__post_init__()
 
     def __post_init__(self) -> None:
-        """Check that dataset names are valid."""
+        """Check validity of dataset names and further define non configurable attrs."""
         for name_dataset in self.filter_pretrain + self.filter_finetune:
             if name_dataset not in self.__dict__:
                 msg = f"Invalid dataset name {name_dataset}. Not an attribute."
                 raise ValueError(msg)
+        self.allowed = {
+            name_dataset: getattr(self, name_dataset)
+            for name_dataset in ALLOWED_DATASETS
+        }
+        self.pretrain = {
+            name_dataset: getattr(self, name_dataset)
+            for name_dataset in self.filter_pretrain
+        }
+        self.finetune = {
+            name_dataset: getattr(self, name_dataset)
+            for name_dataset in self.filter_finetune
+        }
 
         # temporary restriction to single datasets with single modality and single date
-        names_dataset = set(self.filter_pretrain + self.filter_finetune)
-        name_dataset = next(names_dataset)
-        dataset = getattr(self, name_dataset)
-        mod = getattr(dataset, next(dataset.filter_input))
+        names_dataset = self.filter_pretrain
+        name_dataset = self.filter_pretrain[0]
+        dataset = self.pretrain[name_dataset]
+        mod_name = dataset.filter_inputs[0]
+        mod = dataset.inputs[mod_name]
 
         if len(names_dataset) > 1:
             msg = "Multi-dataset pretraining/finetuning not yet implemented."
             raise NotImplementedError(msg)
 
-        if len(dataset.filter_input) != 1:
+        if len(dataset.filter_inputs) != 1:
             msg = "Multi-modality pretraining/finetuning not yet implemented."
             raise NotImplementedError(msg)
 
-        if len(mod.num_dates) != 1:
+        if mod.num_dates != 1:
             msg = "Multi-dates pretraining/finetuning not yet implemented."
             raise NotImplementedError(msg)
 
-        self.dataset_class = DATASET_MAP[name_dataset]
+        self.dataset_class = dataset.dataset_class
         self.dataset = dataset
+        self.mod_name = mod_name
         self.mod = mod
 
 

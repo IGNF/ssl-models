@@ -45,7 +45,7 @@ class ImageLogger(Callback):
     @staticmethod
     def to_numpy(x: Tensor) -> Tensor:
         """Move to CPU and convert to numpy."""
-        return x.detach().cpu().numpy().astype(np.float32)
+        return x.detach().cpu().numpy().astype(np.float32)[:3]
 
     @staticmethod
     def should_log(trainer: Trainer, outputs: dict) -> bool:
@@ -72,6 +72,7 @@ class ImageLogger(Callback):
                 num_batches_per_epoch = len(trainer.val_dataloaders)
             case "test":
                 num_batches_per_epoch = len(trainer.test_dataloaders)
+        mod_name = trainer.mod_name
         log_every_n_batches = round(
             num_batches_per_epoch / trainer.logged_images_per_epoch,
         )
@@ -92,7 +93,7 @@ class ImageLogger(Callback):
         )
         trainer.tb_logger.add_image(
             f"{phase}/{prefix_idx}_target",
-            ImageLogger.to_numpy(batch["image"][0]),
+            ImageLogger.to_numpy(batch[mod_name][0]),
             epoch,
         )
 

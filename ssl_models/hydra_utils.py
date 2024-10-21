@@ -7,6 +7,8 @@ from hydra.core.hydra_config import HydraConfig
 from omegaconf import OmegaConf
 from pytorch_lightning import seed_everything
 
+from conf.datasets import ALLOWED_DATASETS
+
 
 def pre_call_seed(cfg: OmegaConf) -> None:
     """Seed everything if run is reproducible."""
@@ -16,6 +18,7 @@ def pre_call_seed(cfg: OmegaConf) -> None:
 
 def pre_call_resolve(cfg: OmegaConf) -> None:
     """Resolve hydra config."""
+    cfg.run.exp_uuid = uuid.uuid4()  # set uuid
     if cfg.run.load_name:
         load_root = Path(cfg.run.exp_dir) / cfg.run.load_name
         ckpt_path = sorted(
@@ -27,11 +30,18 @@ def pre_call_resolve(cfg: OmegaConf) -> None:
         )
         load_cfg = OmegaConf.load(load_cfg_path)
 
+        if cfg.model != load_cfg.model:
+            msg = "Config is not consistent with loaded config for model."
+            raise ValueError(msg)
+        if any(
+            cfg.datasets[name_dataset] != load_cfg.datasets[name_dataset]
+            for name_dataset in ALLOWED_DATASETS
+        ):
+            msg = "Config is not consistent with loaded config for datasets."
+            raise ValueError(msg)
         cfg.run.load_ckpt_path = ckpt_path
         cfg.run.load_uuid = load_cfg.run.exp_uuid
-        cfg.model = load_cfg.model
 
-    cfg.run.exp_uuid = uuid.uuid4()
     hydra_dir = get_hydra_dir()
     cfg_path = hydra_dir / ".hydra" / "config_resolved.yaml"
     OmegaConf.save(cfg, cfg_path)

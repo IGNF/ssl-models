@@ -9,6 +9,7 @@ from pytorch_lightning.callbacks import (
 )
 from pytorch_lightning.loggers.logger import Logger
 
+from conf.datasets import DatasetsConfig
 from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
 from conf.run import RunConfig
 from ssl_models.hydra_utils import get_hydra_timestamp
@@ -20,6 +21,7 @@ class SSLTrainer(pl.Trainer):
 
     def __init__(
         self,
+        datasets: DatasetsConfig,
         run: RunConfig,
         ssl_phase: str,
         opt: OptPretrainConfig | OptProbeConfig | OptFinetuneConfig,
@@ -28,6 +30,7 @@ class SSLTrainer(pl.Trainer):
         strategy: str,
         precision: str,
     ) -> None:
+        self.mod_name = datasets.mod_name
         self.ssl_phase = ssl_phase
         self.exp_dir = run.exp_dir
         self.exp_name = run.exp_name
@@ -75,9 +78,7 @@ class SSLTrainer(pl.Trainer):
         callbacks.append(
             ModelCheckpoint(
                 filename=self.ssl_phase + "-{epoch}",
-                save_last=True,
-                every_n_train_steps=0,  # no intermediate checkpoints, only last
-                save_weights_only=True,  # do not save optimizer state
+                save_weights_only=True,
             ),
         )
         callbacks.append(ImageLogger())

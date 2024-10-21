@@ -11,7 +11,6 @@ class ModelConfig:  # noqa: D101
     model_size: str = "tiny"
     mask_ratio: float = 0.75
     image_size: int = 256
-    patch_size: int = 16
     type_head: str = "linear"
     loss: str = "l2_norm"
     unpool: bool = False

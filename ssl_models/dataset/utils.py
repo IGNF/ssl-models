@@ -107,14 +107,14 @@ def clip_ts(
     return np.take(data, random_indices, axis=0), np.take(diff_dates, random_indices)
 
 
-def str_to_datetime(datetime_strs: list[str]) -> list[datetime]:
-    """Convert list of datetime strings to list of datetimes."""
+def products_to_datetimes(products: list[str]) -> list[datetime]:
+    """Convert list of products to list of datetimes."""
     return [
         datetime.strptime(  # noqa: DTZ007
-            datetime_str.decode().split("_")[2][:8],
+            product.decode().split("_")[-5][:8],
             "%Y%m%d",
         )
-        for datetime_str in datetime_strs
+        for product in products
     ]
 
 
