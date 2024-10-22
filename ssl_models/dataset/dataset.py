@@ -191,6 +191,6 @@ class GenericDataset(Dataset, ABC):
                 name_mod: inputs_transformed[name_mod].transpose([3, 0, 1, 2])
                 for name_mod in self.filter_rasters
             }
-        inputs_processed.update(inputs_transformed)
+            inputs_processed.update(inputs_transformed)
 
         return inputs_processed

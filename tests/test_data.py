@@ -2,8 +2,10 @@ import itertools
 
 import pytest
 
+from conf.dataset.geopile import GeoPileConfig
+from conf.datasets import DatasetsConfig
 from ssl_models import LOGGER
-from ssl_models.dataset.geopile import GeoPileDataset
+from ssl_models.train.data import SSLDataModule
 from tests import TEST_DATA_DIR
 
 
@@ -15,10 +17,10 @@ from tests import TEST_DATA_DIR
         (False, True),
     ),
 )
-def test_geopile_data(stage, ssl_phase, use_transform):
-    data_module = GeoPileData(
+def test_data(datasets_geopile, stage, ssl_phase, use_transform):
+    data_module = SSLDataModule(
+        datasets=datasets_geopile,
         ssl_phase=ssl_phase,
-        root_dir=TEST_DATA_DIR,
         batch_size=2,
         num_workers=1,
         use_transform=use_transform,

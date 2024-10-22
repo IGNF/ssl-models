@@ -36,6 +36,7 @@ def model_map():
     ),
 )
 def test_mixmae(
+    datasets_geopile,
     model_map,
     model_size,
     image_size,
@@ -46,6 +47,7 @@ def test_mixmae(
     nb_mix_images,
 ):
     model_args = {
+        "datasets": datasets_geopile,
         "in_chans": 3,
         "nb_mix_images": nb_mix_images,
         "image_size": image_size,

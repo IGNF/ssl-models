@@ -23,6 +23,7 @@ def model_map():
     ),
 )
 def test_mae(
+    datasets_geopile,
     model_map,
     model_size,
     mask_ratio,
@@ -32,6 +33,7 @@ def test_mae(
     fac_abs_enc,
 ):
     model_args = {
+        "datasets": datasets_geopile,
         "in_chans": 3,
         "nb_mix_images": None,
         "mask_ratio": mask_ratio,

@@ -7,7 +7,7 @@ from hydra.core.hydra_config import HydraConfig
 from omegaconf import OmegaConf
 from pytorch_lightning import seed_everything
 
-from conf.datasets import ALLOWED_DATASETS
+from conf.datasets import ALL_DATASETS
 
 
 def pre_call_seed(cfg: OmegaConf) -> None:
@@ -35,7 +35,7 @@ def pre_call_resolve(cfg: OmegaConf) -> None:
             raise ValueError(msg)
         if any(
             cfg.datasets[name_dataset] != load_cfg.datasets[name_dataset]
-            for name_dataset in ALLOWED_DATASETS
+            for name_dataset in ALL_DATASETS
         ):
             msg = "Config is not consistent with loaded config for datasets."
             raise ValueError(msg)

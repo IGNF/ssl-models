@@ -75,7 +75,7 @@ class SSLModule(LightningModule):
                     "large": mae_large,
                 }
             case "mixmae":
-                image_size = datasets.mod.image_size
+                image_size = datasets.dataset.image_size
                 patch_size = datasets.mod.patch_size.mixmae
 
                 if num_levels not in (3, 4):

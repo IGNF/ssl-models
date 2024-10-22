@@ -113,7 +113,7 @@ class BaseMIM(nn.Module, ABC):
         for name_target, target in datasets.dataset.targets.items():
             match target.type_target:
                 case "classif" | "segment":
-                    self.sigmoid_pred[name_target] = torch.identity
+                    self.sigmoid_pred[name_target] = nn.Identity
                     self.loss_pred[name_target] = F.cross_entropy
                     metric_partial = partial(
                         MonoLabelMetric,

@@ -9,7 +9,7 @@ from conf.dataset.pastis_hd import PASTISHDConfig
 from conf.dataset.s2_naip import S2NAIPConfig
 from conf.dataset.treesatai_ts import TreeSatAITSConfig
 
-ALLOWED_DATASETS = [
+ALL_DATASETS = [
     "flair",
     "geopile",
     "hi_ucd",
@@ -26,26 +26,10 @@ class DatasetsConfig:
 
     def __init__(
         self,
-        root_dir: str,
-        filter_pretrain: list[str],
-        filter_finetune: list[str],
-        geopile: GeoPileConfig,
-        flair: FLAIRConfig,
-        pastis_hd: PASTISHDConfig,
-        treesatai_ts: TreeSatAITSConfig,
-        s2_naip: S2NAIPConfig,
-        hi_ucd: HiUCDConfig,
+        **kwargs,  # noqa: ANN003
     ) -> None:
         """Assign args to config attributes."""
-        self.root_dir = root_dir
-        self.filter_pretrain = filter_pretrain
-        self.filter_finetune = filter_finetune
-        self.geopile = geopile
-        self.flair = flair
-        self.pastis_hd = pastis_hd
-        self.treesatai_ts = treesatai_ts
-        self.s2_naip = s2_naip
-        self.hi_ucd = hi_ucd
+        self.__dict__ = kwargs
         self.__post_init__()
 
     def __post_init__(self) -> None:
@@ -56,7 +40,7 @@ class DatasetsConfig:
                 raise ValueError(msg)
         self.allowed = {
             name_dataset: getattr(self, name_dataset)
-            for name_dataset in ALLOWED_DATASETS
+            for name_dataset in self.filter_allowed
         }
         self.pretrain = {
             name_dataset: getattr(self, name_dataset)
@@ -95,8 +79,9 @@ class DatasetsConfig:
 dataset_build = builds(
     DatasetsConfig,
     root_dir=MISSING,
-    filter_pretrain=ALLOWED_DATASETS,
-    filter_finetune=ALLOWED_DATASETS,
+    filter_allowed=ALL_DATASETS,
+    filter_pretrain=ALL_DATASETS,
+    filter_finetune=ALL_DATASETS,
     geopile=GeoPileConfig(),
     flair=FLAIRConfig(),
     pastis_hd=PASTISHDConfig(),
