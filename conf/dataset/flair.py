@@ -22,7 +22,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["aerial", "dtm_dsm", "spot", "s2", "s1"],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["segment"],
+        default_factory=lambda: ["flair"],
     )  # selected target modalities
 
     aerial: InputRasterConfig = field(

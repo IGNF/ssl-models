@@ -16,6 +16,7 @@ class GeoPileConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "GeoPileV0"
     weight: float = 0.0
     image_size: int = 256
+    target_patch_size = 16
 
     filter_inputs: list[str] = field(
         default_factory=lambda: ["rgb"],

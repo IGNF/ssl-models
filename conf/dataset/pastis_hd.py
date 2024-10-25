@@ -22,7 +22,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["spot", "s2", "s1_asc", "s1_des"],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["segment"],
+        default_factory=lambda: ["pastis_seg"],
     )  # selected target modalities
 
     spot: InputRasterConfig = field(

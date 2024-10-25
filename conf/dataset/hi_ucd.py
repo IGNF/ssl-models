@@ -22,7 +22,7 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["image_1", "image_2"],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["change_detect"],
+        default_factory=lambda: ["hi_ucd"],
     )  # selected target modalities
 
     image_1: InputRasterConfig = field(

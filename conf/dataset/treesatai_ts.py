@@ -21,7 +21,7 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["aerial", "s2", "s1_asc", "s1_des"],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["multilabel_classif"],
+        default_factory=lambda: ["treesat"],
     )  # selected target modalities
 
     aerial: InputRasterConfig = field(

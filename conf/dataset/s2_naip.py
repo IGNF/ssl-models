@@ -22,7 +22,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["naip", "landsat", "s2", "s1"],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["osm"],
+        default_factory=lambda: ["osm_seg"],
     )  # selected target modalities
 
     naip: InputRasterConfig = field(

@@ -6,7 +6,6 @@ from typing import Literal
 import albumentations as A  # noqa: N812
 import numpy as np
 import pandas as pd
-import rasterio
 from torch import Tensor
 
 from conf.dataset.utils import DatasetConfig
