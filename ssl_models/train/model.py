@@ -94,7 +94,7 @@ class SSLModule(LightningModule):
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)
 
-        image_size = datasets.dataset.image_size
+        image_size = datasets.mod.image_size
         in_chans = (
             datasets.mod.bands
             if isinstance(datasets.mod.bands, int)

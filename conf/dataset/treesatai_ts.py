@@ -15,7 +15,6 @@ from ssl_models.dataset.treesatai_ts import TreeSatAITSDataset
 class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "TreeSatAI-TS"
     weight: float = 1.0
-    image_size: int = 256
 
     filter_inputs: list[str] = field(
         default_factory=lambda: ["aerial", "s2", "s1_asc", "s1_des"],

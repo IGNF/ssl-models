@@ -15,7 +15,6 @@ from ssl_models.dataset.s2_naip import S2NAIPDataset
 class S2NAIPConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "s2-naip-urban"
     weight: float = 1.0
-    image_size: int = 256
     target_patch_size = 16
 
     filter_inputs: list[str] = field(

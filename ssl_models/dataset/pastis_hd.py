@@ -68,7 +68,7 @@ class PASTISHDDataset(Dataset):
         meta["s1_des_path"] = self.root_dir / "DATA_S1D" / f"S1D_{image_id}.npy"
         meta["s1_des_dates"] = self.s1_des_dates[idx]
 
-        inputs = super().preprocess_rasters(meta)
+        inputs = self.preprocess_rasters(meta)
         return self.transform(inputs)
 
     def __len__(self) -> int:

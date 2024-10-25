@@ -56,10 +56,6 @@ class TreeSatAITSDataset(GenericDataset):
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
-        inputs = {}
-        inputs["multilabel_classif"] = (self.targets[idx] > 0).astype(int)
-        inputs["multilabel_classif_dates"] = self.aerial_dates[idx]
-
         meta = {}
         meta["s2_path"] = self.root_dir / "sentinel-ts" / self.sen_names[idx]
         meta["s2_h5_name"] = "sen-2-data"
@@ -76,8 +72,9 @@ class TreeSatAITSDataset(GenericDataset):
         meta["aerial_path"] = self.root_dir / "aerial" / self.aerial_names[idx]
         meta["aerial_dates"] = self.aerial_dates[idx]
 
-        inputs_raster = super().preprocess_rasters(meta)
-        inputs.update(inputs_raster)
+        inputs = self.preprocess_rasters(meta)
+        inputs["multilabel_classif"] = (self.targets[idx] > 0).astype(int)
+        inputs["multilabel_classif_dates"] = self.aerial_dates[idx]
         return self.transform(inputs)
 
     def __len__(self) -> int:

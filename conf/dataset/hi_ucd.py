@@ -15,7 +15,6 @@ from ssl_models.dataset.hi_ucd import HiUCDDataset
 class HiUCDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "Hi-UCD"
     weight: float = 1.0
-    image_size: int = 512
     target_patch_size = 16
 
     filter_inputs: list[str] = field(
