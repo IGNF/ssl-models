@@ -113,7 +113,7 @@ class BaseMIM(nn.Module, ABC):
         for name_target, target in datasets.dataset.targets.items():
             match target.type_target:
                 case "classif" | "segment":
-                    self.sigmoid_pred[name_target] = nn.Identity
+                    self.sigmoid_pred[name_target] = lambda x: x
                     self.loss_pred[name_target] = F.cross_entropy
                     metric_partial = partial(
                         MonoLabelMetric,
@@ -216,6 +216,9 @@ class BaseMIM(nn.Module, ABC):
                 case "change_detect":
                     logits = rearrange(logits, "b 1 h w -> (b h w)")
                     targets = rearrange(targets, "b h w -> (b h w)")
+                    targets = targets.float()
+                case "multilabel_classif":
+                    targets = targets.float()
                 case _:
                     pass
 
@@ -237,7 +240,7 @@ class BaseMIM(nn.Module, ABC):
             )
             loss_pred += self.loss_pred[name_target](
                 logits_selected,
-                targets_selected.float(),
+                targets_selected,
             )
             self.metrics[f"{name_target}_{stage}"].update(
                 logits_selected,

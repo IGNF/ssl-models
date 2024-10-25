@@ -52,16 +52,17 @@ class GeoPileDataset(GenericDataset):
     def __getitem__(self, idx: int) -> dict[str, Tensor]:
         """Get dataset item."""
         inputs = {}
-
-        file_path = self.root_dir / self.file_name[idx]
-        inputs["rgb"] = rasterio.open(file_path).read()[None,]
-        inputs["rgb_dates"] = [None]
-
         for name_target, target in self.targets.items():
             inputs[name_target] = np.array(target[idx])
             inputs[f"{name_target}_dates"] = [None]
 
-        return super().preprocess(inputs)
+        meta = {}
+        meta["rgb_path"] = self.root_dir / self.file_name[idx]
+        meta["rgb_dates"] = [None]
+
+        inputs_raster = super().preprocess_rasters(meta)
+        inputs.update(inputs_raster)
+        return self.transform(inputs)
 
     def __len__(self) -> int:
         """Return length of dataset."""

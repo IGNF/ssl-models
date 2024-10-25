@@ -4,9 +4,9 @@ from dataclasses import dataclass, field
 
 from conf.dataset.utils import (
     DatasetConfig,
-    InputModConfig,
+    InputRasterConfig,
     PatchSizeConfig,
-    TargetModConfig,
+    TargetRasterConfig,
 )
 from ssl_models.dataset.flair import FLAIRDataset
 
@@ -25,55 +25,70 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["segment"],
     )  # selected target modalities
 
-    aerial: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
+    aerial: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=256,
             patch_size=PatchSizeConfig(mae=16, mixmae=4),
+            bands=4,
             norm_fac=255.0,
-            num_bands=4,
         ),
     )
-    dtm_dsm: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
+    dtm_dsm: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=256,
             patch_size=PatchSizeConfig(mae=32, mixmae=8),
-            norm_fac=None,
-            num_bands=2,
+            bands=2,
+            norm_fac=1.0,
         ),
     )
-    spot: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
+    spot: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            bands=3,
             norm_fac=255.0,
-            num_bands=3,
         ),
     )
-    s2: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
-            resample_fac=0.32,  # resample to 3.2m resolution
+    s2: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=16,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            norm_fac=10000.0,
+            bands=10,
             num_dates=4,
             use_mask=True,
-            num_bands=10,
+            norm_fac=10000.0,
         ),
     )
-    s1: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
-            resample_fac=0.32,  # resample to 3.2m resolution
+    s1: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=16,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            norm_fac=10000.0,
+            bands=2,
             num_dates=4,
-            num_bands=2,
+            norm_fac=10000.0,
         ),
     )
 
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = FLAIRDataset
-        self.ground_size = 512 * 0.2
 
-        self.segment = TargetModConfig(
+        self.flair = TargetRasterConfig(
             type_target="segment",
             num_classes=19,
             missing_val=-1,
         )
-        super().__post_init__()
+
+        self.ground_meters = 512 * 0.2
+        self.crop_meters = 256 * 0.2
+
+        super().__post_init__(
+            resolutions_meters={
+                "flair": 0.2,
+                "aerial": 0.2,
+                "dtm_dsm": 0.2,
+                "spot": 1.5,
+                "s2": 10.0,
+                "s1": 10.0,
+            },
+        )

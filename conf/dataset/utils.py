@@ -1,6 +1,5 @@
 """Base classes for modality and single dataset."""
 
-from abc import ABC
 from dataclasses import dataclass
 
 from hydra_zen import MISSING
@@ -26,20 +25,25 @@ class PatchSizeConfig:
 
 
 @dataclass
-class InputModConfig:
-    """Input modality config."""
+class RasterConfig:
+    """Generic raster modality config."""
 
-    resample_fac: float = 1.0
-    num_dates: int = 1
-
+    image_size: int = MISSING
     patch_size: PatchSizeConfig = MISSING
-    norm_fac: float = MISSING
-    num_bands: int = MISSING
-    use_mask: bool = False
+    bands: list[int] | int = MISSING
 
 
 @dataclass
-class TargetModConfig:
+class InputConfig:
+    """Generic input modality config."""
+
+    use_mask: bool = False
+    num_dates: int = 1
+    norm_fac: float = MISSING
+
+
+@dataclass
+class TargetConfig:
     """Target modality config."""
 
     type_target: str = MISSING
@@ -57,20 +61,37 @@ class TargetModConfig:
 
 
 @dataclass
-class DatasetConfig(ABC):
+class InputRasterConfig(RasterConfig, InputConfig):
+    """Input raster modality config."""
+
+
+@dataclass
+class TargetRasterConfig(RasterConfig, TargetConfig):
+    """Target raster modality config."""
+
+
+@dataclass
+class DatasetConfig:
     """Generic dataset config."""
 
-    target_patch_size: int | None = None
-
-    def __post_init__(self) -> None:
+    def __post_init__(self, resolutions_meters: dict[str, int]) -> None:
         """Check validity of modalities and further define non configurable attrs."""
-        for name_mod in self.filter_inputs + self.filter_targets:
+        for name_mod, resolution_meters in resolutions_meters.items():
             if name_mod not in self.__dict__:
                 msg = f"Invalid modality name {name_mod}. Not an attribute."
                 raise ValueError(msg)
-        self.inputs = {
-            name_mod: getattr(self, name_mod) for name_mod in self.filter_inputs
-        }
-        self.targets = {
-            name_mod: getattr(self, name_mod) for name_mod in self.filter_targets
-        }
+            getattr(self, name_mod).resolution_meters = float(resolution_meters)
+
+        self.inputs = {}
+        for name_mod in self.filter_inputs:
+            if name_mod not in self.__dict__:
+                msg = f"Invalid modality name {name_mod}. Not an attribute."
+                raise ValueError(msg)
+            self.inputs[name_mod] = getattr(self, name_mod)
+
+        self.targets = {}
+        for name_mod in self.filter_targets:
+            if name_mod not in self.__dict__:
+                msg = f"Invalid modality name {name_mod}. Not an attribute."
+                raise ValueError(msg)
+            self.targets[name_mod] = getattr(self, name_mod)

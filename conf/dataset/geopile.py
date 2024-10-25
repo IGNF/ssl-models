@@ -4,9 +4,9 @@ from dataclasses import dataclass, field
 
 from conf.dataset.utils import (
     DatasetConfig,
-    InputModConfig,
+    InputRasterConfig,
     PatchSizeConfig,
-    TargetModConfig,
+    TargetConfig,
 )
 from ssl_models.dataset.geopile import GeoPileDataset
 
@@ -24,37 +24,41 @@ class GeoPileConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["mlrsnet", "patternnet", "rsd46_whu", "resisc45"],
     )  # selected target modalities
 
-    rgb: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
+    rgb: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=256,
             patch_size=PatchSizeConfig(mae=16, mixmae=4),
+            bands=3,
             norm_fac=255.0,
-            num_bands=3,
         ),
     )
 
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = GeoPileDataset
-        self.ground_size = None  # GSD set directly in loader as it's not fixed
 
-        self.mlrsnet = TargetModConfig(
+        self.mlrsnet = TargetConfig(
             type_target="classif",
             num_classes=46,
             missing_val=-1,
         )
-        self.patternnet = TargetModConfig(
+        self.patternnet = TargetConfig(
             type_target="classif",
             num_classes=38,
             missing_val=-1,
         )
-        self.rsd46_whu = TargetModConfig(
+        self.rsd46_whu = TargetConfig(
             type_target="classif",
             num_classes=46,
             missing_val=-1,
         )
-        self.resisc45 = TargetModConfig(
+        self.resisc45 = TargetConfig(
             type_target="classif",
             num_classes=45,
             missing_val=-1,
         )
-        super().__post_init__()
+
+        self.ground_meters = 256.0
+        self.crop_meters = 256.0
+
+        super().__post_init__(resolutions_meters={"rgb": 1.0})

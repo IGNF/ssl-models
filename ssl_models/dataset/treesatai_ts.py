@@ -58,32 +58,28 @@ class TreeSatAITSDataset(GenericDataset):
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
         inputs = {}
+        inputs["multilabel_classif"] = (self.targets[idx] > 0).astype(int)
+        inputs["multilabel_classif_dates"] = self.aerial_dates[idx]
 
+        meta = {}
+        meta["s2_path"] = self.root_dir / "sentinel-ts" / self.sen_names[idx]
+        meta["s2_h5_name"] = "sen-2-data"
+        meta["s2_h5_mask"] = "sen-2-mask"
+        meta["s1_asc_path"] = self.root_dir / "sentinel-ts" / self.sen_names[idx]
+        meta["s1_asc_h5_name"] = "sen-1-asc-data"
         sen_path = self.root_dir / "sentinel-ts" / self.sen_names[idx]
         with h5py.File(sen_path, "r") as sen_file:
             for mod_h5, mod in self.MOD_MAPPING.items():
-                inputs[f"{mod}_dates"] = products_to_datetimes(
+                meta[f"{mod}_dates"] = products_to_datetimes(
                     sen_file[f"{mod_h5}-products"][:],
                 )
-                inputs[mod] = sen_file[f"{mod_h5}-data"][:]
-                if mod_h5 == "sen-2":
-                    inputs[f"{mod}_mask"] = sen_file[f"{mod_h5}-masks"][:]
 
-        aerial_path = self.root_dir / "aerial" / self.aerial_names[idx]
-        aerial = rasterio.open(aerial_path).read()
-        aerial_dates = [self.aerial_dates[idx]]
+        meta["aerial_path"] = self.root_dir / "aerial" / self.aerial_names[idx]
+        meta["aerial_dates"] = self.aerial_dates[idx]
 
-        inputs["aerial"] = aerial[
-            None,
-            :,
-            self.SHIFT_AERIAL[0] : -self.SHIFT_AERIAL[0],
-            self.SHIFT_AERIAL[1] : -self.SHIFT_AERIAL[1],
-        ]
-        inputs["aerial_dates"] = aerial_dates
-
-        inputs["multilabel_classif"] = (self.targets[idx] > 0).astype(int)
-        inputs["multilabel_classif_dates"] = aerial_dates
-        return super().preprocess(inputs)
+        inputs_raster = super().preprocess_rasters(meta)
+        inputs.update(inputs_raster)
+        return self.transform(inputs)
 
     def __len__(self) -> int:
         """Return length of dataset."""

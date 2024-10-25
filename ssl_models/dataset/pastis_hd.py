@@ -50,7 +50,7 @@ class PASTISHDDataset(Dataset):
         image_id = self.image_ids[idx]
         row, col = self.get_row_col()
 
-        output = {}
+        meta = {}
 
         spot_path = (
             self.root_dir
@@ -58,23 +58,20 @@ class PASTISHDDataset(Dataset):
             / "PASTIS_SPOT6_RVB_1M00_2019"
             / f"SPOT6_RVB_1M00_2019_{image_id}.tif"
         )
-        spot_image = rasterio.open(spot_path).read()
-        output["spot"] = spot_image.astype(np.float32)
-        output["spot_dates"] = [datetime(2019, 6, 1)]  # noqa: DTZ001
+        meta["spot_path"] = spot_path
+        meta["spot_dates"] = [datetime(2019, 6, 1)]  # noqa: DTZ001
 
-        s2_path = self.root_dir / "DATA_S2" / f"S2_{image_id}.tif"
-        output["s2"] = rasterio.open(s2_path).astype(np.float32)
-        output["s2_dates"] = self.s2_dates[idx]
+        meta["s2_path"] = self.root_dir / "DATA_S2" / f"S2_{image_id}.tif"
+        meta["s2_dates"] = self.s2_dates[idx]
 
-        s1_asc_path = self.root_dir / "DATA_S1A" / f"S1A_{image_id}.npy"
-        output["s1_asc"] = np.load(s1_asc_path, mmap_mode="r").astype(np.float32)
-        output["s1_asc_dates"] = self.s1_asc_dates[idx]
+        meta["s1_asc_path"] = self.root_dir / "DATA_S1A" / f"S1A_{image_id}.npy"
+        meta["s1_asc_dates"] = self.s1_asc_dates[idx]
 
-        s1_des_path = self.root_dir / "DATA_S1D" / f"S1D_{image_id}.npy"
-        output["s1_des"] = rasterio.open(s1_des_path).read().astype(np.float32)
-        output["s1_des_dates"] = self.s1_des_dates[idx]
+        meta["s1_des_path"] = self.root_dir / "DATA_S1D" / f"S1D_{image_id}.npy"
+        meta["s1_des_dates"] = self.s1_des_dates[idx]
 
-        return output
+        inputs = super().preprocess_rasters(meta)
+        return self.transform(inputs)
 
     def __len__(self) -> int:
         """Return length of dataset."""

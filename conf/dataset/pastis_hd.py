@@ -4,9 +4,9 @@ from dataclasses import dataclass, field
 
 from conf.dataset.utils import (
     DatasetConfig,
-    InputModConfig,
+    InputRasterConfig,
     PatchSizeConfig,
-    TargetModConfig,
+    TargetRasterConfig,
 )
 from ssl_models.dataset.pastis_hd import PASTISHDDataset
 
@@ -25,49 +25,61 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["segment"],
     )  # selected target modalities
 
-    spot: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
+    spot: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=256,
             patch_size=PatchSizeConfig(mae=16, mixmae=4),
+            bands=3,
             norm_fac=255.0,
-            num_bands=3,
         ),
     )
-    s2: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
-            resample_fac=0.8,  # resample to 8m resolution
+    s2: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            norm_fac=10000.0,
+            bands=10,
             num_dates=4,
-            num_bands=10,
+            norm_fac=10000.0,
         ),
     )
-    s1_asc: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
-            resample_fac=0.8,  # resample to 8m resolution
+    s1_asc: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            norm_fac=10000.0,
+            bands=3,
             num_dates=2,
-            num_bands=3,
+            norm_fac=10000.0,
         ),
     )
-    s1_des: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
-            resample_fac=0.8,  # resample to 8m resolution
+    s1_des: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            norm_fac=10000.0,
+            bands=3,
             num_dates=2,
-            num_bands=3,
+            norm_fac=10000.0,
         ),
     )
 
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = PASTISHDDataset
-        self.gsd = 1280 * 1
 
-        self.segment = TargetModConfig(
+        self.pastis_seg = TargetRasterConfig(
             type_target="segment",
             num_classes=19,
             missing_val=19,
         )
-        super().__post_init__()
+
+        self.ground_meters = 1280 * 1.0
+        self.crop_meters = 256 * 1.0
+
+        super().__post_init__(
+            resolutions_meters={
+                "pastis_seg": 1.0,
+                "spot": 1.0,
+                "s2": 10.0,
+                "s1_asc": 10.0,
+                "s1_des": 10.0,
+            },
+        )

@@ -4,9 +4,9 @@ from dataclasses import dataclass, field
 
 from conf.dataset.utils import (
     DatasetConfig,
-    InputModConfig,
+    InputRasterConfig,
     PatchSizeConfig,
-    TargetModConfig,
+    TargetConfig,
 )
 from ssl_models.dataset.treesatai_ts import TreeSatAITSDataset
 
@@ -24,51 +24,61 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["multilabel_classif"],
     )  # selected target modalities
 
-    aerial: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
-            resample_fac=300 / 256.0,  # resample to 256 x 256 pixels
+    aerial: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=256,
             patch_size=PatchSizeConfig(mae=16, mixmae=4),
+            bands=4,
             norm_fac=255.0,
-            num_bands=4,
         ),
     )
-    s2: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
-            resample_fac=6 / 16.0,  # resample to 16 x 16 pixels
+    s2: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=16,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            norm_fac=10000.0,
+            bands=10,
             num_dates=4,
             use_mask=True,
-            num_bands=10,
+            norm_fac=10000.0,
         ),
     )
-    s1_asc: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
-            resample_fac=6 / 16.0,  # resample to 16 x 16 pixels
+    s1_asc: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=16,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            norm_fac=10000.0,
+            bands=2,
             num_dates=2,
-            num_bands=2,
+            norm_fac=10000.0,
         ),
     )
-    s1_des: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
-            resample_fac=0.32,  # resample to 3.2m resolution
+    s1_des: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=16,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            norm_fac=10000.0,
+            bands=2,
             num_dates=2,
-            num_bands=2,
+            norm_fac=10000.0,
         ),
     )
 
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = TreeSatAITSDataset
-        self.ground_size = 300 * 0.2
 
-        self.multilabel_classif = TargetModConfig(
+        self.treesat = TargetConfig(
             type_target="multilabel_classif",
             num_classes=15,
             missing_val=-1,
         )
-        super().__post_init__()
+
+        self.ground_meters = 60.0
+        self.crop_meters = 50.0
+
+        super().__post_init__(
+            resolutions_meters={
+                "aerial": 0.2,
+                "s2": 10.0,
+                "s1_asc": 10.0,
+                "s1_des": 10.0,
+            },
+        )

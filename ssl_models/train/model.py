@@ -61,9 +61,7 @@ class SSLModule(LightningModule):
 
         match model:
             case "mae":
-                image_size = datasets.dataset.image_size
                 patch_size = datasets.mod.patch_size.mae
-
                 num_levels = 1
                 fac_abs_enc = 1.0  # abs pos encodings are necessary
                 out_patch_size = patch_size
@@ -75,9 +73,7 @@ class SSLModule(LightningModule):
                     "large": mae_large,
                 }
             case "mixmae":
-                image_size = datasets.dataset.image_size
                 patch_size = datasets.mod.patch_size.mixmae
-
                 if num_levels not in (3, 4):
                     msg = f"Invalid number of levels {num_levels}. Expected '3' or '4'."
                     raise ValueError(msg)
@@ -98,10 +94,16 @@ class SSLModule(LightningModule):
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)
 
+        image_size = datasets.dataset.image_size
+        in_chans = (
+            datasets.mod.bands
+            if isinstance(datasets.mod.bands, int)
+            else len(datasets.mod.bands)
+        )
         if model_size in model_map:
             model_args = {
                 "datasets": datasets,
-                "in_chans": datasets.mod.num_bands,
+                "in_chans": in_chans,
                 "mask_ratio": mask_ratio,
                 "nb_mix_images": nb_mix_images,
                 "image_size": image_size,

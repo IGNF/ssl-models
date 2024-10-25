@@ -4,9 +4,9 @@ from dataclasses import dataclass, field
 
 from conf.dataset.utils import (
     DatasetConfig,
-    InputModConfig,
+    InputRasterConfig,
     PatchSizeConfig,
-    TargetModConfig,
+    TargetRasterConfig,
 )
 from ssl_models.dataset.hi_ucd import HiUCDDataset
 
@@ -25,29 +25,38 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["change_detect"],
     )  # selected target modalities
 
-    image_1: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
+    image_1: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=512,
             patch_size=PatchSizeConfig(mae=32, mixmae=8),
+            bands=3,
             norm_fac=255.0,
-            num_bands=3,
         ),
     )
-    image_2: InputModConfig = field(
-        default_factory=lambda: InputModConfig(
+    image_2: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=512,
             patch_size=PatchSizeConfig(mae=32, mixmae=8),
+            bands=3,
             norm_fac=255.0,
-            num_bands=3,
         ),
     )
 
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = HiUCDDataset
-        self.ground_size = 512 * 0.1
 
-        self.change_detect = TargetModConfig(
+        self.hi_ucd = TargetRasterConfig(
             type_target="change_detect",
+            image_size=512,
             num_classes=None,
             missing_val=-1,
+            bands=[3],
         )
-        super().__post_init__()
+
+        self.ground_meters = 512 * 0.1
+        self.crop_meters = 512 * 0.1
+
+        super().__post_init__(
+            resolutions_meters={"hi_ucd": 0.1, "image_1": 0.1, "image_2": 0.1},
+        )
