@@ -73,16 +73,16 @@ class Patchify(nn.Module):
         skip = self.norm_skip(skip)
         skip = rearrange(
             skip,
-            "B C H W -> (B H W) C 1 1",
+            "b c h w -> (b h w) c 1 1",
         )
 
         inds = []
         if self.unpool:
             xb = rearrange(
                 xb,
-                "B C (H P1) (W P2) -> (B H W) C P1 P2",
-                P1=self.patch_size,
-                P2=self.patch_size,
+                "b c (h p1) (w p2) -> (b h w) c p1 p2",
+                p1=self.patch_size,
+                p2=self.patch_size,
             )
             for idx in range(self.num_downsampling):
                 xb = self.convs[f"conv_{idx}"](xb)
@@ -97,9 +97,9 @@ class Patchify(nn.Module):
             xb = skip
         xb = rearrange(
             xb,
-            "(B H W) C 1 1 -> B (H W) C",
-            H=H // self.patch_size,
-            W=W // self.patch_size,
+            "(b h w) c 1 1 -> b (h w) c",
+            h=H // self.patch_size,
+            w=W // self.patch_size,
         )
         return xb, inds
 
@@ -167,15 +167,15 @@ class Pixelify(nn.Module):
         B, _, _ = xb.shape  # noqa: N806
         xb = rearrange(
             xb,
-            "B L C -> (B L) C 1 1",
+            "b l c -> (b l) c 1 1",
         )
         skip = xb
         skip = self.conv_skip(skip)
         skip = rearrange(
             skip,
-            "B (P1 P2 C) 1 1 -> B C P1 P2",
-            P1=self.patch_size,
-            P2=self.patch_size,
+            "b (p1 p2 c) 1 1 -> b c p1 p2",
+            p1=self.patch_size,
+            p2=self.patch_size,
         )
         if self.unpool:
             xb = self.conv(xb)
@@ -189,4 +189,4 @@ class Pixelify(nn.Module):
         else:
             xb = skip
 
-        return rearrange(xb, "(B L) C P1 P2 -> B L (P1 P2 C)", B=B)
+        return rearrange(xb, "(b l) c p1 p2 -> b l (p1 p2 c)", b=B)

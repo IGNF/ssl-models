@@ -14,7 +14,7 @@ class TensorBoardLogger(TensorBoardLogger):
 
     def __init__(
         self,
-        ssl_phase: str,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         save_dir: str,
         name: str,
         version: str,

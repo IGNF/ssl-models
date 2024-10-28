@@ -15,7 +15,7 @@ from ssl_models.dataset.flair import FLAIRDataset
 class FLAIRConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "FLAIR_INC"
     weight: float = 1.0
-    target_patch_size = 16
+    crop_meters: float = 250 * 0.2
 
     filter_inputs: list[str] = field(
         default_factory=lambda: ["aerial", "dtm_dsm", "spot", "s2", "s1"],
@@ -71,22 +71,19 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = FLAIRDataset
+        self.ground_meters = 500 * 0.2
 
         self.flair = TargetRasterConfig(
             type_target="segment",
             num_classes=19,
             missing_val=-1,
         )
-
-        self.ground_meters = 512 * 0.2
-        self.crop_meters = 256 * 0.2
-
         super().__post_init__(
             resolutions_meters={
                 "flair": 0.2,
                 "aerial": 0.2,
                 "dtm_dsm": 0.2,
-                "spot": 1.5,
+                "spot": 1.0,
                 "s2": 10.0,
                 "s1": 10.0,
             },

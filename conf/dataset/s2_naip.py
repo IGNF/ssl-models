@@ -15,7 +15,7 @@ from ssl_models.dataset.s2_naip import S2NAIPDataset
 class S2NAIPConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "s2-naip-urban"
     weight: float = 1.0
-    target_patch_size = 16
+    crop_meters: float = 256 * 1.25
 
     filter_inputs: list[str] = field(
         default_factory=lambda: ["naip", "landsat", "s2", "s1"],
@@ -63,16 +63,13 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = S2NAIPDataset
+        self.ground_meters = 512 * 1.25
 
         self.osm_seg = TargetRasterConfig(
             type_target="segment",
             num_classes=32,
             missing_val=None,
         )
-
-        self.ground_meters = 512 * 1.25
-        self.crop_meters = 256 * 1.25
-
         super().__post_init__(
             resolutions_meters={
                 "osm_seg": 1.25,

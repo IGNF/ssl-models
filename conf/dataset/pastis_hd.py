@@ -15,7 +15,7 @@ from ssl_models.dataset.pastis_hd import PASTISHDDataset
 class PASTISHDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "PASTIS-HD"
     weight: float = 1.0
-    target_patch_size = 16
+    crop_meters: float = 250 * 1.0
 
     filter_inputs: list[str] = field(
         default_factory=lambda: ["spot", "s2", "s1_asc", "s1_des"],
@@ -63,16 +63,13 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = PASTISHDDataset
+        self.ground_meters = 1280 * 1.0
 
         self.pastis_seg = TargetRasterConfig(
             type_target="segment",
             num_classes=19,
             missing_val=19,
         )
-
-        self.ground_meters = 1280 * 1.0
-        self.crop_meters = 256 * 1.0
-
         super().__post_init__(
             resolutions_meters={
                 "pastis_seg": 1.0,

@@ -15,7 +15,7 @@ from ssl_models.dataset.hi_ucd import HiUCDDataset
 class HiUCDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "Hi-UCD"
     weight: float = 1.0
-    target_patch_size = 16
+    crop_meters: float = 512 * 0.1
 
     filter_inputs: list[str] = field(
         default_factory=lambda: ["image_1", "image_2"],
@@ -44,6 +44,7 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = HiUCDDataset
+        self.ground_meters = 512 * 0.1
 
         self.hi_ucd = TargetRasterConfig(
             type_target="change_detect",
@@ -52,10 +53,6 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
             missing_val=-1,
             bands=[3],
         )
-
-        self.ground_meters = 512 * 0.1
-        self.crop_meters = 512 * 0.1
-
         super().__post_init__(
             resolutions_meters={"hi_ucd": 0.1, "image_1": 0.1, "image_2": 0.1},
         )

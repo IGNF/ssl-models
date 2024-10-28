@@ -5,7 +5,9 @@ from typing import Literal
 import torch
 from pytorch_lightning import LightningModule
 from torch import Tensor
+from torch.nn import functional as F  # noqa: N812
 
+from conf.dataset.utils import InputConfig
 from conf.datasets import DatasetsConfig
 from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.ssl.mixmae import (
@@ -123,6 +125,7 @@ class SSLModule(LightningModule):
             msg = f"Invalid model size {model_size}. Expected one of {model_map.keys()}"
             raise ValueError(msg)
 
+        self.dataset = datasets.dataset
         self.mod_name = datasets.mod_name
         self.tb_logger = None
         self.save_hyperparameters(ignore=["datasets"])
@@ -204,6 +207,13 @@ class SSLModule(LightningModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Shared step for training/validation."""
+        for name_mod, mod in self.dataset.rasters.items():
+            batch[name_mod] = F.interpolate(
+                batch[name_mod],
+                size=(mod.image_size,) * 2,
+                mode="bilinear" if isinstance(mod, InputConfig) else "bilinear",
+            )
+
         match self.trainer.ssl_phase:
             case "pretrain":
                 return self.pretrain_step(batch, stage)
@@ -232,7 +242,7 @@ class SSLModule(LightningModule):
 
     def on_epoch_end(self, stage: Literal["train", "val", "test"]) -> None:
         """Log epoch metrics for training/validation."""
-        for name_target in self.model.targets:
+        for name_target in self.dataset.targets:
             metrics = self.model.metrics[f"{name_target}_{stage}"].compute()
             for name_metric, value in metrics.items():
                 self.log_acc(

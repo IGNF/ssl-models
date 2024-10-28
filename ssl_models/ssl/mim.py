@@ -9,7 +9,7 @@ import torch.nn.functional as F  # noqa: N812
 from einops import rearrange, repeat
 from torch import Tensor, nn
 
-from conf.dataset.utils import RASTER_TARGETS
+from conf.dataset.utils import RasterConfig
 from conf.datasets import DatasetsConfig
 from ssl_models.layers.embed import Patchify, Pixelify
 from ssl_models.layers.head import AttentiveHead, LinearHead
@@ -86,10 +86,10 @@ class BaseMIM(nn.Module, ABC):
         target_patch_size = datasets.dataset.target_patch_size
         head_dim = embed_dim * 2 ** (num_levels - 1)
 
-        self.targets = datasets.dataset.targets
+        self.dataset = datasets.dataset
         self.heads = nn.ModuleDict()
-        for name_target, target in datasets.dataset.targets.items():
-            if target.type_target in RASTER_TARGETS:
+        for name_target, target in self.dataset.targets.items():
+            if isinstance(target, RasterConfig):
                 self.heads[name_target] = Pixelify(
                     head_dim,
                     target.num_classes,
@@ -200,12 +200,12 @@ class BaseMIM(nn.Module, ABC):
         self,
         x_enc: Tensor,
         batch: dict[str, Tensor],
-        ssl_phase: str,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
     ) -> Tensor:
         """Shared loss computation for all MIM modules."""
         loss_pred = 0
-        for name_target, target in self.targets.items():
+        for name_target, target in self.dataset.targets.items():
             logits = self.heads[name_target](x_enc, ssl_phase)
             logits = self.sigmoid_pred[name_target](logits)
             targets = batch[name_target]
@@ -226,7 +226,10 @@ class BaseMIM(nn.Module, ABC):
                 inds = (targets != target.missing_val).all(dim=1)
             else:
                 inds = targets != target.missing_val
-            inds = inds.nonzero().squeeze()
+
+            inds = inds.nonzero().squeeze(dim=1)
+            if len(inds) == 0:
+                continue
 
             logits_selected = torch.index_select(
                 logits,

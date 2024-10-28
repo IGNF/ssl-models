@@ -10,10 +10,6 @@ ALLOWED_TARGETS = [
     "segment",
     "change_detect",
 ]
-RASTER_TARGETS = [
-    "segment",
-    "change_detect",
-]
 
 
 @dataclass
@@ -74,13 +70,28 @@ class TargetRasterConfig(RasterConfig, TargetConfig):
 class DatasetConfig:
     """Generic dataset config."""
 
+    target_patch_size = 16
+
     def __post_init__(self, resolutions_meters: dict[str, int]) -> None:
         """Check validity of modalities and further define non configurable attrs."""
         for name_mod, resolution_meters in resolutions_meters.items():
             if name_mod not in self.__dict__:
-                msg = f"Invalid modality name {name_mod}. Not an attribute."
+                msg = f"Invalid modality {name_mod} specified in resolution."
                 raise ValueError(msg)
-            getattr(self, name_mod).resolution_meters = float(resolution_meters)
+
+            ground_pixels = self.ground_meters / float(resolution_meters)
+            crop_pixels = self.crop_meters / float(resolution_meters)
+            is_filtered = name_mod in self.filter_inputs + self.filter_targets
+            if not ground_pixels.is_integer() and is_filtered:
+                msg = f"Modality {name_mod}'s resolution does not divide image extent."
+                raise ValueError(msg)
+
+            if not crop_pixels.is_integer() and is_filtered:
+                msg = f"Modality {name_mod}'s resolution does not divide crop extent."
+                raise ValueError(msg)
+
+            mod = getattr(self, name_mod)
+            mod.resolution_meters = float(resolution_meters)
 
         self.inputs = {}
         for name_mod in self.filter_inputs:
@@ -95,3 +106,9 @@ class DatasetConfig:
                 msg = f"Invalid modality name {name_mod}. Not an attribute."
                 raise ValueError(msg)
             self.targets[name_mod] = getattr(self, name_mod)
+
+        self.rasters = {
+            name_mod: mod
+            for name_mod, mod in (*self.inputs.items(), *self.targets.items())
+            if isinstance(mod, RasterConfig)
+        }

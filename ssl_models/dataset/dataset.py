@@ -10,7 +10,7 @@ import rasterio
 from rasterio.windows import Window
 from torch.utils.data import Dataset
 
-from conf.dataset.utils import RASTER_TARGETS, DatasetConfig, InputRasterConfig
+from conf.dataset.utils import DatasetConfig
 
 
 class GenericDataset(Dataset, ABC):
@@ -23,14 +23,7 @@ class GenericDataset(Dataset, ABC):
     ) -> None:
         self.rng = np.random.default_rng()
         self.transform = transform
-
-        self.mods_rasters = {
-            name_mod: mod
-            for name_mod, mod in (*dataset.inputs.items(), *dataset.targets.items())
-            if isinstance(mod, InputRasterConfig) or mod.type_target in RASTER_TARGETS
-        }
-        self.ground_meters = dataset.ground_meters
-        self.crop_meters = dataset.crop_meters
+        self.dataset = dataset
 
     def preprocess_rasters(
         self,
@@ -39,18 +32,19 @@ class GenericDataset(Dataset, ABC):
         """Read raster inputs."""
         if any(
             f"{name_mod}_path" not in meta or f"{name_mod}_dates" not in meta
-            for name_mod in self.mods_rasters
+            for name_mod in self.dataset.rasters
         ):
-            msg = ""
+            msg = "A modality is missing in meta data."
             raise ValueError(msg)
 
         sizes, sizes_date = {}, {}
-        for name_mod, mod in self.mods_rasters.items():
-            sizes[name_mod] = self.ground_meters / mod.resolution_meters
+        for name_mod, mod in self.dataset.rasters.items():
+            sizes[name_mod] = round(self.dataset.ground_meters / mod.resolution_meters)
             sizes_date[name_mod] = len(meta[f"{name_mod}_dates"])
 
+        # sample spatial and temporal slices
         size_min = min(sizes.values())
-        crop_min = (self.crop_meters / self.ground_meters) * size_min
+        crop_min = (self.dataset.crop_meters / self.dataset.ground_meters) * size_min
         start_min = self.rng.integers(
             low=0,
             high=size_min - round(crop_min) + 1,
@@ -66,22 +60,24 @@ class GenericDataset(Dataset, ABC):
                 raise ValueError(msg)
 
         start, end = {}, {}
-        for name_mod, mod in self.mods_rasters.items():
+        for name_mod, mod in self.dataset.rasters.items():
             start_mod = start_min * round(sizes[name_mod] // size_min)
+            start_mod += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
             start_mod_date = self.rng.integers(
                 low=0,
                 high=sizes_date[name_mod] % mod.num_dates + 1,
             )
             start[name_mod] = (*start_mod, start_mod_date)
 
-            end_mod = start_mod + crop_min * round(sizes[name_mod] // size_min)
+            end_mod = start_mod + round(crop_min) * round(sizes[name_mod] // size_min)
             end_mod_date = start_mod_date + mod.num_dates * (
                 sizes_date[name_mod] // mod.num_dates
             )
             end[name_mod] = (*end_mod, end_mod_date)
 
+        # read raster slices
         inputs = {}
-        for name_mod in self.mods_rasters:
+        for name_mod, mod in self.dataset.rasters.items():
             input_mod, dates_mod = self.preprocess_raster(
                 meta[f"{name_mod}_path"],
                 meta[f"{name_mod}_dates"],
@@ -126,7 +122,12 @@ class GenericDataset(Dataset, ABC):
                     bands = (
                         bands if isinstance(bands, list) else range(1, src.count + 1)
                     )
-                    window = Window(start[0], start[1], end[0], end[1])
+                    window = Window(
+                        start[0],
+                        start[1],
+                        end[0] - start[0],
+                        end[1] - start[1],
+                    )
                     input_mod = src.read(bands, window=window)
                     input_mod = input_mod.reshape(
                         (len(dates_mod), -1, *input_mod.shape[1:]),
@@ -154,14 +155,15 @@ class GenericDataset(Dataset, ABC):
                 msg = f"File format {path_mod.suffix} not supported."
                 raise NotImplementedError(msg)
 
-        if mask_mod is not None:
-            mask_mod = mask_mod.any(axis=-3, keepdims=True)  # either cloud or snow mask
-            mask_mod = mask_mod & ~mask_mod.all(axis=0, keepdims=True)
-            input_mod = np.where(mask_mod, np.nan, input_mod)
-
         if len(dates_mod) != num_dates:
             input_mod = input_mod[slices[2]]
             input_mod = input_mod.reshape((num_dates, -1, *input_mod.shape[1:]))
+            if mask_mod is not None:
+                mask_mod = mask_mod[slices[2]]
+                mask_mod = mask_mod.reshape((num_dates, -1, *mask_mod.shape[1:]))
+                mask_mod = mask_mod.any(axis=2, keepdims=True)  # either cloud or snow
+                mask_mod = mask_mod & ~mask_mod.all(axis=1, keepdims=True)
+                input_mod = np.where(mask_mod, np.nan, input_mod)
             input_mod = np.nanmedian(input_mod, axis=1)
 
             dates_mod = dates_mod[slices[2]]
@@ -177,11 +179,11 @@ class GenericDataset(Dataset, ABC):
         self,
         inputs: dict[str, np.ndarray | list],
     ) -> dict[str, np.ndarray | list]:
-        """Transform model inputs."""
+        """Transform model rasters."""
         if self.transform is not None:
             inputs_transformed = {
                 name_mod: inputs[name_mod].transpose([1, 2, 3, 0])
-                for name_mod in self.mods_rasters
+                for name_mod in self.dataset.rasters
             }
             inputs_transformed = self.transform(
                 **inputs_transformed,
@@ -191,7 +193,7 @@ class GenericDataset(Dataset, ABC):
             )
             inputs_transformed = {
                 name_mod: inputs_transformed[name_mod].transpose([3, 0, 1, 2])
-                for name_mod in self.mods_rasters
+                for name_mod in self.dataset.rasters
             }
             inputs.update(inputs_transformed)
 

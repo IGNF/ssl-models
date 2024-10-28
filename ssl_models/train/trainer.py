@@ -1,5 +1,7 @@
 """Trainer module."""
 
+from typing import Literal
+
 import pytorch_lightning as pl
 from pytorch_lightning import Callback
 from pytorch_lightning.callbacks import (
@@ -23,7 +25,7 @@ class SSLTrainer(pl.Trainer):
         self,
         datasets: DatasetsConfig,
         run: RunConfig,
-        ssl_phase: str,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         opt: OptPretrainConfig | OptProbeConfig | OptFinetuneConfig,
         accelerator: str,
         devices: str | int,

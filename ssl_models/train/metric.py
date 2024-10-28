@@ -5,6 +5,7 @@ from typing import Literal
 import torch
 from torch import Tensor
 from torchmetrics import AveragePrecision, Metric
+from torchmetrics.classification import MultilabelF1Score
 from torchmetrics.functional import confusion_matrix
 
 SMOOTH = 0.000001
@@ -78,47 +79,52 @@ class MultiLabelMetric(Metric):
     def __init__(
         self,
         num_classes: int,
+        threshold_detect: float = 0.5,
         dist_sync_on_step: bool = False,
     ) -> None:
         """Init."""
         super().__init__(dist_sync_on_step=dist_sync_on_step)
-        self.add_state(
-            "cm",
-            default=torch.zeros(num_classes, 2, 2, dtype=torch.long),
-            dist_reduce_fx="sum",
+        self.threshold_detect = threshold_detect
+
+        self.f1_macro = MultilabelF1Score(
+            num_labels=num_classes,
+            threshold=self.threshold_detect,
+            average="macro",
         )
-        self.average_precision = AveragePrecision(
+        self.f1_weighted = MultilabelF1Score(
+            num_labels=num_classes,
+            threshold=self.threshold_detect,
+            average="weighted",
+        )
+        self.ap_macro = AveragePrecision(
             task="multilabel",
             num_labels=num_classes,
+            average="macro",
+        )
+        self.ap_weighted = AveragePrecision(
+            task="multilabel",
+            num_labels=num_classes,
+            average="weighted",
         )
 
     def update(self, logits: Tensor, targets: Tensor) -> None:
-        """Update confusion matrix."""
-        self.cm += confusion_matrix(
-            logits > 0,
-            targets,
-            task="multilabel",
-            num_labels=targets.shape[1],
-            normalize=None,
-        )
-        self.average_precision.update(torch.sigmoid(logits), targets)
+        """Update metrics."""
+        self.f1_macro.update(logits, targets.long())
+        self.f1_weighted.update(logits, targets.long())
+        self.ap_macro.update(logits, targets.long())
+        self.ap_weighted.update(logits, targets.long())
 
     def compute(self) -> dict[str, Tensor]:
-        """Compute metrics from confusion matrix."""
-        true_pos = self.cm[:, 1, 1]  # TP
-        false_pos = self.cm[:, 0, 1]  # FP
-        false_neg = self.cm[:, 1, 0]  # FN
-
-        per_class_f1 = (2 * true_pos) / (2 * true_pos + false_pos + false_neg + SMOOTH)
-        per_class_iou = true_pos / (true_pos + false_pos + false_neg + SMOOTH)
-        per_class_ap = self.average_precision.compute()
-
+        """Compute metrics."""
         return {
-            "average_f1": per_class_f1.mean(),
-            "average_iou": per_class_iou.mean(),
-            "map": per_class_ap.mean(),
+            "macro_f1": self.f1_macro.compute(),
+            "weighted_f1": self.f1_weighted.compute(),
+            "macro_ap": self.ap_macro.compute(),
+            "weighted_ap": self.ap_weighted.compute(),
         }
 
     def reset(self) -> None:
-        super().reset()
-        self.average_precision.reset()
+        self.f1_macro.reset()
+        self.f1_weighted.reset()
+        self.ap_macro.reset()
+        self.ap_weighted.reset()
