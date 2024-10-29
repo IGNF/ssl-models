@@ -1,0 +1,83 @@
+"""TreeSatAI-TS dataset."""
+
+from pathlib import Path
+
+import albumentations as A  # noqa: N812
+import h5py
+import numpy as np
+import pandas as pd
+
+from conf.dataset.utils import DatasetConfig
+from ssl_models.dataset.dataset import GenericDataset
+from ssl_models.dataset.utils import products_datetimes
+
+
+class TreeSatAITSDataset(GenericDataset):
+    """TreeSatAI-TS dataset."""
+
+    def __init__(
+        self,
+        root_dir: Path,
+        csv_path: Path,
+        transform: A.Compose | None,
+        dataset: DatasetConfig,
+        *args,  # noqa: ARG002, ANN002
+        **kwargs,  # noqa: ARG002, ANN003
+    ) -> None:
+        super().__init__(transform=transform, dataset=dataset)
+
+        csv_data = pd.read_csv(csv_path, parse_dates=["aerial_date"])
+        target_cols = [
+            col
+            for col in csv_data.columns
+            if col not in ("aerial_name", "aerial_date", "sen_name")
+        ]
+
+        aerial_dates = [
+            np.array(np.datetime64(aerial_date).astype(np.int64), ndmin=1)
+            for aerial_date in csv_data["aerial_date"].tolist()
+        ]
+        aerial_names = csv_data["aerial_name"].tolist()
+        sen_names = csv_data["sen_name"].tolist()
+
+        self.root_dir = root_dir
+
+        self.aerial_names = aerial_names
+        self.aerial_dates = aerial_dates
+        self.sen_names = sen_names
+        self.targets = csv_data[target_cols].to_numpy()
+
+    def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
+        """Get dataset item."""
+        meta = {}
+
+        meta["aerial_path"] = self.root_dir / "aerial" / self.aerial_names[idx]
+        meta["aerial_shift"] = 2  # aerial images are 304x304 instead of 300x300
+        meta["aerial_dates"] = self.aerial_dates[idx]
+
+        meta["s2_path"] = self.root_dir / "sentinel-ts" / self.sen_names[idx]
+        meta["s2_h5_name"] = "sen-2-data"
+        meta["s2_h5_mask"] = "sen-2-masks"
+
+        meta["s1_asc_path"] = self.root_dir / "sentinel-ts" / self.sen_names[idx]
+        meta["s1_asc_h5_name"] = "sen-1-asc-data"
+
+        meta["s1_des_path"] = self.root_dir / "sentinel-ts" / self.sen_names[idx]
+        meta["s1_des_h5_name"] = "sen-1-des-data"
+
+        sen_path = self.root_dir / "sentinel-ts" / self.sen_names[idx]
+        with h5py.File(sen_path, "r") as sen_file:
+            meta["s2_dates"] = products_datetimes(sen_file["sen-2-products"][:])
+            meta["s1_asc_dates"] = products_datetimes(sen_file["sen-1-asc-products"][:])
+            meta["s1_des_dates"] = products_datetimes(sen_file["sen-1-des-products"][:])
+
+        inputs = self.preprocess_rasters(meta)
+
+        inputs["treesat_mlc"] = (self.targets[idx] > 0).astype(int)
+        inputs["treesat_mlc_dates"] = self.aerial_dates[idx]
+
+        return self.transform_rasters(inputs)
+
+    def __len__(self) -> int:
+        """Return length of dataset."""
+        return len(self.aerial_names)

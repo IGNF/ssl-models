@@ -1,5 +1,7 @@
 """Trainer module."""
 
+from typing import Literal
+
 import pytorch_lightning as pl
 from pytorch_lightning import Callback
 from pytorch_lightning.callbacks import (
@@ -9,6 +11,7 @@ from pytorch_lightning.callbacks import (
 )
 from pytorch_lightning.loggers.logger import Logger
 
+from conf.datasets import DatasetsConfig
 from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
 from conf.run import RunConfig
 from ssl_models.hydra_utils import get_hydra_timestamp
@@ -20,14 +23,16 @@ class SSLTrainer(pl.Trainer):
 
     def __init__(
         self,
+        datasets: DatasetsConfig,
         run: RunConfig,
-        ssl_phase: str,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         opt: OptPretrainConfig | OptProbeConfig | OptFinetuneConfig,
         accelerator: str,
         devices: str | int,
         strategy: str,
         precision: str,
     ) -> None:
+        self.mod_name = datasets.mod_name
         self.ssl_phase = ssl_phase
         self.exp_dir = run.exp_dir
         self.exp_name = run.exp_name

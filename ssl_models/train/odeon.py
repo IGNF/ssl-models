@@ -1,6 +1,7 @@
 """LightningDataModule for SSL, based on Odeon."""
 
 from pathlib import Path
+from typing import Literal
 
 import albumentations as A  # noqa: N812
 from odeon.data import Input
@@ -33,7 +34,7 @@ class OdeonData(Input):
 
     def __init__(
         self,
-        ssl_phase: str,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         root_dir: str,
         batch_size: int,
         num_workers: int,

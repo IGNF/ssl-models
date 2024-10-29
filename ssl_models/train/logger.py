@@ -1,5 +1,7 @@
 """Logger module."""
 
+from typing import Literal
+
 import numpy as np
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -12,7 +14,7 @@ class TensorBoardLogger(TensorBoardLogger):
 
     def __init__(
         self,
-        ssl_phase: str,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         save_dir: str,
         name: str,
         version: str,
@@ -45,7 +47,7 @@ class ImageLogger(Callback):
     @staticmethod
     def to_numpy(x: Tensor) -> Tensor:
         """Move to CPU and convert to numpy."""
-        return x.detach().cpu().numpy().astype(np.float32)
+        return x.detach().cpu().numpy().astype(np.float32)[:3]
 
     @staticmethod
     def should_log(trainer: Trainer, outputs: dict) -> bool:
@@ -62,16 +64,17 @@ class ImageLogger(Callback):
         outputs: dict[str, Tensor],
         batch: dict[str, Tensor],
         batch_idx: int,
-        phase: str,
+        stage: Literal["train", "val", "test"],
     ) -> None:
         """Log images."""
-        match phase:
+        match stage:
             case "train":
                 num_batches_per_epoch = len(trainer.train_dataloader)
-            case "eval":
+            case "val":
                 num_batches_per_epoch = len(trainer.val_dataloaders)
             case "test":
                 num_batches_per_epoch = len(trainer.test_dataloaders)
+        mod_name = trainer.mod_name
         log_every_n_batches = round(
             num_batches_per_epoch / trainer.logged_images_per_epoch,
         )
@@ -81,18 +84,18 @@ class ImageLogger(Callback):
         epoch = trainer.current_epoch
         prefix_idx = batch_idx // log_every_n_batches
         trainer.tb_logger.add_image(
-            f"{phase}/{prefix_idx}_input",
+            f"{stage}/{prefix_idx}_input",
             ImageLogger.to_numpy(outputs["masked"][0]),
             epoch,
         )
         trainer.tb_logger.add_image(
-            f"{phase}/{prefix_idx}_pred",
+            f"{stage}/{prefix_idx}_pred",
             ImageLogger.to_numpy(outputs["pred"][0]),
             epoch,
         )
         trainer.tb_logger.add_image(
-            f"{phase}/{prefix_idx}_target",
-            ImageLogger.to_numpy(batch["image"][0]),
+            f"{stage}/{prefix_idx}_target",
+            ImageLogger.to_numpy(batch[mod_name][0]),
             epoch,
         )
 
@@ -112,7 +115,7 @@ class ImageLogger(Callback):
                 outputs,
                 batch,
                 batch_idx,
-                phase="train",
+                stage="train",
             )
 
     def on_validation_batch_end(
@@ -131,5 +134,5 @@ class ImageLogger(Callback):
                 outputs,
                 batch,
                 batch_idx,
-                phase="eval",
+                stage="val",
             )

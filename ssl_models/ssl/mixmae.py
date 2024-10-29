@@ -6,14 +6,16 @@
 """
 
 from math import ceil
-from typing import Callable
+from typing import Literal
 
 import torch
+import torch.nn.functional as F  # noqa: N812
 from timm.models.layers import trunc_normal_
 from timm.models.swin_transformer import PatchMerging
 from timm.models.vision_transformer import Block
 from torch import Tensor, nn
 
+from conf.datasets import DatasetsConfig
 from ssl_models.layers.swin import MixMAELayer
 from ssl_models.ssl.mim import BaseMIM
 
@@ -23,21 +25,22 @@ class MixMAE(BaseMIM):
 
     def __init__(  # noqa: PLR0913
         self,
+        datasets: DatasetsConfig,
         in_chans: int,
         image_size: int,
         patch_size: int,
         out_patch_size: int,
         unpool: bool,
-        num_levels: int,
+        num_levels: Literal[3, 4],
         embed_dim: int,
         depths: tuple,
         num_heads: tuple,
         window_size: tuple,
-        swin_version: int,
+        swin_version: Literal[1, 2],
         v2_attn: bool,
         nb_mix_images: int = 4,
-        type_head: str = "linear",
-        loss_fn: Callable = torch.square,
+        type_head: Literal["linear", "attentive"] = "linear",
+        loss_fn: Literal[torch.square, torch.square] = torch.square,
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
         decoder_depth: int = 2,
@@ -53,6 +56,7 @@ class MixMAE(BaseMIM):
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
+            datasets=datasets,
             in_chans=in_chans,
             image_size=image_size,
             patch_size=patch_size,
@@ -157,22 +161,22 @@ class MixMAE(BaseMIM):
         mask_rec = 1 - mask_rec.reshape((B, L, 1)).float()
 
         mask = mask.reshape((B_enc, 1, *self.out_patch_grid))
-        mask_s1 = torch.nn.functional.interpolate(
+        mask_s1 = F.interpolate(
             mask,
             size=(H, W),
             mode="nearest",
         )
-        mask_s2 = torch.nn.functional.interpolate(
+        mask_s2 = F.interpolate(
             mask,
             size=(H // 2, W // 2),
             mode="nearest",
         )
-        mask_s3 = torch.nn.functional.interpolate(
+        mask_s3 = F.interpolate(
             mask,
             size=(H // 4, W // 4),
             mode="nearest",
         )
-        mask_s4 = torch.nn.functional.interpolate(
+        mask_s4 = F.interpolate(
             mask,
             size=(H // 8, W // 8),
             mode="nearest",
