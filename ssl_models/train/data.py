@@ -27,9 +27,6 @@ def collate_fn(batch: list[dict]) -> dict[str, datetime | torch.Tensor]:
         collated_batch[name] = torch.stack(
             [torch.from_numpy(elem[name]) for elem in batch],
         )
-        # this is temporarily used to remain mono-date
-        if collated_batch[name].ndim == NDIM_MULTI_DATES:
-            collated_batch[name] = collated_batch[name][:, 0]
     return collated_batch
 
 

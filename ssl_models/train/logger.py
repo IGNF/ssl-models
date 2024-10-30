@@ -61,7 +61,7 @@ class ImageLogger(Callback):
     def on_batch_end(
         self,
         trainer: Trainer,
-        outputs: dict[str, Tensor],
+        outputs: dict[str, dict],
         batch: dict[str, Tensor],
         batch_idx: int,
         stage: Literal["train", "val", "test"],
@@ -74,7 +74,6 @@ class ImageLogger(Callback):
                 num_batches_per_epoch = len(trainer.val_dataloaders)
             case "test":
                 num_batches_per_epoch = len(trainer.test_dataloaders)
-        mod_name = trainer.mod_name
         log_every_n_batches = round(
             num_batches_per_epoch / trainer.logged_images_per_epoch,
         )
@@ -83,21 +82,24 @@ class ImageLogger(Callback):
 
         epoch = trainer.current_epoch
         prefix_idx = batch_idx // log_every_n_batches
-        trainer.tb_logger.add_image(
-            f"{stage}/{prefix_idx}_input",
-            ImageLogger.to_numpy(outputs["masked"][0]),
-            epoch,
-        )
-        trainer.tb_logger.add_image(
-            f"{stage}/{prefix_idx}_pred",
-            ImageLogger.to_numpy(outputs["pred"][0]),
-            epoch,
-        )
-        trainer.tb_logger.add_image(
-            f"{stage}/{prefix_idx}_target",
-            ImageLogger.to_numpy(batch[mod_name][0]),
-            epoch,
-        )
+        for name_mod, idx in outputs["masked"]:
+            if "aerial" not in name_mod:
+                continue
+            trainer.tb_logger.add_image(
+                f"{stage}/{prefix_idx}_{name_mod}_{idx}_input",
+                ImageLogger.to_numpy(outputs["masked"][(name_mod, idx)][0]),
+                epoch,
+            )
+            trainer.tb_logger.add_image(
+                f"{stage}/{prefix_idx}_{name_mod}_{idx}_pred",
+                ImageLogger.to_numpy(outputs["pred"][(name_mod, idx)][0]),
+                epoch,
+            )
+            trainer.tb_logger.add_image(
+                f"{stage}/{prefix_idx}_{name_mod}_{idx}_target",
+                ImageLogger.to_numpy(batch[name_mod][0, idx]),
+                epoch,
+            )
 
     def on_train_batch_end(
         self,

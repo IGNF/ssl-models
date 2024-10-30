@@ -26,6 +26,7 @@ class MixMAE(BaseMIM):
     def __init__(  # noqa: PLR0913
         self,
         datasets: DatasetsConfig,
+        model: Literal["mixmae"],
         in_chans: int,
         image_size: int,
         patch_size: int,
@@ -57,6 +58,7 @@ class MixMAE(BaseMIM):
     ) -> None:
         super().__init__(
             datasets=datasets,
+            model=model,
             in_chans=in_chans,
             image_size=image_size,
             patch_size=patch_size,
@@ -219,6 +221,7 @@ class MixMAE(BaseMIM):
         mask_s2: Tensor | None,
         mask_s3: Tensor | None,
         mask_s4: Tensor | None,
+        **kwargs,  # noqa: ARG002, ANN003
     ) -> Tensor:
         """Apply MixMAE encoder."""
         for idx, layer in enumerate(self.encoder_layers):

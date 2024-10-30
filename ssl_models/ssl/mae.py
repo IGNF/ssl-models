@@ -17,10 +17,7 @@ class MAE(BaseMIM):
     def __init__(  # noqa: PLR0913
         self,
         datasets: DatasetsConfig,
-        in_chans: int,
-        image_size: int,
-        patch_size: int,
-        out_patch_size: int,
+        model: Literal["mae"],
         unpool: bool,
         num_levels: Literal[1],
         embed_dim: int,
@@ -42,10 +39,7 @@ class MAE(BaseMIM):
     ) -> None:
         super().__init__(
             datasets=datasets,
-            in_chans=in_chans,
-            image_size=image_size,
-            patch_size=patch_size,
-            out_patch_size=out_patch_size,
+            model=model,
             unpool=unpool,
             num_levels=num_levels,
             embed_dim=embed_dim,
@@ -80,7 +74,14 @@ class MAE(BaseMIM):
             mlp_dim=embed_dim * decoder_mlp_ratio,
         )
 
-    def mask_or_mix(self, x: Tensor):  # noqa: ANN201
+    def mask_or_mix(self, x: dict[str, Tensor]):  # noqa: ANN201
+        """Mask sequence."""
+        x_enc, mask_rec = {}, {}
+        for name_mod in x:
+            x_enc[name_mod], mask_rec[name_mod] = self.mask(x[name_mod])
+        return x_enc, None, None, None, None, mask_rec
+
+    def mask(self, x: Tensor) -> tuple[Tensor, Tensor]:
         """Mask sequence."""
         B, L, _ = x.shape  # noqa: N806
 
@@ -104,7 +105,7 @@ class MAE(BaseMIM):
         unmasked_indices = random_indices[:, num_masked_patches:]
         unmasked_indices, _ = unmasked_indices.sort(dim=1)
         x_enc = x[batch_indices, unmasked_indices, :]  # [B L:(1 - mask_ratio) C]
-        return x_enc, None, None, None, None, mask_rec
+        return x_enc, mask_rec
 
     def unmask_or_unmix(self, x: Tensor, mask_rec: Tensor) -> Tensor:
         """Unmask sequence, filling with mask token."""
@@ -128,9 +129,20 @@ class MAE(BaseMIM):
         x_dec[batch_indices, unmasked_indices, :] = x
         return x_dec
 
-    def encode(self, x: Tensor, *args) -> Tensor:  # noqa: ARG002, ANN002
+    def encode(
+        self,
+        x: Tensor,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        **kwargs,  # noqa: ARG002, ANN003
+    ) -> Tensor:
         """Apply MAE encoder."""
-        return self.encoder(x)
+        name_mods = list(x.keys())
+        splits = tuple(x[name_mod].shape[1] for name_mod in name_mods)
+        x_enc = torch.cat([x[name_mod] for name_mod in name_mods], dim=1)
+        x_enc = self.encoder(x_enc)
+        if ssl_phase == "pretrain":
+            return dict(zip(name_mods, x_enc.split(splits, dim=1)))
+        return x_enc
 
     def encoder_to_decoder(self, x: Tensor) -> Tensor:
         """Apply MAE encoder-to-decoder."""

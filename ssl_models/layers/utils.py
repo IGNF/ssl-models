@@ -25,9 +25,9 @@ def posemb_sincos_2d(
     omega = torch.arange(dim // 4) / (dim // 4 - 1)
     omega = 1.0 / (temperature**omega)
 
-    y = y.flatten()[:, None] * omega[None, :]
-    x = x.flatten()[:, None] * omega[None, :]
-    pe = torch.cat((x.sin(), x.cos(), y.sin(), y.cos()), dim=1)
+    y = y[:, :, None] * omega[None, None, :]
+    x = x[:, :, None] * omega[None, None, :]
+    pe = torch.cat((x.sin(), x.cos(), y.sin(), y.cos()), dim=-1)
     return pe.to(dtype)
 
 
