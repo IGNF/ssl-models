@@ -18,7 +18,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     crop_meters: float = 250 * 1.0
 
     filter_inputs: list[str] = field(
-        default_factory=lambda: ["spot", "s2", "s1_asc", "s1_des"],
+        default_factory=lambda: ["spot"]#, "s2", "s1_asc", "s1_des"],
     )  # selected input modalities
     filter_targets: list[str] = field(
         default_factory=lambda: ["pastis_seg"],
@@ -69,10 +69,13 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
             type_target="segment",
             num_classes=19,
             missing_val=19,
+            image_size=256,
+            bands=[0],
+            num_dates=1,
         )
         super().__post_init__(
             resolutions_meters={
-                "pastis_seg": 1.0,
+                "pastis_seg": 10,
                 "spot": 1.0,
                 "s2": 10.0,
                 "s1_asc": 10.0,

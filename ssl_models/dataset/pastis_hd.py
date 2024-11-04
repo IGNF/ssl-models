@@ -2,43 +2,48 @@
 
 from pathlib import Path
 
+import albumentations as A  # noqa: N812
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
 
+from conf.dataset.utils import DatasetConfig
+from ssl_models.dataset.dataset import GenericDataset
 from ssl_models.dataset.utils import dict_datetimes
 
 
-class PASTISHDDataset(Dataset):
+class PASTISHDDataset(GenericDataset):
     """PASTIS-HD dataset."""
 
     def __init__(
         self,
         root_dir: str | Path,
         csv_path: str | Path,
+        transform: A.Compose | None,
+        dataset: DatasetConfig,
+        *args,  # noqa: ARG002, ANN002
+        **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
-        image_ids = pd.read_csv(csv_path)["id"]
+        super().__init__(transform=transform, dataset=dataset)
+
+        image_ids = pd.read_csv(csv_path)["image"]
         meta_data = gpd.read_file(root_dir / "metadata.geojson").set_index("id")
 
         self.root_dir = Path(root_dir)
         self.image_ids = image_ids
 
-        self.s2_names = [f"S2_{image_id}" for image_id in image_ids]
-        self.s1_asc_names = [f"S1A_{image_id}" for image_id in image_ids]
-        self.s1_des_names = [f"S1D_{image_id}" for image_id in image_ids]
-        self.spot_names = [f"SPOT6_RVB_1M00_2019_{image_id}" for image_id in image_ids]
-
         self.s2_dates = [
-            dict_datetimes(meta_data.loc[image_id, "dates-S1A"])
+            dict_datetimes(meta_data.at[str(image_id), "dates-S1A"])
             for image_id in image_ids
         ]
+
         self.s1_asc_dates = [
-            dict_datetimes(meta_data.loc[image_id, "dates-S1A"])
+            dict_datetimes(meta_data.at[str(image_id), "dates-S1A"])
             for image_id in image_ids
         ]
         self.s1_des_dates = [
-            dict_datetimes(meta_data.loc[image_id, "dates-S1A"])
+            dict_datetimes(meta_data.at[str(image_id), "dates-S1A"])
             for image_id in image_ids
         ]
 
@@ -59,7 +64,7 @@ class PASTISHDDataset(Dataset):
             ndmin=1,
         )
 
-        meta["s2_path"] = self.root_dir / "DATA_S2" / f"S2_{image_id}.tif"
+        meta["s2_path"] = self.root_dir / "DATA_S2" / f"S2_{image_id}.npy"
         meta["s2_dates"] = self.s2_dates[idx]
         meta["s1_asc_path"] = self.root_dir / "DATA_S1A" / f"S1A_{image_id}.npy"
         meta["s1_asc_dates"] = self.s1_asc_dates[idx]
@@ -80,4 +85,4 @@ class PASTISHDDataset(Dataset):
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return len(self.aerial_paths)
+        return len(self.image_ids)

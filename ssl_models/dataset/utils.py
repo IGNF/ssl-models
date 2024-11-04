@@ -122,12 +122,11 @@ def products_datetimes(products: list[str]) -> np.ndarray:
     )
 
 
-def dict_datetimes(datetime_strs: str) -> np.ndarray:
+def dict_datetimes(datetime_dict: dict) -> np.ndarray:
     """Convert list of datetime strings to list of datetimes."""
-    datetime_dict = json.loads(datetime_strs)
     datetimes = [
         datetime.strptime(  # noqa: DTZ007
-            datetime_dict[str(idx)],
+            str(datetime_dict[str(idx)]),
             "%Y%m%d",
         )
         for idx in range(len(datetime_dict))

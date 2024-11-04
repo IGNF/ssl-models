@@ -11,6 +11,7 @@ from rasterio.windows import Window
 from torch.utils.data import Dataset
 
 from conf.dataset.utils import DatasetConfig
+from conf.dataset.utils import TargetRasterConfig
 
 
 class GenericDataset(Dataset, ABC):
@@ -79,6 +80,7 @@ class GenericDataset(Dataset, ABC):
         inputs = {}
         for name_mod, mod in self.dataset.rasters.items():
             input_mod, dates_mod = self.preprocess_raster(
+                mod,
                 meta[f"{name_mod}_path"],
                 meta[f"{name_mod}_dates"],
                 meta.get(f"{name_mod}_mask", None),
@@ -95,6 +97,7 @@ class GenericDataset(Dataset, ABC):
 
     def preprocess_raster(
         self,
+        mod,
         path_mod: Path,
         dates_mod: np.ndarray,
         mask: Path | None,
@@ -134,13 +137,16 @@ class GenericDataset(Dataset, ABC):
                     )
             case ".npy":
                 npy_file = np.load(path_mod, mmap_mode="r")
+                if isinstance(mod, TargetRasterConfig):
+                    npy_file = np.expand_dims(npy_file, axis=0)
                 bands = (
                     bands if isinstance(bands, list) else slice(0, npy_file.shape[1])
                 )
+
                 input_mod = npy_file[:, bands, slices[0], slices[1]]
                 if use_mask and mask is not None:
                     mask_file = np.load(mask, mmap_mode="r")
-                    mask_mod = mask_file[:, :, slices[0], slices[1]]
+                    mask_mod = mask_file[:, slices[0], slices[1]]
             case ".h5":
                 with h5py.File(path_mod, "r") as h5_file:
                     bands = (

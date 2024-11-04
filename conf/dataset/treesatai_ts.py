@@ -18,7 +18,7 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     crop_meters: float = 60.0
 
     filter_inputs: list[str] = field(
-        default_factory=lambda: ["aerial", "s2", "s1_asc", "s1_des"],
+        default_factory=lambda: ["aerial"] #, "s2", "s1_asc", "s1_des"],
     )  # selected input modalities
     filter_targets: list[str] = field(
         default_factory=lambda: ["treesat_mlc"],

@@ -64,7 +64,7 @@ class InputRasterConfig(RasterConfig, InputConfig):
 @dataclass
 class TargetRasterConfig(RasterConfig, TargetConfig):
     """Target raster modality config."""
-
+    num_dates: int = 1
 
 @dataclass
 class DatasetConfig:

@@ -211,8 +211,16 @@ class BaseMIM(nn.Module, ABC):
             targets = batch[name_target]
             match target.type_target:
                 case "segment":
-                    logits = rearrange(logits, "b c h w -> (b h w) c")
-                    targets = rearrange(targets, "b h w -> (b h w)")
+                    # logits = rearrange(logits, "b h (w c) -> (b h w) c", c=target.num_classes, w=target.image_size, h=target.image_size)
+                    logits = rearrange(
+                        logits, "b (w h) (p1 p2 c) -> (b h p1 w p2) c",
+                        c=target.num_classes,
+                        p1=self.out_patch_size,
+                        p2=self.out_patch_size,
+                        w=target.image_size // self.out_patch_size
+                    )
+                    targets = rearrange(targets, "b c h w -> (b c h w)")
+                    targets = targets.long()
                 case "change_detect":
                     logits = rearrange(logits, "b 1 h w -> (b h w)")
                     targets = rearrange(targets, "b h w -> (b h w)")
