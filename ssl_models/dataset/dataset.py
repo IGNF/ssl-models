@@ -10,7 +10,7 @@ import rasterio
 from rasterio.windows import Window
 from torch.utils.data import Dataset
 
-from conf.dataset.utils import DatasetConfig, TargetRasterConfig
+from conf.dataset.utils import DatasetConfig
 
 
 class GenericDataset(Dataset, ABC):
@@ -96,7 +96,6 @@ class GenericDataset(Dataset, ABC):
 
     def preprocess_raster(
         self,
-        mod,  # noqa: ANN001
         path_mod: Path,
         dates_mod: np.ndarray,
         mask: Path | None,
@@ -136,7 +135,7 @@ class GenericDataset(Dataset, ABC):
                     )
             case ".npy":
                 npy_file = np.load(path_mod, mmap_mode="r")
-                if isinstance(mod, TargetRasterConfig):
+                if npy_file.ndim < 4:  # noqa: PLR2004
                     npy_file = np.expand_dims(npy_file, axis=0)
                 bands = (
                     bands if isinstance(bands, list) else slice(0, npy_file.shape[1])
