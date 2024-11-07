@@ -83,7 +83,6 @@ class BaseMIM(nn.Module, ABC):
             requires_grad=False,
         )
 
-        target_patch_size = datasets.dataset.target_patch_size
         head_dim = embed_dim * 2 ** (num_levels - 1)
 
         self.dataset = datasets.dataset
@@ -93,7 +92,7 @@ class BaseMIM(nn.Module, ABC):
                 self.heads[name_target] = Pixelify(
                     head_dim,
                     target.num_classes,
-                    target_patch_size,
+                    int(target.image_size / image_size * out_patch_size),
                     unpool=False,
                 )
             elif type_head == "attentive":
@@ -209,10 +208,21 @@ class BaseMIM(nn.Module, ABC):
             logits = self.heads[name_target](x_enc, ssl_phase)
             logits = self.sigmoid_pred[name_target](logits)
             targets = batch[name_target]
+            target_patch_size = int(
+                target.image_size / self.image_size * self.out_patch_size,
+            )
             match target.type_target:
                 case "segment":
-                    logits = rearrange(logits, "b c h w -> (b h w) c")
-                    targets = rearrange(targets, "b h w -> (b h w)")
+                    logits = rearrange(
+                        logits,
+                        "b (h w) (p1 p2 c) -> (b h p1 w p2) c",
+                        c=target.num_classes,
+                        p1=target_patch_size,
+                        p2=target_patch_size,
+                        w=self.image_size // target_patch_size,
+                    )
+                    targets = rearrange(targets, "b c h w -> (b c h w)")
+                    targets = targets.long()
                 case "change_detect":
                     logits = rearrange(logits, "b 1 h w -> (b h w)")
                     targets = rearrange(targets, "b h w -> (b h w)")

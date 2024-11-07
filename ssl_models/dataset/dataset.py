@@ -123,10 +123,10 @@ class GenericDataset(Dataset, ABC):
                         bands if isinstance(bands, list) else range(1, src.count + 1)
                     )
                     window = Window(
-                        start[0],
                         start[1],
-                        end[0] - start[0],
+                        start[0],
                         end[1] - start[1],
+                        end[0] - start[0],
                     )
                     input_mod = src.read(bands, window=window)
                     input_mod = input_mod.reshape(
@@ -134,13 +134,16 @@ class GenericDataset(Dataset, ABC):
                     )
             case ".npy":
                 npy_file = np.load(path_mod, mmap_mode="r")
+                if npy_file.ndim < 4:  # noqa: PLR2004
+                    npy_file = np.expand_dims(npy_file, axis=0)
                 bands = (
                     bands if isinstance(bands, list) else slice(0, npy_file.shape[1])
                 )
+
                 input_mod = npy_file[:, bands, slices[0], slices[1]]
                 if use_mask and mask is not None:
                     mask_file = np.load(mask, mmap_mode="r")
-                    mask_mod = mask_file[:, :, slices[0], slices[1]]
+                    mask_mod = mask_file[:, slices[0], slices[1]]
             case ".h5":
                 with h5py.File(path_mod, "r") as h5_file:
                     bands = (
