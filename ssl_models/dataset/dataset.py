@@ -79,7 +79,6 @@ class GenericDataset(Dataset, ABC):
         inputs = {}
         for name_mod, mod in self.dataset.rasters.items():
             input_mod, dates_mod = self.preprocess_raster(
-                mod,
                 meta[f"{name_mod}_path"],
                 meta[f"{name_mod}_dates"],
                 meta.get(f"{name_mod}_mask", None),
