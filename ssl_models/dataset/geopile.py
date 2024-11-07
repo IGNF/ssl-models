@@ -3,7 +3,6 @@
 from pathlib import Path
 from typing import Literal
 
-import albumentations as A  # noqa: N812
 import numpy as np
 import pandas as pd
 
@@ -18,11 +17,11 @@ class GeoPileDataset(GenericDataset):
         self,
         root_dir: Path,
         csv_path: Path,
-        transform: A.Compose | None,
+        use_transform: bool,
         dataset: DatasetConfig,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
     ) -> None:
-        super().__init__(transform=transform, dataset=dataset)
+        super().__init__(use_transform=use_transform, dataset=dataset)
 
         name_targets = dataset.filter_targets
         col_targets = [

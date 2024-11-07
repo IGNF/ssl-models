@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import albumentations as A  # noqa: N812
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -19,12 +18,12 @@ class PASTISHDDataset(GenericDataset):
         self,
         root_dir: str | Path,
         csv_path: str | Path,
-        transform: A.Compose | None,
+        use_transform: bool,
         dataset: DatasetConfig,
         *args,  # noqa: ARG002, ANN002
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
-        super().__init__(transform=transform, dataset=dataset)
+        super().__init__(use_transform=use_transform, dataset=dataset)
 
         image_ids = pd.read_csv(csv_path)["image"]
         meta_data = gpd.read_file(root_dir / "metadata.geojson").set_index("id")
