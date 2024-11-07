@@ -64,13 +64,13 @@ class InputRasterConfig(RasterConfig, InputConfig):
 @dataclass
 class TargetRasterConfig(RasterConfig, TargetConfig):
     """Target raster modality config."""
+
     num_dates: int = 1
+
 
 @dataclass
 class DatasetConfig:
     """Generic dataset config."""
-
-    target_patch_size = 16
 
     def __post_init__(self, resolutions_meters: dict[str, int]) -> None:
         """Check validity of modalities and further define non configurable attrs."""

@@ -6,7 +6,6 @@ import albumentations as A  # noqa: N812
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from torch.utils.data import Dataset
 
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
@@ -34,16 +33,16 @@ class PASTISHDDataset(GenericDataset):
         self.image_ids = image_ids
 
         self.s2_dates = [
-            dict_datetimes(meta_data.at[str(image_id), "dates-S1A"])
+            dict_datetimes(meta_data.loc[str(image_id), "dates-S1A"])
             for image_id in image_ids
         ]
 
         self.s1_asc_dates = [
-            dict_datetimes(meta_data.at[str(image_id), "dates-S1A"])
+            dict_datetimes(meta_data.loc[str(image_id), "dates-S1A"])
             for image_id in image_ids
         ]
         self.s1_des_dates = [
-            dict_datetimes(meta_data.at[str(image_id), "dates-S1A"])
+            dict_datetimes(meta_data.loc[str(image_id), "dates-S1A"])
             for image_id in image_ids
         ]
 

@@ -10,8 +10,7 @@ import rasterio
 from rasterio.windows import Window
 from torch.utils.data import Dataset
 
-from conf.dataset.utils import DatasetConfig
-from conf.dataset.utils import TargetRasterConfig
+from conf.dataset.utils import DatasetConfig, TargetRasterConfig
 
 
 class GenericDataset(Dataset, ABC):
@@ -97,7 +96,7 @@ class GenericDataset(Dataset, ABC):
 
     def preprocess_raster(
         self,
-        mod,
+        mod,  # noqa: ANN001
         path_mod: Path,
         dates_mod: np.ndarray,
         mask: Path | None,
@@ -126,10 +125,10 @@ class GenericDataset(Dataset, ABC):
                         bands if isinstance(bands, list) else range(1, src.count + 1)
                     )
                     window = Window(
-                        start[0],
                         start[1],
-                        end[0] - start[0],
+                        start[0],
                         end[1] - start[1],
+                        end[0] - start[0],
                     )
                     input_mod = src.read(bands, window=window)
                     input_mod = input_mod.reshape(

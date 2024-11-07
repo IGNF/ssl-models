@@ -15,10 +15,10 @@ from ssl_models.dataset.pastis_hd import PASTISHDDataset
 class PASTISHDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "PASTIS-HD"
     weight: float = 1.0
-    crop_meters: float = 250 * 1.0
+    crop_meters: float = 320 * 1.0
 
     filter_inputs: list[str] = field(
-        default_factory=lambda: ["spot"]#, "s2", "s1_asc", "s1_des"],
+        default_factory=lambda: ["spot", "s2", "s1_asc", "s1_des"],
     )  # selected input modalities
     filter_targets: list[str] = field(
         default_factory=lambda: ["pastis_seg"],
@@ -69,7 +69,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
             type_target="segment",
             num_classes=19,
             missing_val=19,
-            image_size=256,
+            image_size=32,
             bands=[0],
             num_dates=1,
         )

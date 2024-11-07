@@ -1,6 +1,5 @@
 """Utils module."""
 
-import json
 from datetime import datetime, timezone
 from typing import Literal
 

@@ -211,7 +211,7 @@ class SSLModule(LightningModule):
             batch[name_mod] = F.interpolate(
                 batch[name_mod],
                 size=(mod.image_size,) * 2,
-                mode="bilinear" if isinstance(mod, InputConfig) else "bilinear",
+                mode="bilinear" if isinstance(mod, InputConfig) else "nearest",
             )
 
         match self.trainer.ssl_phase:
