@@ -2,12 +2,12 @@
 
 from pathlib import Path
 
-import albumentations as A  # noqa: N812
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 
 from conf.dataset.utils import DatasetConfig
+from ssl_models.dataset.dataset import GenericDataset
 from ssl_models.dataset.utils import dict_datetimes
 
 

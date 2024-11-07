@@ -4,7 +4,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-import albumentations as A  # noqa: N812
 import numpy as np
 import torch
 from pytorch_lightning import LightningDataModule
