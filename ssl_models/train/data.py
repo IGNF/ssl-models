@@ -46,23 +46,13 @@ class SSLDataModule(LightningDataModule):
         use_transform: bool,
     ) -> None:
         super().__init__()
-        if use_transform:
-            transform = A.Compose(
-                [
-                    A.VerticalFlip(p=0.5),
-                    A.HorizontalFlip(p=0.5),
-                    A.RandomRotate90(p=0.5),
-                ],
-            )
-        else:
-            transform = None
 
         root_dir = Path(datasets.root_dir) / datasets.dataset.rel_dir
         train_dataset = datasets.dataset_class(
             root_dir=root_dir,
             csv_path=root_dir / "train.csv",
             ssl_phase=ssl_phase,
-            transform=transform,
+            use_transform=use_transform,
             dataset=datasets.dataset,
         )
         self.train_loader = DataLoader(
@@ -78,7 +68,7 @@ class SSLDataModule(LightningDataModule):
             root_dir=root_dir,
             csv_path=root_dir / "val.csv",
             ssl_phase=ssl_phase,
-            transform=transform,
+            use_transform=use_transform,
             dataset=datasets.dataset,
         )
         self.val_loader = DataLoader(

@@ -18,11 +18,11 @@ class GenericDataset(Dataset, ABC):
 
     def __init__(
         self,
-        transform: A.Compose | None,
+        use_transform: bool,
         dataset: DatasetConfig,
     ) -> None:
-        self.rng = np.random.default_rng()
-        self.transform = transform
+        self.rng = np.random.default_rng(seed=42)
+        self.use_transform = use_transform
         self.dataset = dataset
 
     def preprocess_rasters(
@@ -183,21 +183,32 @@ class GenericDataset(Dataset, ABC):
         inputs: dict[str, np.ndarray | list],
     ) -> dict[str, np.ndarray | list]:
         """Transform model rasters."""
-        if self.transform is not None:
-            inputs_transformed = {
-                name_mod: inputs[name_mod].transpose([1, 2, 3, 0])
-                for name_mod in self.dataset.rasters
-            }
-            inputs_transformed = self.transform(
-                **inputs_transformed,
-                image=next(
-                    iter(inputs_transformed.values()),
-                ),  # add 'image' to make albumentations happy
+        if self.use_transform:
+            if self.rng.choice([True, False]):
+                inputs.update(
+                    {
+                        name_mod: np.flip(inputs[name_mod], axis=2)
+                        for name_mod in self.dataset.rasters
+                    },
+                )
+            if self.rng.choice([True, False]):
+                inputs.update(
+                    {
+                        name_mod: np.flip(inputs[name_mod], axis=3)
+                        for name_mod in self.dataset.rasters
+                    },
+                )
+            if self.rng.choice([True, False]):
+                inputs.update(
+                    {
+                        name_mod: np.swapaxes(inputs[name_mod], 2, 3)
+                        for name_mod in self.dataset.rasters
+                    },
+                )
+            inputs.update(
+                {
+                    name_mod: np.ascontiguousarray(inputs[name_mod])
+                    for name_mod in self.dataset.rasters
+                },
             )
-            inputs_transformed = {
-                name_mod: inputs_transformed[name_mod].transpose([3, 0, 1, 2])
-                for name_mod in self.dataset.rasters
-            }
-            inputs.update(inputs_transformed)
-
         return inputs
