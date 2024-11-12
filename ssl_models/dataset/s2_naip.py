@@ -70,8 +70,8 @@ class S2NAIPDataset(GenericDataset):
             np.loadtxt(self.root_dir / "dates" / "s2" / f"{image_id}.txt", dtype="str"),
             5,
         )
-        meta["s2_60m_path"] = self.root_dir / "sentinel2" / f"{image_id}_32.tif"
-        meta["s2_60m_dates"] = products_datetimes(
+        meta["s2_40m_path"] = self.root_dir / "sentinel2" / f"{image_id}_32.tif"
+        meta["s2_40m_dates"] = products_datetimes(
             np.loadtxt(self.root_dir / "dates" / "s2" / f"{image_id}.txt", dtype="str"),
             5,
         )
