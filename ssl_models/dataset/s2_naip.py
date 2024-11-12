@@ -1,14 +1,93 @@
 """S2-NAIP dataset module."""
 
-from torch.utils.data import Dataset
+from pathlib import Path
+
+import albumentations as A  # noqa: N812
+import numpy as np
+import pandas as pd
+
+from conf.dataset.utils import DatasetConfig
+from ssl_models.dataset.dataset import GenericDataset
+from ssl_models.dataset.utils import naip_datetimes, products_datetimes
 
 
-class S2NAIPDataset(Dataset):
+class S2NAIPDataset(GenericDataset):
     """S2-NAIP dataset."""
 
     def __init__(
         self,
-        *args,  # noqa: ANN002
-        **kwargs,  # noqa: ANN003
+        root_dir: Path,
+        csv_path: Path,
+        transform: A.Compose | None,
+        dataset: DatasetConfig,
+        *args,  # noqa: ARG002, ANN002
+        **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
-        raise NotImplementedError
+        super().__init__(transform=transform, dataset=dataset)
+
+        csv_data = pd.read_csv(csv_path)
+
+        self.root_dir = root_dir
+        self.image_ids = csv_data["name"].to_list()
+
+    def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
+        """Get dataset item."""
+        image_id = self.image_ids[idx]
+
+        meta = {}
+        meta["naip_path"] = self.root_dir / "naip" / f"{image_id}.png"
+        meta["naip_dates"] = naip_datetimes(
+            str(
+                np.loadtxt(
+                    self.root_dir / "dates" / "naip" / f"{image_id}.txt",
+                    dtype="str",
+                ),
+            ),
+        )
+        meta["landsat_10m_path"] = self.root_dir / "landsat" / f"{image_id}_8.tif"
+        meta["landsat_10m_dates"] = products_datetimes(
+            np.loadtxt(
+                self.root_dir / "dates" / "landsat" / f"{image_id}.txt",
+                dtype="str",
+            ),
+            4,
+        )
+        meta["landsat_20m_path"] = self.root_dir / "landsat" / f"{image_id}_16.tif"
+        meta["landsat_20m_dates"] = products_datetimes(
+            np.loadtxt(
+                self.root_dir / "dates" / "landsat" / f"{image_id}.txt",
+                dtype="str",
+            ),
+            4,
+        )
+        meta["s2_10m_path"] = self.root_dir / "sentinel2" / f"{image_id}_8.tif"
+        meta["s2_10m_dates"] = products_datetimes(
+            np.loadtxt(self.root_dir / "dates" / "s2" / f"{image_id}.txt", dtype="str"),
+            5,
+        )
+        meta["s2_20m_path"] = self.root_dir / "sentinel2" / f"{image_id}_16.tif"
+        meta["s2_20m_dates"] = products_datetimes(
+            np.loadtxt(self.root_dir / "dates" / "s2" / f"{image_id}.txt", dtype="str"),
+            5,
+        )
+        meta["s2_60m_path"] = self.root_dir / "sentinel2" / f"{image_id}_32.tif"
+        meta["s2_60m_dates"] = products_datetimes(
+            np.loadtxt(self.root_dir / "dates" / "s2" / f"{image_id}.txt", dtype="str"),
+            5,
+        )
+        meta["s1_path"] = self.root_dir / "sentinel1" / f"{image_id}.tif"
+        meta["s1_dates"] = products_datetimes(
+            np.loadtxt(self.root_dir / "dates" / "s1" / f"{image_id}.txt", dtype="str"),
+            5,
+        )
+
+        meta["osm_seg_path"] = self.root_dir / "openstreetmap" / f"{image_id}.geojson"
+        meta["osm_seg_dates"] = meta["naip_dates"]
+
+        inputs = self.preprocess_rasters(meta)
+
+        return self.transform_rasters(inputs)
+
+    def __len__(self) -> int:
+        """Return length of dataset."""
+        return len(self.image_ids)

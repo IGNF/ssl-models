@@ -1,5 +1,6 @@
 """Generic dataset module."""
 
+import warnings
 from abc import ABC
 from pathlib import Path
 
@@ -11,6 +12,9 @@ from rasterio.windows import Window
 from torch.utils.data import Dataset
 
 from conf.dataset.utils import DatasetConfig
+from ssl_models.dataset.osm_to_seg import process_geojson_file
+
+warnings.filterwarnings("ignore", category=rasterio.errors.NotGeoreferencedWarning)
 
 
 class GenericDataset(Dataset, ABC):
@@ -154,6 +158,10 @@ class GenericDataset(Dataset, ABC):
                     input_mod = h5_file[h5_name][:, bands, slices[0], slices[1]]
                     if use_mask and h5_mask is not None:
                         mask_mod = h5_file[h5_mask][:, :, slices[0], slices[1]]
+            case ".geojson":
+                geojson_file = process_geojson_file(path_mod)
+                geojson_file = np.expand_dims(geojson_file, axis=(0, 1))
+                input_mod = geojson_file[:, :, slices[0], slices[1]]
             case _:
                 msg = f"File format {path_mod.suffix} not supported."
                 raise NotImplementedError(msg)

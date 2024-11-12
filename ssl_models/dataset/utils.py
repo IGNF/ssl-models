@@ -106,17 +106,39 @@ def clip_ts(
     return np.take(data, random_indices, axis=0), np.take(diff_dates, random_indices)
 
 
-def products_datetimes(products: list[str]) -> np.ndarray:
+def products_datetimes(products: list[str], idx: int) -> np.ndarray:
     """Convert list of products to list of datetimes."""
-    datetimes = [
-        datetime.strptime(  # noqa: DTZ007
-            product.decode().split("_")[-5][:8],
-            "%Y%m%d",
-        )
-        for product in products
-    ]
+    if isinstance(products[0], str):
+        datetimes = [
+            datetime.strptime(  # noqa: DTZ007
+                product.split("_")[-idx][:8],
+                "%Y%m%d",
+            )
+            for product in products
+        ]
+    else:
+        datetimes = [
+            datetime.strptime(  # noqa: DTZ007
+                product.decode().split("_")[-idx][:8],
+                "%Y%m%d",
+            )
+            for product in products
+        ]
     return np.array(
         [np.datetime64(dt).astype(np.int64) for dt in datetimes],
+        ndmin=1,
+    )
+
+
+def naip_datetimes(datetime_str: str) -> np.ndarray:
+    """Convert naip string to list of datetime."""
+    datetimes = datetime.strptime(  # noqa: DTZ007
+        datetime_str.split("_")[-1][:8],
+        "%Y%m%d",
+    )
+
+    return np.array(
+        np.datetime64(datetimes).astype(np.int64),
         ndmin=1,
     )
 
