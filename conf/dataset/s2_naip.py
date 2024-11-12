@@ -24,7 +24,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
             "landsat_20m",
             "s2_10m",
             "s2_20m",
-            "s2_60m",
+            "s2_40m",
             "s1",
         ],
     )  # selected input modalities
@@ -76,7 +76,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
             norm_fac=10000.0,
         ),
     )
-    s2_60m: InputRasterConfig = field(
+    s2_40m: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
@@ -114,7 +114,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
                 "landsat_20m": 20.0,
                 "s2_10m": 10.0,
                 "s2_20m": 20.0,
-                "s2_60m": 60.0,
+                "s2_40m": 40.0,
                 "s1": 10.0,
             },
         )
