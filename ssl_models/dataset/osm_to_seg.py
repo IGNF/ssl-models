@@ -11,38 +11,38 @@ def map_category_to_meta(category: str) -> int:
     """Encode categories."""
     mapping = {
         # Buildings and Structures
-        "building": 0,
-        "flagpole": 0,
-        "lighthouse": 0,
-        "obelisk": 0,
-        "observatory": 0,
+        "building": 1,
+        "flagpole": 1,
+        "lighthouse": 1,
+        "obelisk": 1,
+        "observatory": 1,
         # Transportation Infrastructure
-        "aerialway_pylon": 1,
-        "airport": 1,
-        "gas_station": 1,
-        "helipad": 1,
-        "parking": 1,
-        "road": 1,
-        "runway": 1,
-        "taxiway": 1,
+        "aerialway_pylon": 2,
+        "airport": 2,
+        "gas_station": 2,
+        "helipad": 2,
+        "parking": 2,
+        "road": 2,
+        "runway": 2,
+        "taxiway": 2,
         # Industrial and Energy Infrastructure (chimneys go here)
-        "chimney": 2,
-        "petroleum_well": 2,
-        "power_plant": 2,
-        "power_substation": 2,
-        "power_tower": 2,
-        "satellite_dish": 2,
-        "silo": 2,
-        "storage_tank": 2,
-        "wind_turbine": 2,
-        "works": 2,
+        "chimney": 3,
+        "petroleum_well": 3,
+        "power_plant": 3,
+        "power_substation": 3,
+        "power_tower": 3,
+        "satellite_dish": 3,
+        "silo": 3,
+        "storage_tank": 3,
+        "wind_turbine": 3,
+        "works": 3,
         # Water Features
-        "river": 3,
-        "fountain": 3,
+        "river": 4,
+        "fountain": 4,
         # Other
-        "leisure": 4,
+        "leisure": 5,
     }
-    return mapping.get(category, 4)
+    return mapping.get(category, 5)
 
 
 def process_geojson_file(path: str | Path) -> np.ndarray:  # noqa: C901
