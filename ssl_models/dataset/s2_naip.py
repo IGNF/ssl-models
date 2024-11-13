@@ -44,37 +44,33 @@ class S2NAIPDataset(GenericDataset):
                 ),
             ),
         )
-        meta["landsat_10m_path"] = self.root_dir / "landsat" / f"{image_id}_8.tif"
-        meta["landsat_10m_dates"] = products_datetimes(
-            np.loadtxt(
-                self.root_dir / "dates" / "landsat" / f"{image_id}.txt",
-                dtype="str",
-            ),
-            4,
-        )
-        meta["landsat_20m_path"] = self.root_dir / "landsat" / f"{image_id}_16.tif"
-        meta["landsat_20m_dates"] = products_datetimes(
-            np.loadtxt(
-                self.root_dir / "dates" / "landsat" / f"{image_id}.txt",
-                dtype="str",
-            ),
-            4,
-        )
-        meta["s2_10m_path"] = self.root_dir / "sentinel2" / f"{image_id}_8.tif"
-        meta["s2_10m_dates"] = products_datetimes(
-            np.loadtxt(self.root_dir / "dates" / "s2" / f"{image_id}.txt", dtype="str"),
-            5,
-        )
-        meta["s2_20m_path"] = self.root_dir / "sentinel2" / f"{image_id}_16.tif"
-        meta["s2_20m_dates"] = products_datetimes(
-            np.loadtxt(self.root_dir / "dates" / "s2" / f"{image_id}.txt", dtype="str"),
-            5,
-        )
-        meta["s2_40m_path"] = self.root_dir / "sentinel2" / f"{image_id}_32.tif"
-        meta["s2_40m_dates"] = products_datetimes(
-            np.loadtxt(self.root_dir / "dates" / "s2" / f"{image_id}.txt", dtype="str"),
-            5,
-        )
+
+        landsat_resolutions = {"10": "8", "20": "16"}
+        for res, suffix in landsat_resolutions.items():
+            meta[f"landsat_{res}m_path"] = (
+                self.root_dir / "landsat" / f"{image_id}_{suffix}.tif"
+            )
+            meta[f"landsat_{res}m_dates"] = products_datetimes(
+                np.loadtxt(
+                    self.root_dir / "dates" / "landsat" / f"{image_id}.txt",
+                    dtype="str",
+                ),
+                4,
+            )
+
+        s2_resolutions = {"10": "8", "20": "16", "40": "32"}
+        for res, suffix in s2_resolutions.items():
+            meta[f"s2_{res}m_path"] = (
+                self.root_dir / "sentinel2" / f"{image_id}_{suffix}.tif"
+            )
+            meta[f"s2_{res}m_dates"] = products_datetimes(
+                np.loadtxt(
+                    self.root_dir / "dates" / "s2" / f"{image_id}.txt",
+                    dtype="str",
+                ),
+                5,
+            )
+
         meta["s1_path"] = self.root_dir / "sentinel1" / f"{image_id}.tif"
         meta["s1_dates"] = products_datetimes(
             np.loadtxt(self.root_dir / "dates" / "s1" / f"{image_id}.txt", dtype="str"),

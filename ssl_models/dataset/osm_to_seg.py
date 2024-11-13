@@ -42,7 +42,7 @@ def map_category_to_meta(category: str) -> int:
         # Other
         "leisure": 4,
     }
-    return mapping.get(category, 5)
+    return mapping.get(category, 4)
 
 
 def process_geojson_file(path: str | Path) -> np.ndarray:  # noqa: C901
