@@ -24,11 +24,10 @@ def model_map():
 
 
 @pytest.mark.parametrize(
-    "model_size, image_size, patch_size, num_levels, loss_fn, norm_pix_loss, nb_mix_images",
+    "model_size, swin_version, num_levels, loss_fn, norm_pix_loss, nb_mix_images",
     itertools.product(
         ("tiny",),
-        (128,),
-        (4, 8),
+        (1, 2),
         (3, 4),
         (torch.square, torch.abs),
         (True, False),
@@ -39,8 +38,7 @@ def test_mixmae(
     datasets_geopile,
     model_map,
     model_size,
-    image_size,
-    patch_size,
+    swin_version,
     num_levels,
     loss_fn,
     norm_pix_loss,
@@ -48,14 +46,11 @@ def test_mixmae(
 ):
     model_args = {
         "datasets": datasets_geopile,
-        "in_chans": 3,
+        "model": "mixmae",
         "nb_mix_images": nb_mix_images,
-        "image_size": image_size,
-        "patch_size": patch_size,
-        "out_patch_size": patch_size * 2 ** (num_levels - 1),
         "unpool": False,
         "num_levels": num_levels,
-        "swin_version": 2,
+        "swin_version": swin_version,
         "v2_attn": True,
         "type_head": "linear",
         "loss_fn": loss_fn,

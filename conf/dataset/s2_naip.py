@@ -105,7 +105,6 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
             type_target="segment",
             num_classes=6,
             missing_val=-1,
-            image_size=256,
         )
         super().__post_init__(
             resolutions_meters={
