@@ -8,7 +8,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F  # noqa: N812
-from timm.models.layers import to_2tuple, trunc_normal_
+from timm.models.layers import trunc_normal_
 from timm.models.swin_transformer import window_partition, window_reverse
 from timm.models.vision_transformer import DropPath, Mlp
 from torch import Tensor, nn
@@ -21,12 +21,12 @@ class WindowAttentionSwinV2(nn.Module):
     def __init__(
         self,
         dim: int,
-        window_size: tuple[int, int],
+        window_size: int,
         num_heads: int,
         qkv_bias: bool,
         attn_drop: float,
         proj_drop: float,
-        pretrained_window_size: tuple[int, int],
+        pretrained_window_size: int,
         nb_mix_images: int,
     ) -> None:
         super().__init__()
@@ -47,13 +47,13 @@ class WindowAttentionSwinV2(nn.Module):
 
         # get relative_coords_table
         relative_coords_h = torch.arange(
-            -(self.window_size[0] - 1),
-            self.window_size[0],
+            -(self.window_size - 1),
+            self.window_size,
             dtype=torch.float32,
         )
         relative_coords_w = torch.arange(
-            -(self.window_size[1] - 1),
-            self.window_size[1],
+            -(self.window_size - 1),
+            self.window_size,
             dtype=torch.float32,
         )
         relative_coords_table = (
@@ -62,12 +62,12 @@ class WindowAttentionSwinV2(nn.Module):
             .contiguous()
             .unsqueeze(0)
         )  # 1, 2*Wh-1, 2*Ww-1, 2
-        if pretrained_window_size[0] > 0:
-            relative_coords_table[:, :, :, 0] /= pretrained_window_size[0] - 1
-            relative_coords_table[:, :, :, 1] /= pretrained_window_size[1] - 1
+        if pretrained_window_size > 0:
+            relative_coords_table[:, :, :, 0] /= pretrained_window_size - 1
+            relative_coords_table[:, :, :, 1] /= pretrained_window_size - 1
         else:
-            relative_coords_table[:, :, :, 0] /= self.window_size[0] - 1
-            relative_coords_table[:, :, :, 1] /= self.window_size[1] - 1
+            relative_coords_table[:, :, :, 0] /= self.window_size - 1
+            relative_coords_table[:, :, :, 1] /= self.window_size - 1
         relative_coords_table *= 8  # normalize to -8, 8
         relative_coords_table = (
             torch.sign(relative_coords_table)
@@ -82,8 +82,8 @@ class WindowAttentionSwinV2(nn.Module):
         )
 
         # get pair-wise relative position index for each token inside the window
-        coords_h = torch.arange(self.window_size[0])
-        coords_w = torch.arange(self.window_size[1])
+        coords_h = torch.arange(self.window_size)
+        coords_w = torch.arange(self.window_size)
         coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
         coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
         relative_coords = (
@@ -94,9 +94,9 @@ class WindowAttentionSwinV2(nn.Module):
             2,
             0,
         ).contiguous()  # Wh*Ww, Wh*Ww, 2
-        relative_coords[:, :, 0] += self.window_size[0] - 1  # shift to start from 0
-        relative_coords[:, :, 1] += self.window_size[1] - 1
-        relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
+        relative_coords[:, :, 0] += self.window_size - 1  # shift to start from 0
+        relative_coords[:, :, 1] += self.window_size - 1
+        relative_coords[:, :, 0] *= 2 * self.window_size - 1
         relative_position_index = relative_coords.sum(-1)  # Wh*Ww, Wh*Ww
         self.register_buffer(
             "relative_position_index",
@@ -117,7 +117,9 @@ class WindowAttentionSwinV2(nn.Module):
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x: Tensor, mask: Tensor) -> Tensor:
-        b_, n, c = x.shape
+        B_, L, C = x.shape  # noqa: N806
+        window_size = round(L**0.5)
+
         qkv_bias = None
         if self.q_bias is not None:
             qkv_bias = torch.cat(
@@ -128,7 +130,7 @@ class WindowAttentionSwinV2(nn.Module):
                 ),
             )
         qkv = F.linear(input=x, weight=self.qkv.weight, bias=qkv_bias)
-        qkv = qkv.reshape(b_, n, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
+        qkv = qkv.reshape(B_, L, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
         q, k, v = qkv.unbind(0)
 
         # attention
@@ -143,13 +145,22 @@ class WindowAttentionSwinV2(nn.Module):
             -1,
             self.num_heads,
         )
-        relative_position_bias = relative_position_bias_table[
-            self.relative_position_index.view(-1)
-        ].view(
-            self.window_size[0] * self.window_size[1],
-            self.window_size[0] * self.window_size[1],
-            -1,
-        )  # Wh*Ww,Wh*Ww,nH
+        relative_position_bias = (
+            relative_position_bias_table[self.relative_position_index.view(-1)]
+            .view(
+                window_size,
+                self.window_size // window_size,
+                window_size,
+                self.window_size // window_size,
+                window_size,
+                self.window_size // window_size,
+                window_size,
+                self.window_size // window_size,
+                -1,
+            )
+            .mean(dim=(1, 3, 5, 7))
+            .view((window_size**2, window_size**2, -1))
+        )
         relative_position_bias = relative_position_bias.permute(
             2,
             0,
@@ -159,12 +170,12 @@ class WindowAttentionSwinV2(nn.Module):
         attn = attn + relative_position_bias.unsqueeze(0)
 
         if mask is not None:
-            mask = mask.reshape(b_, 1, 1, n)
+            mask = mask.reshape(B_, 1, 1, L)
             mask = torch.sum(
                 torch.stack(
                     [
-                        (mask == i).long() * (mask == i).long().transpose(2, 3)
-                        for i in range(self.nb_mix_images)
+                        (mask == idx).long() * (mask == idx).long().transpose(2, 3)
+                        for idx in range(self.nb_mix_images)
                     ],
                 ),
                 dim=0,
@@ -177,7 +188,7 @@ class WindowAttentionSwinV2(nn.Module):
         attn = self.softmax(attn)
         attn = self.attn_drop(attn)
 
-        x = (attn @ v).transpose(1, 2).reshape(b_, n, c)
+        x = (attn @ v).transpose(1, 2).reshape(B_, L, C)
         x = self.proj(x)
         return self.proj_drop(x)
 
@@ -203,12 +214,12 @@ class WindowAttention(nn.Module):
 
         # define a parameter table of relative position bias
         self.relative_position_bias_table = nn.Parameter(
-            torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads),
+            torch.zeros((2 * window_size - 1) * (2 * window_size - 1), num_heads),
         )  # 2*Wh-1 * 2*Ww-1, nH
 
         # get pair-wise relative position index for each token inside the window
-        coords_h = torch.arange(self.window_size[0])
-        coords_w = torch.arange(self.window_size[1])
+        coords_h = torch.arange(self.window_size)
+        coords_w = torch.arange(self.window_size)
         coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
         coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
         relative_coords = (
@@ -219,9 +230,9 @@ class WindowAttention(nn.Module):
             2,
             0,
         ).contiguous()  # Wh*Ww, Wh*Ww, 2
-        relative_coords[:, :, 0] += self.window_size[0] - 1  # shift to start from 0
-        relative_coords[:, :, 1] += self.window_size[1] - 1
-        relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
+        relative_coords[:, :, 0] += self.window_size - 1  # shift to start from 0
+        relative_coords[:, :, 1] += self.window_size - 1
+        relative_coords[:, :, 0] *= 2 * self.window_size - 1
         relative_position_index = relative_coords.sum(-1)  # Wh*Ww, Wh*Ww
         self.register_buffer("relative_position_index", relative_position_index)
 
@@ -234,10 +245,12 @@ class WindowAttention(nn.Module):
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x: Tensor, mask: Tensor) -> Tensor:
-        B_, N, C = x.shape  # noqa: N806
+        B_, L, C = x.shape  # noqa: N806
+        window_size = round(L**0.5)
+
         qkv = (
             self.qkv(x)
-            .reshape(B_, N, 3, self.num_heads, C // self.num_heads)
+            .reshape(B_, L, 3, self.num_heads, C // self.num_heads)
             .permute(2, 0, 3, 1, 4)
         )
         q, k, v = qkv.unbind(0)  # make torchscript happy (cannot use tensor as tuple)
@@ -245,13 +258,22 @@ class WindowAttention(nn.Module):
         q = q * self.scale
         attn = q @ k.transpose(-2, -1)
 
-        relative_position_bias = self.relative_position_bias_table[
-            self.relative_position_index.view(-1)
-        ].view(
-            self.window_size[0] * self.window_size[1],
-            self.window_size[0] * self.window_size[1],
-            -1,
-        )  # Wh*Ww,Wh*Ww,nH
+        relative_position_bias = (
+            self.relative_position_bias_table[self.relative_position_index.view(-1)]
+            .view(
+                window_size,
+                self.window_size // window_size,
+                window_size,
+                self.window_size // window_size,
+                window_size,
+                self.window_size // window_size,
+                window_size,
+                self.window_size // window_size,
+                -1,
+            )
+            .mean(dim=(1, 3, 5, 7))
+            .view((window_size**2, window_size**2, -1))
+        )
         relative_position_bias = relative_position_bias.permute(
             2,
             0,
@@ -260,12 +282,12 @@ class WindowAttention(nn.Module):
         attn = attn + relative_position_bias.unsqueeze(0)
 
         if mask is not None:
-            mask = mask.reshape(B_, 1, 1, N)
+            mask = mask.reshape(B_, 1, 1, L)
             mask = torch.sum(
                 torch.stack(
                     [
-                        (mask == i).long() * (mask == i).long().transpose(2, 3)
-                        for i in range(self.nb_mix_images)
+                        (mask == idx).long() * (mask == idx).long().transpose(2, 3)
+                        for idx in range(self.nb_mix_images)
                     ],
                 ),
                 dim=0,
@@ -279,7 +301,7 @@ class WindowAttention(nn.Module):
         attn = self.softmax(attn)
         attn = self.attn_drop(attn)
 
-        x = (attn @ v).transpose(1, 2).reshape(B_, N, C)
+        x = (attn @ v).transpose(1, 2).reshape(B_, L, C)
         x = self.proj(x)
         return self.proj_drop(x)
 
@@ -290,8 +312,8 @@ class MixMAEBlock(nn.Module):
     def __init__(  # noqa: PLR0913
         self,
         dim: int,
-        input_resolution: tuple[int, int],
         num_heads: int,
+        num_windows: int,
         window_size: int,
         mlp_ratio: float,
         qkv_bias: bool,
@@ -307,30 +329,24 @@ class MixMAEBlock(nn.Module):
     ) -> None:
         super().__init__()
         self.swin_version = swin_version
-        self.input_resolution = input_resolution
-        self.window_size = window_size
-        if min(self.input_resolution) <= self.window_size:
-            # if window size is larger than input resolution,\
-            # we don't partition windows
-            self.window_size = min(self.input_resolution)
-
+        self.num_windows = num_windows
         self.norm1 = norm_layer(dim)
 
         if swin_version == 2 or v2_attn:  # noqa: PLR2004
             self.attn = WindowAttentionSwinV2(
                 dim,
-                window_size=to_2tuple(self.window_size),
+                window_size=window_size,
                 num_heads=num_heads,
                 qkv_bias=qkv_bias,
                 attn_drop=attn_drop,
                 proj_drop=drop,
-                pretrained_window_size=to_2tuple(pretrained_window_size),
+                pretrained_window_size=pretrained_window_size,
                 nb_mix_images=nb_mix_images,
             )
         else:
             self.attn = WindowAttention(
                 dim,
-                window_size=to_2tuple(self.window_size),
+                window_size=window_size,
                 num_heads=num_heads,
                 qkv_bias=qkv_bias,
                 attn_drop=attn_drop,
@@ -347,9 +363,10 @@ class MixMAEBlock(nn.Module):
             drop=drop,
         )
 
-    def forward(self, x: Tensor, attn_mask: Tensor) -> Tensor:
-        H, W = self.input_resolution  # noqa: N806
-        B, _, C = x.shape  # noqa: N806
+    def forward(self, x: Tensor, mask_attn: Tensor) -> Tensor:
+        B, L, C = x.shape  # noqa: N806
+        H, W = round(L**0.5), round(L**0.5)  # noqa: N806
+        window_size = H // self.num_windows
 
         shortcut = x
         if self.swin_version == 1:
@@ -359,39 +376,30 @@ class MixMAEBlock(nn.Module):
         # partition windows
         x_windows = window_partition(
             x,
-            self.window_size,
+            window_size,
         )  # nW*B, window_size, window_size, c
 
         x_windows = x_windows.view(
             -1,
-            self.window_size * self.window_size,
+            window_size * window_size,
             C,
         )  # nW*B, window_size*window_size, c
-        if attn_mask is not None:
-            attn_mask = attn_mask.view(B, H, W, 1)
-            attn_mask = window_partition(attn_mask, self.window_size)
-            attn_mask = attn_mask.view(
-                -1,
-                self.window_size * self.window_size,
-                1,
-            )
+        if mask_attn is not None:
+            mask_attn = mask_attn.view(B, H, W, 1)
+            mask_attn = window_partition(mask_attn, window_size)
+            mask_attn = mask_attn.view(-1, window_size * window_size, 1)
 
         # W-MSA/SW-MSA
         attn_windows = self.attn(
             x_windows,
-            mask=attn_mask,
+            mask=mask_attn,
         )  # nW*B, window_size*window_size, c
 
         # merge windows
-        attn_windows = attn_windows.view(
-            -1,
-            self.window_size,
-            self.window_size,
-            C,
-        )
-        x = window_reverse(attn_windows, self.window_size, H, W)  # B H' W' c
+        attn_windows = attn_windows.view(-1, window_size, window_size, C)
+        x = window_reverse(attn_windows, window_size, H, W)  # B H' W' c
 
-        x = x.view(B, H * W, C)
+        x = x.view(B, L, C)
 
         if self.swin_version == 1:
             x = shortcut + self.drop_path(x)
@@ -411,9 +419,9 @@ class MixMAELayer(nn.Module):
     def __init__(  # noqa: PLR0913
         self,
         dim: int,
-        input_resolution: tuple[int, int],
         depth: int,
         num_heads: int,
+        num_windows: int,
         window_size: int,
         mlp_ratio: float,
         qkv_bias: bool,
@@ -429,7 +437,6 @@ class MixMAELayer(nn.Module):
         v2_attn: bool,
     ) -> None:
         super().__init__()
-        self.input_resolution = input_resolution
         self.use_checkpoint = use_checkpoint
 
         # build blocks
@@ -438,8 +445,8 @@ class MixMAELayer(nn.Module):
             self.blocks.append(
                 MixMAEBlock(
                     dim=dim,
-                    input_resolution=input_resolution,
                     num_heads=num_heads,
+                    num_windows=num_windows,
                     window_size=window_size,
                     mlp_ratio=mlp_ratio,
                     qkv_bias=qkv_bias,
@@ -462,22 +469,28 @@ class MixMAELayer(nn.Module):
         else:
             self.downsample = None
 
-    def forward(self, x: Tensor, attn_mask: Tensor) -> Tensor:
+        if swin_version == 2:  # noqa: PLR2004
+            self.init_respostnorm()
+
+    def forward(self, x: Tensor, mask_attn: Tensor) -> Tensor:
         for blk in self.blocks:
             if self.use_checkpoint:
-                x = checkpoint(blk, x, attn_mask)
+                x = checkpoint(blk, x, mask_attn)
             else:
-                x = blk(x, attn_mask=attn_mask)
+                x = blk(x, mask_attn=mask_attn)
         if self.downsample is not None:
-            H, W = self.input_resolution  # noqa: N806
-            B, _, C = x.shape  # noqa: N806
+            B, L, C = x.shape  # noqa: N806
+            H, W = round(L**0.5), round(L**0.5)  # noqa: N806
             x = x.view(B, H, W, C)
-
             x = self.downsample(x)
+            x = x.view(B, L // 4, -1)
 
-            x = x.view(B, H * W // 4, -1)
+            if mask_attn is not None:
+                mask_attn = mask_attn.view(B, 1, H, W)
+                mask_attn = F.interpolate(mask_attn, (H // 2, W // 2), mode="nearest")
+                mask_attn = mask_attn.view(B, L // 4, 1)
 
-        return x
+        return x, mask_attn
 
     def init_respostnorm(self) -> None:
         for blk in self.blocks:

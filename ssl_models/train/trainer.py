@@ -35,6 +35,7 @@ class SSLTrainer(pl.Trainer):
         self.exp_name = run.exp_name
         self.exp_version = get_hydra_timestamp()
 
+        self.log_inputs = run.log_inputs
         self.logged_images_per_epoch = run.logged_images_per_epoch
 
         self.base_lr = opt.base_lr
@@ -80,5 +81,5 @@ class SSLTrainer(pl.Trainer):
                 save_weights_only=True,
             ),
         )
-        callbacks.append(ImageLogger())
+        callbacks.append(ImageLogger(self.log_inputs))
         return callbacks

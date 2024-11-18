@@ -8,7 +8,7 @@ import pandas as pd
 
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
-from ssl_models.dataset.utils import products_datetimes
+from ssl_models.dataset.utils import dates_numpy, products_datetimes
 
 
 class TreeSatAITSDataset(GenericDataset):
@@ -33,7 +33,7 @@ class TreeSatAITSDataset(GenericDataset):
         ]
 
         aerial_dates = [
-            np.array(np.datetime64(aerial_date).astype(np.int64), ndmin=1)
+            dates_numpy([aerial_date])
             for aerial_date in csv_data["aerial_date"].tolist()
         ]
         aerial_names = csv_data["aerial_name"].tolist()
@@ -48,23 +48,24 @@ class TreeSatAITSDataset(GenericDataset):
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
+        sen_path = self.root_dir / "sentinel-ts" / self.sen_names[idx]
+        aerial_path = self.root_dir / "aerial" / self.aerial_names[idx]
+        aerial_date = self.aerial_dates[idx]
+        target = self.targets[idx]
+
         meta = {}
-
-        meta["aerial_path"] = self.root_dir / "aerial" / self.aerial_names[idx]
+        meta["aerial_path"] = aerial_path
         meta["aerial_shift"] = 2  # aerial images are 304x304 instead of 300x300
-        meta["aerial_dates"] = self.aerial_dates[idx]
+        meta["aerial_dates"] = aerial_date
 
-        meta["s2_path"] = self.root_dir / "sentinel-ts" / self.sen_names[idx]
+        meta["s2_path"] = sen_path
         meta["s2_h5_name"] = "sen-2-data"
         meta["s2_h5_mask"] = "sen-2-masks"
-
-        meta["s1_asc_path"] = self.root_dir / "sentinel-ts" / self.sen_names[idx]
+        meta["s1_asc_path"] = sen_path
         meta["s1_asc_h5_name"] = "sen-1-asc-data"
-
-        meta["s1_des_path"] = self.root_dir / "sentinel-ts" / self.sen_names[idx]
+        meta["s1_des_path"] = sen_path
         meta["s1_des_h5_name"] = "sen-1-des-data"
 
-        sen_path = self.root_dir / "sentinel-ts" / self.sen_names[idx]
         with h5py.File(sen_path, "r") as sen_file:
             meta["s2_dates"] = products_datetimes(sen_file["sen-2-products"][:], 5)
             meta["s1_asc_dates"] = products_datetimes(
@@ -78,9 +79,10 @@ class TreeSatAITSDataset(GenericDataset):
 
         inputs = self.preprocess_rasters(meta)
 
-        inputs["treesat_mlc"] = (self.targets[idx] > 0).astype(int)
-        inputs["treesat_mlc_dates"] = self.aerial_dates[idx]
+        inputs["treesat_mlc"] = (target > 0).astype(int)
+        inputs["treesat_mlc_dates"] = aerial_date
 
+        inputs["ref_date"] = aerial_date
         return self.transform_rasters(inputs)
 
     def __len__(self) -> int:

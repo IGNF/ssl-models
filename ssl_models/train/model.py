@@ -20,11 +20,13 @@ from ssl_models.ssl.mixmae import (
 
 torch.set_float32_matmul_precision(precision="medium")
 
+NDIM_RASTER = 5  # (batch, dates, channels, height, width)
+
 
 class SSLModule(LightningModule):
     """SSL module."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         # shared args
         datasets: DatasetsConfig,
@@ -41,6 +43,12 @@ class SSLModule(LightningModule):
         swin_version: Literal[1, 2] = 1,
         v2_attn: bool = True,
         swin_abs_enc: bool = False,
+        use_date_enc: bool = True,
+        shuffle_mods: bool = False,
+        mask_indep: bool = True,
+        mask_shared: bool = True,
+        encoder: Literal["shared", "mod", "multimodal"] = "shared",
+        decoder: Literal["shared", "mod", "multimodal"] = "shared",
     ) -> None:
         super().__init__()
 
@@ -65,6 +73,7 @@ class SSLModule(LightningModule):
             case "mae":
                 num_levels = 1
                 fac_abs_enc = 1.0  # abs pos encodings are necessary
+                fac_date_enc = 1.0 if use_date_enc else 0.0
 
                 model_map = {
                     "tiny": mae_tiny,
@@ -80,6 +89,7 @@ class SSLModule(LightningModule):
                     msg = f"Invalid swin version {swin_version}. Expected '1' or '2'"
                     raise ValueError(msg)
                 fac_abs_enc = 1.0 if swin_abs_enc else 0.0  # optional abs pos encodings
+                fac_date_enc = 1.0 if use_date_enc else 0.0
 
                 model_map = {
                     "tiny": mixmae_tiny,
@@ -106,6 +116,12 @@ class SSLModule(LightningModule):
                 "loss_fn": loss_fn,
                 "norm_pix_loss": norm_pix_loss,
                 "fac_abs_enc": fac_abs_enc,
+                "fac_date_enc": fac_date_enc,
+                "shuffle_mods": shuffle_mods,
+                "mask_indep": mask_indep,
+                "mask_shared": mask_shared,
+                "encoder": encoder,
+                "decoder": decoder,
             }
             self.model = model_map[model_size](**model_args)
         else:
@@ -152,7 +168,7 @@ class SSLModule(LightningModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Pretraining step."""
-        loss_rec, masked, pred, _ = self.model(
+        loss_rec, masked, rec, _ = self.model(
             batch,
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
@@ -163,7 +179,7 @@ class SSLModule(LightningModule):
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
         )
-        return {"loss": loss_rec, "masked": masked, "pred": pred}
+        return {"loss": loss_rec, "masked": masked, "rec": rec}
 
     def probe_or_finetune_step(
         self,
@@ -183,7 +199,7 @@ class SSLModule(LightningModule):
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
         )
-        return {"loss": loss_pred, "masked": None, "pred": None}
+        return {"loss": loss_pred, "masked": None, "rec": None}
 
     def shared_step(
         self,
@@ -191,12 +207,22 @@ class SSLModule(LightningModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Shared step for training/validation."""
+        # resize
         for name_mod, mod in self.dataset.rasters.items():
             batch[name_mod] = F.interpolate(
                 batch[name_mod].flatten(0, 1),
                 size=(mod.image_size,) * 2,
                 mode="bilinear" if isinstance(mod, InputConfig) else "nearest",
             ).unflatten(0, (-1, mod.num_dates))
+            batch[f"{name_mod}_dates"] = (
+                F.interpolate(
+                    batch[f"{name_mod}_dates"].float().flatten(0, 1),
+                    size=(mod.image_size,) * 2,
+                    mode="nearest",
+                ).unflatten(0, (-1, mod.num_dates))
+                if batch[f"{name_mod}_dates"].ndim == NDIM_RASTER
+                else batch[f"{name_mod}_dates"].float()
+            )
 
         match self.trainer.ssl_phase:
             case "pretrain":
@@ -279,6 +305,8 @@ class SSLModule(LightningModule):
         stage: Literal["train", "val", "test"],
     ) -> None:
         """Log metric."""
+        if stage != "train":
+            return
         super().log(
             name=f"{ssl_phase}_{name}/step_{stage}",
             value=value,

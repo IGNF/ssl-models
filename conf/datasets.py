@@ -57,16 +57,8 @@ class DatasetsConfig:
         dataset = self.pretrain[name_dataset]
 
         if len(names_dataset) > 1:
-            msg = "Multi-dataset pretraining/finetuning not yet implemented."
+            msg = "Multi-dataset pretraining/finetuning not implemented yet."
             raise NotImplementedError(msg)
-
-        # if len(dataset.filter_inputs) != 1:
-        #     msg = "Multi-modality pretraining/finetuning not yet implemented."
-        #     raise NotImplementedError(msg)
-
-        # if mod.num_dates != 1:
-        #     msg = "Multi-dates pretraining/finetuning not yet implemented."
-        #     raise NotImplementedError(msg)
 
         self.dataset_class = dataset.dataset_class
         self.dataset = dataset

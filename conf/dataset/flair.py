@@ -16,6 +16,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "FLAIR_INC"
     weight: float = 1.0
     crop_meters: float = 250 * 0.2
+    ref_input: str | None = "aerial"
 
     filter_inputs: list[str] = field(
         default_factory=lambda: ["aerial", "dtm_dsm", "spot", "s2", "s1"],
@@ -54,7 +55,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
             bands=10,
             num_dates=4,
-            use_mask=True,
+            mask_threshold=60.0,
             norm_fac=10000.0,
         ),
     )

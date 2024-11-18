@@ -10,7 +10,6 @@ from typing import Literal
 
 import torch
 import torch.nn.functional as F  # noqa: N812
-from timm.models.layers import trunc_normal_
 from timm.models.swin_transformer import PatchMerging
 from timm.models.vision_transformer import Block
 from torch import Tensor, nn
@@ -27,10 +26,6 @@ class MixMAE(BaseMIM):
         self,
         datasets: DatasetsConfig,
         model: Literal["mixmae"],
-        in_chans: int,
-        image_size: int,
-        patch_size: int,
-        out_patch_size: int,
         unpool: bool,
         num_levels: Literal[3, 4],
         embed_dim: int,
@@ -44,6 +39,7 @@ class MixMAE(BaseMIM):
         loss_fn: Literal[torch.square, torch.square] = torch.square,
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
+        fac_date_enc: float = 1.0,
         decoder_depth: int = 2,
         decoder_dim: int = 512,
         decoder_num_heads: int = 16,
@@ -54,15 +50,16 @@ class MixMAE(BaseMIM):
         drop_path_rate: float = 0.0,
         pretrained_window_sizes: tuple[int, int, int, int] = [0, 0, 0, 0],
         use_checkpoint: bool = False,
+        shuffle_mods: bool = False,
+        mask_indep: bool = True,
+        mask_shared: bool = True,
+        encoder: Literal["shared", "mod", "multimodal"] = "shared",
+        decoder: Literal["shared", "mod", "multimodal"] = "shared",
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
             datasets=datasets,
             model=model,
-            in_chans=in_chans,
-            image_size=image_size,
-            patch_size=patch_size,
-            out_patch_size=out_patch_size,
             unpool=unpool,
             num_levels=num_levels,
             embed_dim=embed_dim,
@@ -71,10 +68,20 @@ class MixMAE(BaseMIM):
             loss_fn=loss_fn,
             norm_pix_loss=norm_pix_loss,
             fac_abs_enc=fac_abs_enc,
+            fac_date_enc=fac_date_enc,
+            shuffle_mods=shuffle_mods,
+            mask_indep=mask_indep,
+            mask_shared=mask_shared,
         )
+        if not mask_indep:
+            msg = "Dependent masking not yet implemented with MixMAE."
+            raise NotImplementedError(msg)
+        if encoder == "multimodal":
+            msg = "Multimodal encoder not yet implemented with MixMAE."
+            raise NotImplementedError(msg)
+
         self.nb_mix_images = nb_mix_images
-        self.patch_grid = (image_size // patch_size,) * 2
-        self.out_patch_grid = (image_size // out_patch_size,) * 2
+        self.stride = 2 ** (num_levels - 1)
 
         # encoder args
         encoder_dim = embed_dim * 2 ** (num_levels - 1)
@@ -83,74 +90,120 @@ class MixMAE(BaseMIM):
         ]  # stochastic depth decay rule
 
         # encoder layers
-        self.encoder_layers = nn.ModuleList()
-        for idx_layer in range(num_levels):
-            self.encoder_layers.append(
-                MixMAELayer(
-                    dim=embed_dim * 2**idx_layer,
-                    input_resolution=(
-                        self.patch_grid[0] // (2**idx_layer),
-                        self.patch_grid[1] // (2**idx_layer),
-                    ),
-                    depth=depths[idx_layer],
-                    num_heads=num_heads[idx_layer],
-                    window_size=window_size[idx_layer],
-                    mlp_ratio=mlp_ratio,
-                    qkv_bias=qkv_bias,
-                    drop=drop_rate,
-                    attn_drop=attn_drop_rate,
-                    drop_path=dpr[
-                        sum(depths[:idx_layer]) : sum(depths[: idx_layer + 1])
-                    ],
-                    norm_layer=nn.LayerNorm,
-                    downsample=(PatchMerging if (idx_layer < num_levels - 1) else None),
-                    use_checkpoint=use_checkpoint,
-                    pretrained_window_size=pretrained_window_sizes[idx_layer],
-                    swin_version=swin_version,
-                    nb_mix_images=nb_mix_images,
-                    v2_attn=v2_attn,
-                ),
-            )
-        self.encoder_norm = nn.LayerNorm(encoder_dim)
-
-        self.enc_to_dec = nn.Linear(encoder_dim, decoder_dim)
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, decoder_dim))
-        trunc_normal_(self.mask_token, mean=0.0, std=0.02)
-
-        self.decoder_blocks = nn.ModuleList(
+        max_patch_grid = max(
+            mod.image_size // mod.patch_size.mixmae
+            for _, mod in datasets.dataset.inputs.items()
+        )
+        num_windows = [
+            max(1, max_patch_grid // (window_size[idx_layer] * 2**idx_layer))
+            for idx_layer, _ in enumerate(window_size)
+        ]
+        self.encoder_layers = nn.ModuleList(
             [
-                Block(
-                    decoder_dim,
-                    decoder_num_heads,
-                    mlp_ratio,
-                    qkv_bias=True,
-                    norm_layer=nn.LayerNorm,
+                nn.ModuleDict(
+                    {
+                        name_mod: MixMAELayer(
+                            dim=embed_dim * 2**idx_layer,
+                            depth=depths[idx_layer],
+                            num_heads=num_heads[idx_layer],
+                            num_windows=num_windows[idx_layer],
+                            window_size=window_size[idx_layer],
+                            mlp_ratio=mlp_ratio,
+                            qkv_bias=qkv_bias,
+                            drop=drop_rate,
+                            attn_drop=attn_drop_rate,
+                            drop_path=dpr[
+                                sum(depths[:idx_layer]) : sum(depths[: idx_layer + 1])
+                            ],
+                            norm_layer=nn.LayerNorm,
+                            downsample=(
+                                PatchMerging if (idx_layer < num_levels - 1) else None
+                            ),
+                            use_checkpoint=use_checkpoint,
+                            pretrained_window_size=pretrained_window_sizes[idx_layer],
+                            swin_version=swin_version,
+                            nb_mix_images=nb_mix_images,
+                            v2_attn=v2_attn,
+                        )
+                        for name_mod in (
+                            ("shared",)
+                            if encoder == "shared"
+                            else datasets.dataset.inputs
+                        )
+                    },
                 )
-                for i in range(decoder_depth)
+                for idx_layer in range(num_levels)
             ],
         )
-        self.decoder_norm = nn.LayerNorm(decoder_dim)
+        self.encoder_norm = nn.ModuleDict(
+            {
+                name_mod: nn.LayerNorm(encoder_dim)
+                for name_mod in (
+                    ("shared",) if encoder == "shared" else datasets.dataset.inputs
+                )
+            },
+        )
+        self.enc_to_dec = nn.ModuleDict(
+            {
+                name_mod: nn.Linear(encoder_dim, decoder_dim)
+                for name_mod in (
+                    ("shared",) if mask_shared else datasets.dataset.inputs
+                )
+            },
+        )
+        self.decoder_blocks = nn.ModuleList(
+            [
+                nn.ModuleDict(
+                    {
+                        name_mod: Block(
+                            decoder_dim,
+                            decoder_num_heads,
+                            mlp_ratio,
+                            qkv_bias=True,
+                            norm_layer=nn.LayerNorm,
+                        )
+                        for name_mod in (
+                            ("shared",)
+                            if decoder == "shared"
+                            else datasets.dataset.inputs
+                        )
+                    },
+                )
+                for _ in range(decoder_depth)
+            ],
+        )
+        self.decoder_norm = nn.ModuleDict(
+            {
+                name_mod: nn.LayerNorm(decoder_dim)
+                for name_mod in (
+                    ("shared",) if decoder == "shared" else datasets.dataset.inputs
+                )
+            },
+        )
 
-        if swin_version == 2:  # noqa: PLR2004
-            for bly in self.encoder_layers:
-                bly.init_respostnorm()
-
-    def mask_or_mix(self, x: Tensor):  # noqa: ANN201
+    def mask_mod(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """Mix sequence."""
-        H, W = self.patch_grid  # noqa: N806
-        L = self.out_patch_grid[0] * self.out_patch_grid[1]  # noqa: N806
-        B, _, C = x.shape  # noqa: N806
-        B_enc = B // self.nb_mix_images  # noqa: N806
-        if B % self.nb_mix_images:
-            msg = f"Invalid batch size {B}. Expected multiple of {self.nb_mix_images}"
+        B_out, L, C = x.shape  # noqa: N806
+        H, W = round(L**0.5), round(L**0.5)  # noqa: N806
+        H_out, W_out, L_out = (  # noqa: N806
+            H // self.stride,
+            W // self.stride,
+            L // self.stride**2,
+        )
+
+        B = B_out // self.nb_mix_images  # noqa: N806
+        if B_out % self.nb_mix_images:
+            msg = (
+                f"Invalid batch size {B_out}. Expected multiple of {self.nb_mix_images}"
+            )
             raise ValueError(msg)
 
         # sample masked tokens
-        noise = torch.randn((B_enc, L), device=x.device)  # [B L]
-        random_indices = torch.argsort(noise, dim=-1)  # [B L]
+        noise = torch.randn((B, L_out), device=x.device)  # [B L_out]
+        random_indices = torch.argsort(noise, dim=-1)  # [B L_out]
 
         mask = torch.arange(self.nb_mix_images, dtype=x.dtype, device=x.device)
-        mask = mask[None, :].repeat((B_enc, ceil(L / self.nb_mix_images)))[:, :L]
+        mask = mask[None, :].repeat((B, ceil(L_out / self.nb_mix_images)))[:, :L_out]
         mask = torch.gather(
             mask,
             dim=1,
@@ -160,90 +213,70 @@ class MixMAE(BaseMIM):
             mask[:, None, :]
             == torch.arange(self.nb_mix_images, device=x.device)[None, :, None]
         )
-        mask_rec = 1 - mask_rec.reshape((B, L, 1)).float()
+        mask_rec = 1 - mask_rec.reshape((B_out, L_out, 1)).float()
 
-        mask = mask.reshape((B_enc, 1, *self.out_patch_grid))
-        mask_s1 = F.interpolate(
+        mask = mask.reshape((B, 1, H_out, W_out))
+        mask_attn = F.interpolate(
             mask,
             size=(H, W),
             mode="nearest",
         )
-        mask_s2 = F.interpolate(
-            mask,
-            size=(H // 2, W // 2),
-            mode="nearest",
-        )
-        mask_s3 = F.interpolate(
-            mask,
-            size=(H // 4, W // 4),
-            mode="nearest",
-        )
-        mask_s4 = F.interpolate(
-            mask,
-            size=(H // 8, W // 8),
-            mode="nearest",
-        )
-
-        mask_s1 = mask_s1.reshape((B_enc, -1)).contiguous()
-        mask_s2 = mask_s2.reshape((B_enc, -1)).contiguous()
-        mask_s3 = mask_s3.reshape((B_enc, -1)).contiguous()
-        mask_s4 = mask_s4.reshape((B_enc, -1)).contiguous()
+        mask_attn = mask_attn.reshape((B, L)).contiguous()
 
         # encode only unmasked tokens
         mask_enc = (
-            mask_s1[:, None, :]
+            mask_attn[:, None, :]
             == torch.arange(self.nb_mix_images, device=x.device)[None, :, None]
         )
-        mask_enc = mask_enc.reshape((B_enc, self.nb_mix_images, -1, 1)).float()
-        x_enc = x.reshape((B_enc, self.nb_mix_images, -1, C))
+        mask_enc = mask_enc.reshape((B, self.nb_mix_images, L, 1)).float()
+        x_enc = x.reshape((B, self.nb_mix_images, L, C))
         x_enc = (x_enc * mask_enc).sum(dim=1)
 
-        return x_enc, mask_s1, mask_s2, mask_s3, mask_s4, mask_rec
+        return x_enc, mask_attn, mask_rec
 
-    def unmask_or_unmix(
-        self,
-        x: Tensor,
-        mask_rec: Tensor,
-    ) -> Tensor:
-        """Unmix sequence."""
+    def unmask_mod(self, x: Tensor, mask_rec: Tensor, mask_token: Tensor) -> Tensor:
+        """Unmask sequence, filling with mask token."""
         B_enc, L, C = x.shape  # noqa: N806
 
-        # collate encoded patches and mask tokens
         mask_rec = mask_rec.reshape((B_enc, self.nb_mix_images, L, 1))
         x = x.reshape((B_enc, 1, L, C))
-        x_dec = torch.where(mask_rec == 0, x, self.mask_token)
+        x_dec = torch.where(mask_rec == 0, x, mask_token)
         return x_dec.flatten(0, 1)
+
+    def encode_with_mask(
+        self,
+        x: dict[str, Tensor],
+        mask_attn: dict[str, Tensor | None],
+        model: nn.Module,
+    ) -> dict[str, Tensor]:
+        """Apply MAE encoder."""
+        for name_mod in x:
+            model_mod = model[name_mod] if name_mod in model else model["shared"]
+            x[name_mod], mask_attn[name_mod] = model_mod(
+                x[name_mod],
+                mask_attn[name_mod],
+            )
+        return x, mask_attn
 
     def encode(
         self,
-        x: Tensor,
-        mask_s1: Tensor | None,
-        mask_s2: Tensor | None,
-        mask_s3: Tensor | None,
-        mask_s4: Tensor | None,
-        **kwargs,  # noqa: ARG002, ANN003
-    ) -> Tensor:
+        x: dict[str, Tensor],
+        mask_attn: dict[str, Tensor | None],
+    ) -> dict[str, Tensor]:
         """Apply MixMAE encoder."""
-        for idx, layer in enumerate(self.encoder_layers):
-            if idx == 0:
-                x = layer(x, attn_mask=mask_s1)
-            elif idx == 1:
-                x = layer(x, attn_mask=mask_s2)
-            elif idx == 2:  # noqa: PLR2004
-                x = layer(x, attn_mask=mask_s3)
-            elif idx == 3:  # noqa: PLR2004
-                x = layer(x, attn_mask=mask_s4)
-        return self.encoder_norm(x)
+        for encoder_layer in self.encoder_layers:
+            x, mask_attn = self.encode_with_mask(x, mask_attn, model=encoder_layer)
+        return self.encode_or_decode(x, model=self.encoder_norm)
 
-    def encoder_to_decoder(self, x: Tensor) -> Tensor:
+    def encoder_to_decoder(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         """Apply MixMAE encoder-to-decoder."""
-        return self.enc_to_dec(x)
+        return self.encode_or_decode(x, model=self.enc_to_dec)
 
-    def decode(self, x: Tensor) -> Tensor:
+    def decode(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         """Apply MixMAE decoder."""
-        for _, blk in enumerate(self.decoder_blocks):
-            x = blk(x)
-        return self.decoder_norm(x)
+        for decoder_block in self.decoder_blocks:
+            x = self.encode_or_decode(x, model=decoder_block)
+        return self.encode_or_decode(x, model=self.decoder_norm)
 
 
 def mixmae_tiny(**kwargs) -> MixMAE:  # noqa: ANN003

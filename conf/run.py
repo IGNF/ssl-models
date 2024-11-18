@@ -16,6 +16,7 @@ class RunConfig:  # noqa: D101
     reproducible: bool = True
     seed: int = 42
     logged_images_per_epoch: int = 10
+    log_inputs: list[str] = field(default_factory=lambda: ["aerial"])
     use_clearml: bool = True
     clearml_project_name: str = "ssl"
     clearml_tags: list[str] = field(default_factory=lambda: ["geopile", "hydra"])

@@ -67,20 +67,20 @@ class Patchify(nn.Module):
             self.norm = nn.GroupNorm(1, embed_dim)
 
     def forward(self, xb: Tensor) -> tuple[Tensor, list[Tensor]]:
-        _, _, H, W = xb.shape  # noqa: N806
-        skip = xb
-        skip = self.conv_skip(skip)
+        _, D, _, H, W = xb.shape  # noqa: N806
+        xb = rearrange(xb, "b d c hp1 wp2 -> (b d) c hp1 wp2")
+        skip = self.conv_skip(xb)
         skip = self.norm_skip(skip)
         skip = rearrange(
             skip,
-            "b c h w -> (b h w) c 1 1",
+            "bd c h w -> (bd h w) c 1 1",
         )
 
         inds = []
         if self.unpool:
             xb = rearrange(
                 xb,
-                "b c (h p1) (w p2) -> (b h w) c p1 p2",
+                "bd c (h p1) (w p2) -> (bd h w) c p1 p2",
                 p1=self.patch_size,
                 p2=self.patch_size,
             )
@@ -97,7 +97,8 @@ class Patchify(nn.Module):
             xb = skip
         xb = rearrange(
             xb,
-            "(b h w) c 1 1 -> b (h w) c",
+            "(b d h w) c 1 1 -> b d (h w) c",
+            d=D,
             h=H // self.patch_size,
             w=W // self.patch_size,
         )
@@ -164,16 +165,15 @@ class Pixelify(nn.Module):
             self.fc = nn.Conv2d(4, out_chans, kernel_size=1)
 
     def forward(self, xb: Tensor, inds: list[Tensor]) -> Tensor:
-        B, _, _ = xb.shape  # noqa: N806
+        B, D, _, _ = xb.shape  # noqa: N806
         xb = rearrange(
             xb,
-            "b l c -> (b l) c 1 1",
+            "b d l c -> (b d l) c 1 1",
         )
-        skip = xb
-        skip = self.conv_skip(skip)
+        skip = self.conv_skip(xb)
         skip = rearrange(
             skip,
-            "b (p1 p2 c) 1 1 -> b c p1 p2",
+            "bdl (p1 p2 c) 1 1 -> bdl c p1 p2",
             p1=self.patch_size,
             p2=self.patch_size,
         )
@@ -189,4 +189,4 @@ class Pixelify(nn.Module):
         else:
             xb = skip
 
-        return rearrange(xb, "(b l) c p1 p2 -> b l (p1 p2 c)", b=B)
+        return rearrange(xb, "(b d l) c p1 p2 -> b d l (p1 p2 c)", b=B, d=D)

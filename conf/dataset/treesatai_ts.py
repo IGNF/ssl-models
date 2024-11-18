@@ -16,6 +16,7 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "TreeSatAI-TS"
     weight: float = 1.0
     crop_meters: float = 60.0
+    ref_input: str | None = None
 
     filter_inputs: list[str] = field(
         default_factory=lambda: ["aerial", "s2", "s1_asc", "s1_des"],
@@ -38,7 +39,7 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
             bands=10,
             num_dates=4,
-            use_mask=True,
+            mask_threshold=60.0,
             norm_fac=5000.0,
         ),
     )

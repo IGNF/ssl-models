@@ -1,33 +1,12 @@
 """SSL data module."""
 
-from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-import numpy as np
-import torch
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
 
 from conf.datasets import DatasetsConfig
-
-NDIM_MULTI_DATES = 5
-
-
-def collate_fn(batch: list[dict]) -> dict[str, datetime | torch.Tensor]:
-    """Collate function for DataLoader."""
-    elem = batch[0]
-    names_arrs = [name for name in elem if isinstance(elem[name], np.ndarray)]
-    names_dates = [name for name in elem if name not in names_arrs]
-
-    collated_batch = {}
-    for name in names_dates:
-        collated_batch[name] = [elem[name] for elem in batch]
-    for name in names_arrs:
-        collated_batch[name] = torch.stack(
-            [torch.from_numpy(elem[name]) for elem in batch],
-        )
-    return collated_batch
 
 
 class SSLDataModule(LightningDataModule):
@@ -57,7 +36,6 @@ class SSLDataModule(LightningDataModule):
             num_workers=num_workers,
             shuffle=True,
             drop_last=True,
-            collate_fn=collate_fn,
         )
 
         val_dataset = datasets.dataset_class(
@@ -73,7 +51,6 @@ class SSLDataModule(LightningDataModule):
             num_workers=num_workers,
             shuffle=True,
             drop_last=True,
-            collate_fn=collate_fn,
         )
 
     def train_dataloader(self) -> DataLoader:

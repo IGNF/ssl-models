@@ -35,6 +35,12 @@ class MAE(BaseMIM):
         loss_fn: Literal[torch.square, torch.square] = torch.square,
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
+        fac_date_enc: float = 1.0,
+        shuffle_mods: bool = False,
+        mask_indep: bool = True,
+        mask_shared: bool = True,
+        encoder: Literal["shared", "mod", "multimodal"] = "shared",
+        decoder: Literal["shared", "mod", "multimodal"] = "shared",
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
@@ -48,40 +54,59 @@ class MAE(BaseMIM):
             loss_fn=loss_fn,
             norm_pix_loss=norm_pix_loss,
             fac_abs_enc=fac_abs_enc,
+            fac_date_enc=fac_date_enc,
+            shuffle_mods=shuffle_mods,
+            mask_indep=mask_indep,
+            mask_shared=mask_shared,
         )
         self.mask_ratio = mask_ratio
 
-        self.encoder = Transformer(
-            dim=embed_dim,
-            depth=depth,
-            heads=heads,
-            dim_head=dim_head,
-            mlp_dim=embed_dim * mlp_ratio,
+        self.encoder = nn.ModuleDict(
+            {
+                name_mod: Transformer(
+                    dim=embed_dim,
+                    depth=depth,
+                    heads=heads,
+                    dim_head=dim_head,
+                    mlp_dim=embed_dim * mlp_ratio,
+                )
+                for name_mod in (
+                    (encoder,)
+                    if encoder in ("shared", "multimodal")
+                    else datasets.dataset.inputs
+                )
+            },
+        )
+        self.enc_to_dec = nn.ModuleDict(
+            {
+                name_mod: (
+                    nn.Linear(embed_dim, decoder_dim)
+                    if embed_dim != decoder_dim
+                    else nn.Identity()
+                )
+                for name_mod in (
+                    ("shared",) if mask_shared else datasets.dataset.inputs
+                )
+            },
+        )
+        self.decoder = nn.ModuleDict(
+            {
+                name_mod: Transformer(
+                    dim=decoder_dim,
+                    depth=decoder_depth,
+                    heads=decoder_heads,
+                    dim_head=decoder_dim_head,
+                    mlp_dim=embed_dim * decoder_mlp_ratio,
+                )
+                for name_mod in (
+                    (decoder,)
+                    if decoder in ("shared", "multimodal")
+                    else datasets.dataset.inputs
+                )
+            },
         )
 
-        self.enc_to_dec = (
-            nn.Linear(embed_dim, decoder_dim)
-            if embed_dim != decoder_dim
-            else nn.Identity()
-        )
-        self.mask_token = nn.Parameter(torch.randn(1, 1, decoder_dim))
-
-        self.decoder = Transformer(
-            dim=decoder_dim,
-            depth=decoder_depth,
-            heads=decoder_heads,
-            dim_head=decoder_dim_head,
-            mlp_dim=embed_dim * decoder_mlp_ratio,
-        )
-
-    def mask_or_mix(self, x: dict[str, Tensor]):  # noqa: ANN201
-        """Mask sequence."""
-        x_enc, mask_rec = {}, {}
-        for name_mod in x:
-            x_enc[name_mod], mask_rec[name_mod] = self.mask(x[name_mod])
-        return x_enc, None, None, None, None, mask_rec
-
-    def mask(self, x: Tensor) -> tuple[Tensor, Tensor]:
+    def mask_mod(self, x: Tensor) -> tuple[Tensor, None, Tensor]:
         """Mask sequence."""
         B, L, _ = x.shape  # noqa: N806
 
@@ -105,9 +130,9 @@ class MAE(BaseMIM):
         unmasked_indices = random_indices[:, num_masked_patches:]
         unmasked_indices, _ = unmasked_indices.sort(dim=1)
         x_enc = x[batch_indices, unmasked_indices, :]  # [B L:(1 - mask_ratio) C]
-        return x_enc, mask_rec
+        return x_enc, None, mask_rec
 
-    def unmask_or_unmix(self, x: Tensor, mask_rec: Tensor) -> Tensor:
+    def unmask_mod(self, x: Tensor, mask_rec: Tensor, mask_token: Tensor) -> Tensor:
         """Unmask sequence, filling with mask token."""
         B, L_enc, C = x.shape  # noqa: N806
         _, L, _ = mask_rec.shape  # noqa: N806
@@ -125,32 +150,25 @@ class MAE(BaseMIM):
         # collate encoded patches and mask tokens
         batch_indices = rearrange(torch.arange(B, device=x.device), "b -> b 1")
         x_dec = torch.zeros((B, L, C), dtype=x.dtype, device=x.device)
-        x_dec[batch_indices, masked_indices, :] = self.mask_token.to(x.dtype)
+        x_dec[batch_indices, masked_indices, :] = mask_token.to(x.dtype)
         x_dec[batch_indices, unmasked_indices, :] = x
         return x_dec
 
     def encode(
         self,
-        x: Tensor,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
-        **kwargs,  # noqa: ARG002, ANN003
-    ) -> Tensor:
+        x: dict[str, Tensor],
+        mask_attn: dict[str, None],  # noqa: ARG002
+    ) -> dict[str, Tensor]:
         """Apply MAE encoder."""
-        name_mods = list(x.keys())
-        splits = tuple(x[name_mod].shape[1] for name_mod in name_mods)
-        x_enc = torch.cat([x[name_mod] for name_mod in name_mods], dim=1)
-        x_enc = self.encoder(x_enc)
-        if ssl_phase == "pretrain":
-            return dict(zip(name_mods, x_enc.split(splits, dim=1)))
-        return x_enc
+        return self.encode_or_decode(x, model=self.encoder)
 
-    def encoder_to_decoder(self, x: Tensor) -> Tensor:
+    def encoder_to_decoder(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         """Apply MAE encoder-to-decoder."""
-        return self.enc_to_dec(x)
+        return self.encode_or_decode(x, model=self.enc_to_dec)
 
-    def decode(self, x: Tensor) -> Tensor:
+    def decode(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         """Apply MAE decoder."""
-        return self.decoder(x)
+        return self.encode_or_decode(x, model=self.decoder)
 
 
 def mae_tiny(**kwargs) -> MAE:  # noqa: ANN003

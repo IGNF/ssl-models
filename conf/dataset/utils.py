@@ -24,18 +24,18 @@ class PatchSizeConfig:
 class RasterConfig:
     """Generic raster modality config."""
 
-    image_size: int = MISSING
-    patch_size: PatchSizeConfig = MISSING
     bands: list[int] | int = MISSING
+    mask_threshold: float = 100.0
+    num_dates: int = 1
+    norm_fac: float | None = None
 
 
 @dataclass
 class InputConfig:
     """Generic input modality config."""
 
-    use_mask: bool = False
-    num_dates: int = 1
-    norm_fac: float = MISSING
+    image_size: int = MISSING
+    patch_size: PatchSizeConfig = MISSING
 
 
 @dataclass
@@ -92,6 +92,13 @@ class DatasetConfig:
 
             mod = getattr(self, name_mod)
             mod.resolution_meters = float(resolution_meters)
+
+        if self.ref_input is not None and self.ref_input not in self.filter_inputs:
+            msg = (
+                f"Invalid reference input {self.ref_target}."
+                f"Expected one of {self.filter_inputs}"
+            )
+            raise ValueError(msg)
 
         self.inputs = {}
         for name_mod in self.filter_inputs:
