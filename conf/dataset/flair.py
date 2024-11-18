@@ -55,7 +55,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
             bands=10,
             num_dates=4,
-            mask_threshold=60.0,
+            mask_threshold=0.0,
             norm_fac=10000.0,
         ),
     )

@@ -15,7 +15,7 @@ from ssl_models.dataset.pastis_hd import PASTISHDDataset
 class PASTISHDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "PASTIS-HD"
     weight: float = 1.0
-    crop_meters: float = 250 * 1.0
+    crop_meters: float = 320 * 1.0
     ref_input: str | None = "spot"
 
     filter_inputs: list[str] = field(

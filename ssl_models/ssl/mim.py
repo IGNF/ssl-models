@@ -13,7 +13,7 @@ from torchmetrics import MeanMetric
 from conf.dataset.utils import RasterConfig
 from conf.datasets import DatasetsConfig
 from ssl_models.layers.embed import Patchify, Pixelify
-from ssl_models.layers.head import AttentiveHead, LinearHead
+from ssl_models.layers.head import AttentiveHead, LinearHead, PixelifyHead
 from ssl_models.layers.utils import (
     encode_dates,
     flatten_dates,
@@ -105,22 +105,26 @@ class BaseMIM(nn.Module, ABC):
         )
 
         # functions to construct date encodings
-        self.enc_date_encoding, self.dec_date_encoding = {}, {}
-        for name_mod in self.dataset.inputs:
-            self.enc_date_encoding[name_mod] = partial(
+        self.enc_date_encoding = {
+            name_mod: partial(
                 encode_dates,
                 dim=embed_dim,
                 date_dim=date_dim,
                 fac_date_enc=fac_date_enc,
                 grid_size=self.grid_size[name_mod],
             )
-            self.dec_date_encoding[name_mod] = partial(
+            for name_mod in self.dataset.inputs
+        }
+        self.dec_date_encoding = {
+            name_mod: partial(
                 encode_dates,
                 dim=decoder_dim,
                 date_dim=date_dim,
                 fac_date_enc=fac_date_enc,
                 grid_size=self.out_grid_size[name_mod],
             )
+            for name_mod in self.dataset.inputs
+        }
 
         # flattening/unflattening of date dimensions
         self.flatten_dates = partial(
@@ -147,7 +151,6 @@ class BaseMIM(nn.Module, ABC):
                 )
             },
         )
-        self.mask_indep = mask_indep
 
         # heads
         self.heads = nn.ModuleDict()
@@ -166,11 +169,10 @@ class BaseMIM(nn.Module, ABC):
                         f"is not a multiple of ref input grid {ref_grid_size}"
                     )
                     raise ValueError(msg)
-                self.heads[name_target] = Pixelify(
+                self.heads[name_target] = PixelifyHead(
                     embed_dim * self.stride,
                     target.num_classes,
                     target_image_size // ref_grid_size,
-                    unpool=False,
                 )
             elif type_head == "attentive":
                 self.heads[name_target] = AttentiveHead(
@@ -289,7 +291,8 @@ class BaseMIM(nn.Module, ABC):
             return x_enc, mask_attn, mask_rec
 
         # else, probe or finetune
-        return x, {name_mod: None for name_mod in x}, {name_mod: None for name_mod in x}
+        mask_attn, mask_rec = ({name_mod: None for name_mod in x},) * 2
+        return x, mask_attn, mask_rec
 
     def unmask(
         self,
@@ -319,34 +322,34 @@ class BaseMIM(nn.Module, ABC):
 
         return self.flatten_dates(x_dec)
 
-    def rec_patches(
+    def rec_pixels(
         self,
         x_dec: dict[str, Tensor],
         embed_inds: dict[str, list[Tensor]],
         mask_rec: dict[str, Tensor],
     ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
-        """Reconstruct patches from embeddings."""
+        """Reconstruct pixels from embeddings."""
         x_dec, mask_rec = self.unflatten_dates(x_dec), self.unflatten_dates(mask_rec)
 
-        patches_rec = {}
+        pixels_rec = {}
         for name_mod in x_dec:
-            patches_rec[name_mod] = self.embed_to_rec[name_mod](
+            pixels_rec[name_mod] = self.embed_to_rec[name_mod](
                 x_dec[name_mod],
                 embed_inds[name_mod],
             )
-        return patches_rec, mask_rec
+        return pixels_rec, mask_rec
 
     def compute_pixels(
         self,
-        patches_rec: dict[str, Tensor],
+        pixels_rec: dict[str, Tensor],
         mask_rec: dict[str, Tensor],
         target: dict[str, Tensor],
     ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
         """Visu of reconstructed images, shared for all MIM modules."""
-        pixels_masked, pixels_rec = {}, {}
-        for name_mod in patches_rec:
+        pixels_masked = {}
+        for name_mod in pixels_rec:
             image_size = target[name_mod].shape[3]
-            out_patch_size = image_size // round(patches_rec[name_mod].shape[2] ** 0.5)
+            out_patch_size = image_size // round(mask_rec[name_mod].shape[2] ** 0.5)
             pixels_masked[name_mod] = repeat(
                 mask_rec[name_mod],
                 "b d l 1 -> b d l repeat",
@@ -355,14 +358,6 @@ class BaseMIM(nn.Module, ABC):
             pixels_masked[name_mod] = rearrange(
                 pixels_masked[name_mod],
                 "b d (h w) (p1 p2) -> b d 1 (h p1) (w p2)",
-                h=image_size // out_patch_size,
-                w=image_size // out_patch_size,
-                p1=out_patch_size,
-                p2=out_patch_size,
-            )
-            pixels_rec[name_mod] = rearrange(
-                patches_rec[name_mod],
-                "b d (h w) (p1 p2 c) -> b d c (h p1) (w p2)",
                 h=image_size // out_patch_size,
                 w=image_size // out_patch_size,
                 p1=out_patch_size,
@@ -379,15 +374,21 @@ class BaseMIM(nn.Module, ABC):
 
     def compute_loss_rec(
         self,
-        patches_rec: dict[str, Tensor],
+        pixels_rec: dict[str, Tensor],
         mask_rec: dict[str, Tensor],
         target: dict[str, Tensor],
     ) -> Tensor:
         """Shared loss computation for all MIM modules."""
         loss_recs = []
-        for name_mod in patches_rec:
+        for name_mod in pixels_rec:
             image_size = target[name_mod].shape[3]
-            out_patch_size = image_size // round(patches_rec[name_mod].shape[2] ** 0.5)
+            out_patch_size = image_size // round(mask_rec[name_mod].shape[2] ** 0.5)
+            patches_rec = rearrange(
+                pixels_rec[name_mod],
+                "b d c (h p1) (w p2) -> b d (h w) (p1 p2 c)",
+                p1=out_patch_size,
+                p2=out_patch_size,
+            )
             patches_target = rearrange(
                 target[name_mod],
                 "b d c (h p1) (w p2) -> b d (h w) (p1 p2 c)",
@@ -399,7 +400,7 @@ class BaseMIM(nn.Module, ABC):
                 var = patches_target.var(dim=-1, keepdim=True)
                 patches_target = (patches_target - mean) / (var + 1.0e-6) ** 0.5
 
-            loss_rec = self.loss_fn(patches_target - patches_rec[name_mod])
+            loss_rec = self.loss_fn(patches_target - patches_rec)
             loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod].bool()).mean()
             loss_recs.append(loss_rec)
         return torch.stack(loss_recs).mean()
@@ -420,31 +421,28 @@ class BaseMIM(nn.Module, ABC):
             else [self.dataset.ref_input]
         )
         x_enc = torch.cat(
-            [x_enc[name_mod].flatten(1, 2) for name_mod in ref_inputs], dim=1
+            [x_enc[name_mod].flatten(1, 2) for name_mod in ref_inputs],
+            dim=1,
         )
 
         loss_pred = 0
         for name_target, target in self.dataset.targets.items():
             targets = batch[name_target]
-            target_patch_size = int(
-                target.image_size / self.image_size * self.out_patch_size,
-            )
-            match target.type_target:
-                case "segment" | "change_detect":
-                    logits = self.heads[name_target](self.unflatten(x_enc), ssl_phase)
-                case "multilabel_classif" | "classif":
-                    logits = self.heads[name_target](x_enc, ssl_phase)
+            logits = self.heads[name_target](x_enc, ssl_phase)
 
             match target.type_target:
                 case "segment":
                     logits = rearrange(logits, "b 1 c h w -> (b h w) c")
-                    targets = rearrange(targets, "b h w -> (b h w)")
+                    targets = rearrange(targets, "b 1 1 h w -> (b h w)")
+                    targets = targets.long()
                 case "change_detect":
                     logits = rearrange(logits, "b 1 1 h w -> (b h w)")
-                    targets = rearrange(targets, "b h w -> (b h w)")
+                    targets = rearrange(targets, "b 1 1 h w -> (b h w)")
                     targets = targets.float()
                 case "multilabel_classif":
                     targets = targets.float()
+                case "classif":
+                    targets = targets.long()
 
             if targets.ndim > 1:
                 inds = (targets != target.missing_val).all(dim=1)
@@ -548,14 +546,14 @@ class BaseMIM(nn.Module, ABC):
 
             x_dec = self.decode(x_dec)
 
-            patches_rec, mask_rec = self.rec_patches(x_dec, embed_inds, mask_rec)
+            pixels_rec, mask_rec = self.rec_pixels(x_dec, embed_inds, mask_rec)
             loss_rec = self.compute_loss_rec(
-                patches_rec,
+                pixels_rec,
                 mask_rec,
                 batch,
             )
             pixels_masked, pixels_rec = self.compute_pixels(
-                patches_rec,
+                pixels_rec,
                 mask_rec,
                 batch,
             )

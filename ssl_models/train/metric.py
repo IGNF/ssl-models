@@ -30,7 +30,6 @@ class MonoLabelMetric(Metric):
     ) -> None:
         """Init."""
         super().__init__(dist_sync_on_step=dist_sync_on_step)
-        self.type_target = type_target
         self.threshold_detect = threshold_detect
 
         match type_target:
@@ -59,7 +58,7 @@ class MonoLabelMetric(Metric):
             case "classif" | "segment":
                 logits = logits.argmax(dim=1)
             case "change_detect":
-                logits = (logits > self.threshold_detect).long()
+                logits = (torch.sigmoid(logits) > self.threshold_detect).long()
 
         self.cm += confusion_matrix(
             logits,

@@ -6,6 +6,8 @@ import torch
 from einops import rearrange
 from torch import Tensor, nn
 
+from ssl_models.layers.embed import Pixelify
+
 
 class Head(nn.Module):
     """Abstract head class."""
@@ -13,20 +15,10 @@ class Head(nn.Module):
     def maybe_detach_features(
         self,
         x: Tensor,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["probe", "finetune"],
     ) -> Tensor:
         """Detach encoder features in probing phase."""
         if ssl_phase == "probe":
-            x = x.detach()
-        return x
-
-    def maybe_detach_prediction(
-        self,
-        x: Tensor,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
-    ) -> Tensor:
-        """Detach head prediction in pretraining phase."""
-        if ssl_phase == "pretrain":
             x = x.detach()
         return x
 
@@ -57,7 +49,7 @@ class AttentiveHead(Head):
     def forward(
         self,
         x: Tensor,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["probe", "finetune"],
     ) -> Tensor:
         out = self.maybe_detach_features(x, ssl_phase)
         out = self.norm(out)
@@ -72,8 +64,7 @@ class AttentiveHead(Head):
 
         out = torch.matmul(attn, v)
         out = rearrange(out, "b h 1 d -> b (h d)")
-        out = self.linear(out)
-        return self.maybe_detach_prediction(out, ssl_phase)
+        return self.linear(out)
 
 
 class LinearHead(Head):
@@ -86,9 +77,37 @@ class LinearHead(Head):
     def forward(
         self,
         x: Tensor,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["probe", "finetune"],
     ) -> Tensor:
         out = self.maybe_detach_features(x, ssl_phase)
         out = torch.mean(out, dim=1)
-        out = self.linear(out)
-        return self.maybe_detach_prediction(out, ssl_phase)
+        return self.linear(out)
+
+
+class PixelifyHead(Pixelify, Head):
+    """Pixelify head."""
+
+    def __init__(
+        self,
+        embed_dim: int,
+        out_chans: int,
+        patch_size: int,
+    ) -> None:
+        super().__init__(  # method from the inherited class listed first
+            embed_dim=embed_dim,
+            out_chans=out_chans,
+            patch_size=patch_size,
+            unpool=False,
+        )
+
+    def forward(
+        self,
+        x: Tensor,
+        ssl_phase: Literal["probe", "finetune"],
+    ) -> Tensor:
+        out = self.maybe_detach_features(x, ssl_phase)
+        out = out.unsqueeze(dim=1)  # unsqueeze date axis
+        return super().forward(  # method from the inherited class listed first
+            out,
+            inds=[],
+        )

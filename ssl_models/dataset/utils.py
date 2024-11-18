@@ -13,6 +13,12 @@ def dates_numpy(dates: list[datetime]) -> np.ndarray:
     )
 
 
+def strs_datetimes(date_strs: list[str]) -> np.ndarray:
+    """Convert list of strs to list of datetimes."""
+    datetimes = [datetime.strptime(date_str, "%Y-%m-%d") for date_str in date_strs]  # noqa: DTZ007
+    return dates_numpy(datetimes)
+
+
 def products_datetimes(products: list[str] | list[bytes], idx: int) -> np.ndarray:
     """Convert list of products to list of datetimes."""
     if isinstance(products[0], str):

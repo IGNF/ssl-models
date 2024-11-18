@@ -7,7 +7,6 @@ from pytorch_lightning import LightningModule
 from torch import Tensor
 from torch.nn import functional as F  # noqa: N812
 
-from conf.dataset.utils import InputConfig
 from conf.datasets import DatasetsConfig
 from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.ssl.mixmae import (
@@ -208,11 +207,11 @@ class SSLModule(LightningModule):
     ) -> dict[str, torch.Tensor]:
         """Shared step for training/validation."""
         # resize
-        for name_mod, mod in self.dataset.rasters.items():
+        for name_mod, mod in self.dataset.inputs.items():
             batch[name_mod] = F.interpolate(
                 batch[name_mod].flatten(0, 1),
                 size=(mod.image_size,) * 2,
-                mode="bilinear" if isinstance(mod, InputConfig) else "nearest",
+                mode="bilinear",
             ).unflatten(0, (-1, mod.num_dates))
             batch[f"{name_mod}_dates"] = (
                 F.interpolate(

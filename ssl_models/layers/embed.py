@@ -106,7 +106,7 @@ class Patchify(nn.Module):
 
 
 class Pixelify(nn.Module):
-    """Pixelify patches."""
+    """Pixelify for reconstruction."""
 
     def __init__(
         self,
@@ -164,8 +164,14 @@ class Pixelify(nn.Module):
             )
             self.fc = nn.Conv2d(4, out_chans, kernel_size=1)
 
-    def forward(self, xb: Tensor, inds: list[Tensor]) -> Tensor:
-        B, D, _, _ = xb.shape  # noqa: N806
+    def forward(
+        self,
+        xb: Tensor,
+        inds: list[Tensor],
+    ) -> Tensor:
+        B, D, L, _ = xb.shape  # noqa: N806
+        H = round(L**0.5)  # noqa: N806
+
         xb = rearrange(
             xb,
             "b d l c -> (b d l) c 1 1",
@@ -189,4 +195,10 @@ class Pixelify(nn.Module):
         else:
             xb = skip
 
-        return rearrange(xb, "(b d l) c p1 p2 -> b d l (p1 p2 c)", b=B, d=D)
+        return rearrange(
+            xb,
+            "(b d h w) c p1 p2 -> b d c (h p1) (w p2)",
+            b=B,
+            d=D,
+            h=H,
+        )
