@@ -32,7 +32,7 @@ class PASTISHDDataset(GenericDataset):
         self.image_ids = image_ids
 
         self.s2_dates = [
-            dict_datetimes(meta_data.loc[str(image_id), "dates-S1A"])
+            dict_datetimes(meta_data.loc[str(image_id), "dates-S2"])
             for image_id in image_ids
         ]
 
@@ -41,7 +41,7 @@ class PASTISHDDataset(GenericDataset):
             for image_id in image_ids
         ]
         self.s1_des_dates = [
-            dict_datetimes(meta_data.loc[str(image_id), "dates-S1A"])
+            dict_datetimes(meta_data.loc[str(image_id), "dates-S1D"])
             for image_id in image_ids
         ]
 
@@ -75,6 +75,7 @@ class PASTISHDDataset(GenericDataset):
         inputs = self.preprocess_rasters(meta)
 
         inputs["ref_date"] = spot_date
+
         return self.transform_rasters(inputs)
 
     def __len__(self) -> int:

@@ -82,6 +82,8 @@ class S2NAIPDataset(GenericDataset):
 
         inputs = self.preprocess_rasters(meta)
 
+        inputs["ref_date"] = inputs["naip_dates"]
+
         return self.transform_rasters(inputs)
 
     def __len__(self) -> int:

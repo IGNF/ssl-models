@@ -71,6 +71,7 @@ class GeoPileDataset(GenericDataset):
                 np.datetime64("2019-07-01").astype(np.int64),
                 ndmin=1,
             )
+        inputs["ref_date"] = inputs["rgb_dates"]
 
         return self.transform_rasters(inputs)
 

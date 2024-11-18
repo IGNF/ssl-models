@@ -42,15 +42,13 @@ def products_datetimes(products: list[str] | list[bytes], idx: int) -> np.ndarra
 
 def naip_datetimes(datetime_str: str) -> np.ndarray:
     """Convert naip string to list of datetime."""
-    datetimes = datetime.strptime(  # noqa: DTZ007
-        datetime_str.split("_")[-1][:8],
-        "%Y%m%d",
-    )
-
-    return np.array(
-        np.datetime64(datetimes).astype(np.int64),
-        ndmin=1,
-    )
+    datetimes = [
+        datetime.strptime(  # noqa: DTZ007
+            datetime_str.split("_")[-1][:8],
+            "%Y%m%d",
+        ),
+    ]
+    return dates_numpy(datetimes)
 
 
 def dict_datetimes(datetime_dict: dict) -> np.ndarray:

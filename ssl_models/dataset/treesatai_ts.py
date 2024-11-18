@@ -81,8 +81,8 @@ class TreeSatAITSDataset(GenericDataset):
 
         inputs["treesat_mlc"] = (target > 0).astype(int)
         inputs["treesat_mlc_dates"] = aerial_date
-
         inputs["ref_date"] = aerial_date
+
         return self.transform_rasters(inputs)
 
     def __len__(self) -> int:
