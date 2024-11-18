@@ -66,9 +66,15 @@ class TreeSatAITSDataset(GenericDataset):
 
         sen_path = self.root_dir / "sentinel-ts" / self.sen_names[idx]
         with h5py.File(sen_path, "r") as sen_file:
-            meta["s2_dates"] = products_datetimes(sen_file["sen-2-products"][:])
-            meta["s1_asc_dates"] = products_datetimes(sen_file["sen-1-asc-products"][:])
-            meta["s1_des_dates"] = products_datetimes(sen_file["sen-1-des-products"][:])
+            meta["s2_dates"] = products_datetimes(sen_file["sen-2-products"][:], 5)
+            meta["s1_asc_dates"] = products_datetimes(
+                sen_file["sen-1-asc-products"][:],
+                5,
+            )
+            meta["s1_des_dates"] = products_datetimes(
+                sen_file["sen-1-des-products"][:],
+                5,
+            )
 
         inputs = self.preprocess_rasters(meta)
 

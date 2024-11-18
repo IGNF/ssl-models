@@ -59,12 +59,12 @@ class MonoLabelMetric(Metric):
         false_pos = self.cm.sum(0) - torch.diag(self.cm)  # FP
         false_neg = self.cm.sum(1) - torch.diag(self.cm)  # FN
 
-        per_class_f1 = (2 * true_pos) / (2 * true_pos + false_pos + false_neg + SMOOTH)
-        per_class_iou = true_pos / (true_pos + false_pos + false_neg + SMOOTH)
+        per_class_f1 = (2 * true_pos) / (2 * true_pos + false_pos + false_neg)
+        per_class_iou = true_pos / (true_pos + false_pos + false_neg)
         metrics = {
             "overall_accuracy": overall_acc,
-            "average_f1": per_class_f1.mean(),
-            "average_iou": per_class_iou.mean(),
+            "average_f1": per_class_f1.nanmean(),
+            "average_iou": per_class_iou.nanmean(),
         }
         return {
             metric_name: metric_val
