@@ -2,6 +2,7 @@
 
 from typing import Literal
 
+import cv2
 import numpy as np
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.loggers import TensorBoardLogger

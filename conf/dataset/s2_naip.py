@@ -105,6 +105,14 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
             type_target="segment",
             num_classes=6,
             missing_val=-1,
+            colormap=[
+                [0, 0, 0],
+                [1.0, 1.0, 0],
+                [1.0, 0, 0],
+                [0.56470588235, 0.56470588235, 0.56470588235],
+                [0, 0, 1.0],
+                [0.56470588235, 0.93333333333, 0.56470588235],
+            ],
         )
         super().__post_init__(
             resolutions_meters={

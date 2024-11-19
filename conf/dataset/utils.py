@@ -66,6 +66,7 @@ class TargetRasterConfig(RasterConfig, TargetConfig):
     """Target raster modality config."""
 
     num_dates: int = 1
+    colormap: list[list[int]] = MISSING
 
 
 @dataclass

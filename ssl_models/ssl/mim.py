@@ -426,6 +426,7 @@ class BaseMIM(nn.Module, ABC):
         )
 
         loss_pred = 0
+        pixels_pred = {}
         for name_target, target in self.dataset.targets.items():
             targets = batch[name_target]
             logits = self.heads[name_target](x_enc, ssl_phase)
