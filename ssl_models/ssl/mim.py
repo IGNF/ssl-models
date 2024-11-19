@@ -204,6 +204,7 @@ class BaseMIM(nn.Module, ABC):
     ) -> Tensor:
         """Shared loss computation for all MIM modules."""
         loss_pred = 0
+        pixels_pred = {}
         for name_target, target in self.dataset.targets.items():
             logits = self.heads[name_target](x_enc, ssl_phase)
             logits = self.sigmoid_pred[name_target](logits)
@@ -213,17 +214,37 @@ class BaseMIM(nn.Module, ABC):
             )
             match target.type_target:
                 case "segment":
+                    pixels_pred[name_target] = torch.unsqueeze(
+                        torch.argmax(
+                            rearrange(
+                                logits,
+                                "b (h w) (p1 p2 c) -> b c (h p1) (w p2)",
+                                c=target.num_classes,
+                                p1=target_patch_size,
+                                p2=target_patch_size,
+                                w=self.image_size // self.out_patch_size,
+                                h=self.image_size // self.out_patch_size,
+                            ),
+                            dim=1,
+                        ),
+                        dim=1,
+                    )
+
                     logits = rearrange(
                         logits,
                         "b (h w) (p1 p2 c) -> (b h p1 w p2) c",
                         c=target.num_classes,
                         p1=target_patch_size,
                         p2=target_patch_size,
-                        w=self.image_size // target_patch_size,
+                        w=self.image_size // self.out_patch_size,
+                        h=self.image_size // self.out_patch_size,
                     )
                     targets = rearrange(targets, "b c h w -> (b c h w)")
                     targets = targets.long()
                 case "change_detect":
+                    pixels_pred[name_target] = torch.unsqueeze(
+                        torch.argmax(logits, dim=1),
+                    )
                     logits = rearrange(logits, "b 1 h w -> (b h w)")
                     targets = rearrange(targets, "b h w -> (b h w)")
                     targets = targets.float()
@@ -259,8 +280,7 @@ class BaseMIM(nn.Module, ABC):
                 logits_selected,
                 targets_selected,
             )
-
-        return loss_pred.mean()
+        return loss_pred.mean(), pixels_pred
 
     def forward(
         self,
@@ -305,6 +325,7 @@ class BaseMIM(nn.Module, ABC):
                 mask_rec,
                 batch[mod_name],
             )
+
             pixels_target, pixels_rec = self.compute_pixels(
                 patches_rec,
                 mask_rec,
@@ -312,13 +333,13 @@ class BaseMIM(nn.Module, ABC):
             )
             return loss_rec, pixels_target, pixels_rec, None
 
-        loss_pred = self.compute_loss_pred(
+        loss_pred, pixels_pred = self.compute_loss_pred(
             x_enc,
             batch,
             ssl_phase=ssl_phase,
             stage=stage,
         )
-        return None, None, None, loss_pred
+        return None, None, pixels_pred, loss_pred
 
     @abstractmethod
     def mask_or_mix(self, x: Tensor):  # noqa: ANN201

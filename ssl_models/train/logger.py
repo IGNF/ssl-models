@@ -2,6 +2,7 @@
 
 from typing import Literal
 
+import cv2
 import numpy as np
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -52,11 +53,7 @@ class ImageLogger(Callback):
     @staticmethod
     def should_log(trainer: Trainer, outputs: dict) -> bool:
         """Check whether images should be logged."""
-        return (
-            trainer.global_rank == 0
-            and outputs["pred"] is not None
-            and outputs["masked"] is not None
-        )
+        return trainer.global_rank == 0 and outputs["pred"] is not None
 
     def on_batch_end(
         self,
@@ -83,21 +80,66 @@ class ImageLogger(Callback):
 
         epoch = trainer.current_epoch
         prefix_idx = batch_idx // log_every_n_batches
-        trainer.tb_logger.add_image(
-            f"{stage}/{prefix_idx}_input",
-            ImageLogger.to_numpy(outputs["masked"][0]),
-            epoch,
-        )
-        trainer.tb_logger.add_image(
-            f"{stage}/{prefix_idx}_pred",
-            ImageLogger.to_numpy(outputs["pred"][0]),
-            epoch,
-        )
-        trainer.tb_logger.add_image(
-            f"{stage}/{prefix_idx}_target",
-            ImageLogger.to_numpy(batch[mod_name][0]),
-            epoch,
-        )
+
+        match trainer.ssl_phase:
+            case "pretrain":
+                trainer.tb_logger.add_image(
+                    f"{trainer.ssl_phase}_{stage}/{prefix_idx}_input",
+                    ImageLogger.to_numpy(outputs["masked"][0]),
+                    epoch,
+                )
+                trainer.tb_logger.add_image(
+                    f"{trainer.ssl_phase}_{stage}/{prefix_idx}_pred",
+                    ImageLogger.to_numpy(outputs["pred"][0]),
+                    epoch,
+                )
+                trainer.tb_logger.add_image(
+                    f"{trainer.ssl_phase}_{stage}/{prefix_idx}_target",
+                    ImageLogger.to_numpy(batch[mod_name][0]),
+                    epoch,
+                )
+            case "finetune" | "probe":
+                for name_target, pred_target in outputs["pred"].items():
+                    mod_ref = trainer.mod_name
+
+                    input_ = ImageLogger.to_numpy(batch[mod_ref][0])
+                    pred = ImageLogger.to_numpy(pred_target[0])
+                    mask = ImageLogger.to_numpy(batch[name_target][0])
+
+                    if input_.shape[-1] > mask.shape[-1]:
+                        pred = cv2.resize(
+                            pred.squeeze(),
+                            (input_.shape[-1], input_.shape[-1]),
+                            interpolation=cv2.INTER_NEAREST,
+                        )
+                        mask = cv2.resize(
+                            mask.squeeze(),
+                            (input_.shape[-1], input_.shape[-1]),
+                            interpolation=cv2.INTER_NEAREST,
+                        )
+
+                    if trainer.targets[name_target].type_target == "segment":
+                        colormap = np.array(trainer.targets[name_target].colormap)
+                        pred = colormap.T[:, pred.astype(np.uint8)].squeeze()
+                        mask = colormap.T[:, mask.astype(np.uint8)].squeeze()
+
+                    trainer.tb_logger.add_image(
+                        f"{trainer.ssl_phase}_{name_target}_{stage}/{prefix_idx}_input",
+                        input_,
+                        epoch,
+                    )
+
+                    trainer.tb_logger.add_image(
+                        f"{trainer.ssl_phase}_{name_target}_{stage}/{prefix_idx}_pred",
+                        pred,
+                        epoch,
+                    )
+
+                    trainer.tb_logger.add_image(
+                        f"{trainer.ssl_phase}_{name_target}_{stage}/{prefix_idx}_target",
+                        mask,
+                        epoch,
+                    )
 
     def on_train_batch_end(
         self,

@@ -33,6 +33,7 @@ class SSLTrainer(pl.Trainer):
         precision: str,
     ) -> None:
         self.mod_name = datasets.mod_name
+        self.targets = datasets.dataset.targets
         self.ssl_phase = ssl_phase
         self.exp_dir = run.exp_dir
         self.exp_name = run.exp_name
