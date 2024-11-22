@@ -18,7 +18,7 @@ class ModelConfig:  # noqa: D101
     num_levels: int = 3
     nb_mix_images: int = 4
     swin_abs_enc: bool = False
-    use_date_enc: bool = False
+    use_date_enc: bool = True
     shuffle_mods: bool = False
     mask_indep: bool = True
     mask_shared: bool = True

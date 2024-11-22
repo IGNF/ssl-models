@@ -252,7 +252,7 @@ class SSLModule(LightningModule):
             batch[name_mod] = F.interpolate(
                 batch[name_mod].flatten(0, 1),
                 size=(mod.image_size,) * 2,
-                mode="bilinear",
+                mode="nearest",
             ).unflatten(0, (-1, mod.num_dates))
             batch[f"{name_mod}_dates"] = (
                 F.interpolate(
@@ -290,6 +290,13 @@ class SSLModule(LightningModule):
     ) -> dict[str, torch.Tensor]:
         return self.shared_step(batch, stage="val")
 
+    def test_step(
+        self,
+        batch: dict[str, torch.Tensor],
+        batch_idx: int,  # noqa: ARG002
+    ) -> dict[str, torch.Tensor]:
+        return self.shared_step(batch, stage="test")
+
     def on_epoch_end(self, stage: Literal["train", "val", "test"]) -> None:
         """Log epoch metrics for training/validation."""
         match self.trainer.ssl_phase:
@@ -320,6 +327,9 @@ class SSLModule(LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         self.on_epoch_end(stage="val")
+
+    def on_test_epoch_end(self) -> None:
+        self.on_epoch_end(stage="test")
 
     def log_metric(
         self,

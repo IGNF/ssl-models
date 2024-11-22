@@ -53,6 +53,21 @@ class SSLDataModule(LightningDataModule):
             drop_last=True,
         )
 
+        test_dataset = datasets.dataset_class(
+            root_dir=root_dir,
+            csv_path=root_dir / "test.csv",
+            ssl_phase=ssl_phase,
+            use_transform=use_transform,
+            dataset=datasets.dataset,
+        )
+        self.test_loader = DataLoader(
+            test_dataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=True,
+            drop_last=True,
+        )
+
     def train_dataloader(self) -> DataLoader:
         """Return train data loader."""
         return self.train_loader
@@ -60,3 +75,7 @@ class SSLDataModule(LightningDataModule):
     def val_dataloader(self) -> DataLoader:
         """Return val data loader."""
         return self.val_loader
+
+    def test_dataloader(self) -> DataLoader:
+        """Return test data loader."""
+        return self.test_loader

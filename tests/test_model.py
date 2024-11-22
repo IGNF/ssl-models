@@ -19,7 +19,7 @@ def test_ssl_mae(datasets_geopile, stage, model_size):
 @pytest.mark.parametrize(
     "stage, model_size, swin_version, v2_attn, num_levels, swin_abs_enc",
     itertools.product(
-        ("train", "val"),
+        ("train", "val", "test"),
         ("tiny",),
         (1, 2),
         (True, False),

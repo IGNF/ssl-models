@@ -1,7 +1,8 @@
 """Generic MIM base module, inherited in specialized MIM modules."""
 
 from abc import ABC, abstractmethod
-from functools import partial
+from functools import partial, reduce
+from math import gcd
 from typing import Literal
 
 import torch
@@ -74,7 +75,10 @@ class BaseMIM(nn.Module, ABC):
             )
 
         # Fix the position encodings to sine & cosine functions
-        max_grid_size = max(self.grid_size.values())
+        max_grid_size = reduce(
+            lambda a, b: a * b // gcd(a, b),
+            self.grid_size.values(),
+        )  # smallest common multiple
         self.register_buffer(
             name="enc_pos_encoding",
             tensor=posemb_sincos_2d(
@@ -209,11 +213,11 @@ class BaseMIM(nn.Module, ABC):
                         MultiLabelMetric,
                         num_labels=target.num_classes,
                     )
-            for stage in ("train", "val"):
+            for stage in ("train", "val", "test"):
                 self.metrics[f"{name_target}_{stage}"] = metric_partial()
 
         for name_loss in ("loss_rec", "loss_pred"):
-            for stage in ("train", "val"):
+            for stage in ("train", "val", "test"):
                 self.metrics[f"{name_loss}_{stage}"] = MeanMetric(
                     dist_sync_on_step=False,
                 )

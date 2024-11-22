@@ -119,13 +119,13 @@ class GenericDataset(Dataset, ABC):
             slice(start[1], end[1]),
             slice(start[2], end[2]),
         )
+        bands = range(bands) if isinstance(bands, int) else bands
         use_mask = (mask_threshold / 100.0) < 1.0
         mask_mod = None  # by default, no mask is used
 
         match path_mod.suffix:
             case ".tif" | ".png" | ".jpg" | ".jpeg":
                 with rasterio.open(path_mod) as src:
-                    bands = range(bands) if isinstance(bands, int) else bands
                     window = Window(
                         start[1],
                         start[0],
@@ -137,29 +137,16 @@ class GenericDataset(Dataset, ABC):
                         (len(dates_mod), -1, *input_mod.shape[1:]),
                     )
                     input_mod = input_mod[:, bands]
-                if use_mask and mask is not None:
-                    bands = len(dates_mod) * 2
-                    bands = range(1, bands + 1)
-                    with rasterio.open(mask) as src:
-                        mask_mod = src.read(bands, window=window)
-                        mask_mod = mask_mod.reshape(
-                            (len(dates_mod), -1, *mask_mod.shape[1:]),
-                        )
-                    mask_mod = mask_mod.reshape(
-                        (len(dates_mod), *mask_mod.shape[1:]),
-                    )
             case ".npy":
                 npy_file = np.load(path_mod, mmap_mode="r")
                 if npy_file.ndim < 4:  # noqa: PLR2004
                     npy_file = np.expand_dims(npy_file, axis=0)
-                bands = slice(0, bands) if isinstance(bands, int) else bands
                 input_mod = npy_file[:, :, slices[0], slices[1]][:, bands]
                 if use_mask and mask is not None:
                     mask_file = np.load(mask, mmap_mode="r")
                     mask_mod = mask_file[:, slices[0], slices[1]]
             case ".h5":
                 with h5py.File(path_mod, "r") as h5_file:
-                    bands = slice(0, bands) if isinstance(bands, int) else bands
                     input_mod = h5_file[h5_name][:, :, slices[0], slices[1]][:, bands]
                     if use_mask and h5_mask is not None:
                         mask_mod = h5_file[h5_mask][:, :, slices[0], slices[1]]
@@ -184,6 +171,7 @@ class GenericDataset(Dataset, ABC):
                 input_mod = np.where(mask_mod, np.nan, input_mod)
 
             pan_mod = input_mod.sum(axis=2, keepdims=True)
+            pan_mod = 0 * pan_mod + self.rng.random(pan_mod.shape)
             mid_finite = np.isfinite(pan_mod).sum(axis=1, keepdims=True)
             mid_finite = np.floor_divide(mid_finite, 2)
             median_inds = np.argsort(pan_mod, axis=1)

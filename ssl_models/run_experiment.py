@@ -64,7 +64,7 @@ def run_experiment(
         task.set_parameters_as_dict(config)
 
     LOGGER.info("Pretrain")
-    trainer_pretrain.fit(model, datamodule=data_pretrain)
+    trainer_pretrain.fit_and_test(model=model, datamodule=data_pretrain)
 
     if opt_probe.epochs > 0:
         LOGGER.info("Probe")
@@ -73,7 +73,7 @@ def run_experiment(
             ssl_phase="probe",
             opt=opt_probe,
         )
-        trainer_probe.fit(model, datamodule=data_probe)
+        trainer_probe.fit_and_test(model=model, datamodule=data_probe)
 
     if opt_finetune.epochs > 0:
         LOGGER.info("Finetune")
@@ -82,4 +82,4 @@ def run_experiment(
             ssl_phase="finetune",
             opt=opt_finetune,
         )
-        trainer_finetune.fit(model, datamodule=data_finetune)
+        trainer_finetune.fit_and_test(model=model, datamodule=data_finetune)
