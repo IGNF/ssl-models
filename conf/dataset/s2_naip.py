@@ -16,6 +16,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "s2-naip-urban"
     weight: float = 1.0
     crop_meters: float = 256 * 1.25
+    ref_input: str | None = "naip"
 
     filter_inputs: list[str] = field(
         default_factory=lambda: [
@@ -91,7 +92,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
             bands=2,
             num_dates=4,
-            norm_fac=10000.0,
+            norm_fac=20.0,
         ),
     )
 
@@ -104,7 +105,6 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
             type_target="segment",
             num_classes=6,
             missing_val=-1,
-            image_size=256,
         )
         super().__post_init__(
             resolutions_meters={

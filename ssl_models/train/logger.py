@@ -8,6 +8,8 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from torch import Tensor
 
+BANDS_RGB = 3
+
 
 class TensorBoardLogger(TensorBoardLogger):
     """Custom tensorboard logger."""
@@ -44,24 +46,33 @@ class TensorBoardLogger(TensorBoardLogger):
 class ImageLogger(Callback):
     """Log masked images, predicted images, and target images."""
 
+    def __init__(self, log_inputs: list[str], **kwargs) -> None:  # noqa: ANN003
+        super().__init__(**kwargs)
+        self.log_inputs = log_inputs
+
     @staticmethod
     def to_numpy(x: Tensor) -> Tensor:
         """Move to CPU and convert to numpy."""
-        return x.detach().cpu().numpy().astype(np.float32)[:3]
+        x_npy = x.detach().cpu().numpy().astype(np.float32)
+        return (
+            x_npy[:3]
+            if x_npy.shape[0] >= BANDS_RGB
+            else x_npy.mean(axis=0, keepdims=True)
+        )
 
     @staticmethod
     def should_log(trainer: Trainer, outputs: dict) -> bool:
         """Check whether images should be logged."""
         return (
             trainer.global_rank == 0
-            and outputs["pred"] is not None
+            and outputs["rec"] is not None
             and outputs["masked"] is not None
         )
 
     def on_batch_end(
         self,
         trainer: Trainer,
-        outputs: dict[str, Tensor],
+        outputs: dict[str, dict],
         batch: dict[str, Tensor],
         batch_idx: int,
         stage: Literal["train", "val", "test"],
@@ -74,7 +85,6 @@ class ImageLogger(Callback):
                 num_batches_per_epoch = len(trainer.val_dataloaders)
             case "test":
                 num_batches_per_epoch = len(trainer.test_dataloaders)
-        mod_name = trainer.mod_name
         log_every_n_batches = round(
             num_batches_per_epoch / trainer.logged_images_per_epoch,
         )
@@ -83,21 +93,24 @@ class ImageLogger(Callback):
 
         epoch = trainer.current_epoch
         prefix_idx = batch_idx // log_every_n_batches
-        trainer.tb_logger.add_image(
-            f"{stage}/{prefix_idx}_input",
-            ImageLogger.to_numpy(outputs["masked"][0]),
-            epoch,
-        )
-        trainer.tb_logger.add_image(
-            f"{stage}/{prefix_idx}_pred",
-            ImageLogger.to_numpy(outputs["pred"][0]),
-            epoch,
-        )
-        trainer.tb_logger.add_image(
-            f"{stage}/{prefix_idx}_target",
-            ImageLogger.to_numpy(batch[mod_name][0]),
-            epoch,
-        )
+        for name_mod in outputs["masked"]:
+            if name_mod not in self.log_inputs:
+                continue
+            trainer.tb_logger.add_image(
+                f"{stage}/{prefix_idx}_{name_mod}_input",
+                ImageLogger.to_numpy(outputs["masked"][name_mod][0, 0]),
+                epoch,
+            )
+            trainer.tb_logger.add_image(
+                f"{stage}/{prefix_idx}_{name_mod}_pred",
+                ImageLogger.to_numpy(outputs["rec"][name_mod][0, 0]),
+                epoch,
+            )
+            trainer.tb_logger.add_image(
+                f"{stage}/{prefix_idx}_{name_mod}_target",
+                ImageLogger.to_numpy(batch[name_mod][0, 0]),
+                epoch,
+            )
 
     def on_train_batch_end(
         self,

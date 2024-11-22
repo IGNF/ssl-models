@@ -24,18 +24,18 @@ class PatchSizeConfig:
 class RasterConfig:
     """Generic raster modality config."""
 
-    image_size: int = MISSING
-    patch_size: PatchSizeConfig = MISSING
     bands: list[int] | int = MISSING
+    mask_threshold: float = 100.0
+    num_dates: int = 1
+    norm_fac: float | None = None
 
 
 @dataclass
 class InputConfig:
     """Generic input modality config."""
 
-    use_mask: bool = False
-    num_dates: int = 1
-    norm_fac: float = MISSING
+    image_size: int = MISSING
+    patch_size: PatchSizeConfig = MISSING
 
 
 @dataclass
@@ -72,8 +72,7 @@ class TargetRasterConfig(RasterConfig, TargetConfig):
 class DatasetConfig:
     """Generic dataset config."""
 
-    def __post_init__(self, resolutions_meters: dict[str, int]) -> None:
-        """Check validity of modalities and further define non configurable attrs."""
+    def _set_resolutions(self, resolutions_meters: dict[str, int]) -> None:
         for name_mod, resolution_meters in resolutions_meters.items():
             if name_mod not in self.__dict__:
                 msg = f"Invalid modality {name_mod} specified in resolution."
@@ -92,6 +91,10 @@ class DatasetConfig:
 
             mod = getattr(self, name_mod)
             mod.resolution_meters = float(resolution_meters)
+
+    def __post_init__(self, resolutions_meters: dict[str, int]) -> None:
+        """Check validity of modalities and further define non configurable attrs."""
+        self._set_resolutions(resolutions_meters)
 
         self.inputs = {}
         for name_mod in self.filter_inputs:
@@ -112,3 +115,17 @@ class DatasetConfig:
             for name_mod, mod in (*self.inputs.items(), *self.targets.items())
             if isinstance(mod, RasterConfig)
         }
+
+        if self.ref_input is not None:
+            if self.ref_input not in self.filter_inputs:
+                msg = (
+                    f"Invalid reference input {self.ref_input}."
+                    f"Expected one of {self.filter_inputs}"
+                )
+                raise ValueError(msg)
+            if self.inputs[self.ref_input].num_dates != 1:
+                msg = (
+                    f"Invalid number of dates for reference input {self.ref_input}."
+                    f"Expected single date."
+                )
+                raise ValueError(msg)

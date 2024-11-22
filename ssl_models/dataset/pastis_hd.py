@@ -8,7 +8,7 @@ import pandas as pd
 
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
-from ssl_models.dataset.utils import dict_datetimes
+from ssl_models.dataset.utils import dict_datetimes, strs_datetimes
 
 
 class PASTISHDDataset(GenericDataset):
@@ -32,7 +32,7 @@ class PASTISHDDataset(GenericDataset):
         self.image_ids = image_ids
 
         self.s2_dates = [
-            dict_datetimes(meta_data.loc[str(image_id), "dates-S1A"])
+            dict_datetimes(meta_data.loc[str(image_id), "dates-S2"])
             for image_id in image_ids
         ]
 
@@ -41,7 +41,7 @@ class PASTISHDDataset(GenericDataset):
             for image_id in image_ids
         ]
         self.s1_des_dates = [
-            dict_datetimes(meta_data.loc[str(image_id), "dates-S1A"])
+            dict_datetimes(meta_data.loc[str(image_id), "dates-S1D"])
             for image_id in image_ids
         ]
 
@@ -54,13 +54,11 @@ class PASTISHDDataset(GenericDataset):
             / "PASTIS_SPOT6_RVB_1M00_2019"
             / f"SPOT6_RVB_1M00_2019_{image_id}.tif"
         )
+        spot_date = strs_datetimes(["2019-07-01"])
 
         meta = {}
         meta["spot_path"] = spot_path
-        meta["spot_dates"] = np.array(
-            np.datetime64("2019-07-01").astype(np.int64),
-            ndmin=1,
-        )
+        meta["spot_dates"] = spot_date
 
         meta["s2_path"] = self.root_dir / "DATA_S2" / f"S2_{image_id}.npy"
         meta["s2_dates"] = self.s2_dates[idx]
@@ -72,12 +70,11 @@ class PASTISHDDataset(GenericDataset):
         meta["pastis_seg_path"] = (
             self.root_dir / "ANNOTATIONS" / f"TARGET_{image_id}.npy"
         )
-        meta["pastis_seg_dates"] = np.array(
-            np.datetime64("2019-07-01").astype(np.int64),
-            ndmin=1,
-        )
+        meta["pastis_seg_dates"] = spot_date
 
         inputs = self.preprocess_rasters(meta)
+
+        inputs["ref_date"] = spot_date
 
         return self.transform_rasters(inputs)
 

@@ -31,7 +31,7 @@ class GenericDataset(Dataset, ABC):
     def preprocess_rasters(
         self,
         meta: dict[str, Path | str | np.ndarray],
-    ) -> dict[str, np.ndarray | list]:
+    ) -> dict[str, np.ndarray]:
         """Read raster inputs."""
         if any(
             f"{name_mod}_path" not in meta or f"{name_mod}_dates" not in meta
@@ -107,7 +107,7 @@ class GenericDataset(Dataset, ABC):
         end: tuple[int],
         bands: int | list[int],
         num_dates: int = 1,
-        use_mask: bool = False,
+        mask_threshold: float = 100.0,  # threshold on percentage cover
         norm_fac: float | None = None,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -117,14 +117,13 @@ class GenericDataset(Dataset, ABC):
             slice(start[1], end[1]),
             slice(start[2], end[2]),
         )
+        use_mask = (mask_threshold / 100.0) < 1.0
         mask_mod = None  # by default, no mask is used
 
         match path_mod.suffix:
             case ".tif" | ".png" | ".jpg" | ".jpeg":
                 with rasterio.open(path_mod) as src:
-                    bands = (
-                        bands if isinstance(bands, list) else range(1, src.count + 1)
-                    )
+                    bands = range(1, bands + 1) if isinstance(bands, int) else bands
                     window = Window(
                         start[1],
                         start[0],
@@ -139,22 +138,15 @@ class GenericDataset(Dataset, ABC):
                 npy_file = np.load(path_mod, mmap_mode="r")
                 if npy_file.ndim < 4:  # noqa: PLR2004
                     npy_file = np.expand_dims(npy_file, axis=0)
-                bands = (
-                    bands if isinstance(bands, list) else slice(0, npy_file.shape[1])
-                )
-
-                input_mod = npy_file[:, bands, slices[0], slices[1]]
+                bands = slice(0, bands) if isinstance(bands, int) else bands
+                input_mod = npy_file[:, :, slices[0], slices[1]][:, bands]
                 if use_mask and mask is not None:
                     mask_file = np.load(mask, mmap_mode="r")
                     mask_mod = mask_file[:, slices[0], slices[1]]
             case ".h5":
                 with h5py.File(path_mod, "r") as h5_file:
-                    bands = (
-                        bands
-                        if isinstance(bands, list)
-                        else slice(0, h5_file[h5_name].shape[1])
-                    )
-                    input_mod = h5_file[h5_name][:, bands, slices[0], slices[1]]
+                    bands = slice(0, bands) if isinstance(bands, int) else bands
+                    input_mod = h5_file[h5_name][:, :, slices[0], slices[1]][:, bands]
                     if use_mask and h5_mask is not None:
                         mask_mod = h5_file[h5_mask][:, :, slices[0], slices[1]]
             case ".geojson":
@@ -168,17 +160,22 @@ class GenericDataset(Dataset, ABC):
         if len(dates_mod) != num_dates:
             input_mod = input_mod[slices[2]]
             input_mod = input_mod.reshape((num_dates, -1, *input_mod.shape[1:]))
+            dates_mod = dates_mod[slices[2]]
+            dates_mod = dates_mod.reshape((num_dates, -1, dates_mod.shape[1], 1, 1))
             if mask_mod is not None:
                 mask_mod = mask_mod[slices[2]]
                 mask_mod = mask_mod.reshape((num_dates, -1, *mask_mod.shape[1:]))
-                mask_mod = mask_mod.any(axis=2, keepdims=True)  # either cloud or snow
+                mask_mod = (mask_mod > mask_threshold).any(axis=2, keepdims=True)
                 mask_mod = mask_mod & ~mask_mod.all(axis=1, keepdims=True)
                 input_mod = np.where(mask_mod, np.nan, input_mod)
-            input_mod = np.nanmedian(input_mod, axis=1)
 
-            dates_mod = dates_mod[slices[2]]
-            dates_mod = dates_mod.reshape((num_dates, -1, *dates_mod.shape[1:]))
-            dates_mod = np.median(dates_mod, axis=1)
+            pan_mod = input_mod.sum(axis=2, keepdims=True)
+            mid_finite = np.isfinite(pan_mod).sum(axis=1, keepdims=True)
+            mid_finite = np.floor_divide(mid_finite, 2)
+            median_inds = np.argsort(pan_mod, axis=1)
+            median_inds = np.take_along_axis(median_inds, mid_finite, axis=1)
+            input_mod = np.take_along_axis(input_mod, median_inds, axis=1).squeeze(1)
+            dates_mod = np.take_along_axis(dates_mod, median_inds, axis=1).squeeze(1)
 
         input_mod = input_mod.astype(np.float32)
         if norm_fac is not None:
@@ -187,8 +184,8 @@ class GenericDataset(Dataset, ABC):
 
     def transform_rasters(
         self,
-        inputs: dict[str, np.ndarray | list],
-    ) -> dict[str, np.ndarray | list]:
+        inputs: dict[str, np.ndarray],
+    ) -> dict[str, np.ndarray]:
         """Transform model rasters."""
         if self.use_transform:
             if self.rng.choice([True, False]):

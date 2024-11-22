@@ -16,6 +16,7 @@ class GeoPileConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "GeoPileV0"
     weight: float = 0.0
     crop_meters: float = 256.0
+    ref_input: str | None = None
 
     filter_inputs: list[str] = field(
         default_factory=lambda: ["rgb"],

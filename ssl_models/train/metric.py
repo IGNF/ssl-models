@@ -4,24 +4,34 @@ from typing import Literal
 
 import torch
 from torch import Tensor
-from torchmetrics import AveragePrecision, Metric
-from torchmetrics.classification import MultilabelF1Score
+from torchmetrics import Metric
 from torchmetrics.functional import confusion_matrix
+from torchmetrics.functional.classification.average_precision import (
+    _multilabel_average_precision_compute,
+)
+from torchmetrics.functional.classification.precision_recall_curve import (
+    _multilabel_precision_recall_curve_format,
+    _multilabel_precision_recall_curve_update,
+)
+from torchmetrics.utilities.data import dim_zero_cat
 
 SMOOTH = 0.000001
 
 
 class MonoLabelMetric(Metric):
-    """Store metrics as a confusion matrix."""
+    """Store confusion matrix."""
 
     def __init__(
         self,
         type_target: Literal["classif", "segment", "change_detect"],
         num_classes: int | None,
+        threshold_detect: float = 0.5,
         dist_sync_on_step: bool = False,
     ) -> None:
         """Init."""
         super().__init__(dist_sync_on_step=dist_sync_on_step)
+        self.threshold_detect = threshold_detect
+
         match type_target:
             case "classif":
                 self.task = "multiclass"
@@ -44,8 +54,14 @@ class MonoLabelMetric(Metric):
 
     def update(self, logits: Tensor, targets: Tensor) -> None:
         """Update confusion matrix."""
+        match self.task:
+            case "classif" | "segment":
+                logits = logits.argmax(dim=1)
+            case "change_detect":
+                logits = (torch.sigmoid(logits) > self.threshold_detect).long()
+
         self.cm += confusion_matrix(
-            logits.argmax(dim=1),
+            logits,
             targets,
             task=self.task,
             num_classes=self.num_classes,
@@ -53,7 +69,7 @@ class MonoLabelMetric(Metric):
         )
 
     def compute(self) -> dict[str, Tensor]:
-        """Compute metrics from confusion matrix."""
+        """Compute metrics."""
         overall_acc = self.cm.trace() / self.cm.sum()  # OA
         true_pos = torch.diag(self.cm)  # TP
         false_pos = self.cm.sum(0) - torch.diag(self.cm)  # FP
@@ -74,57 +90,74 @@ class MonoLabelMetric(Metric):
 
 
 class MultiLabelMetric(Metric):
-    """Store MAP metric and confusion matrix."""
+    """Store confusion matrix and precision recall curves."""
 
     def __init__(
         self,
-        num_classes: int,
+        num_labels: int,
         threshold_detect: float = 0.5,
         dist_sync_on_step: bool = False,
     ) -> None:
-        """Init."""
         super().__init__(dist_sync_on_step=dist_sync_on_step)
+        self.num_labels = num_labels
         self.threshold_detect = threshold_detect
 
-        self.f1_macro = MultilabelF1Score(
-            num_labels=num_classes,
-            threshold=self.threshold_detect,
-            average="macro",
-        )
-        self.f1_weighted = MultilabelF1Score(
-            num_labels=num_classes,
-            threshold=self.threshold_detect,
-            average="weighted",
-        )
-        self.ap_macro = AveragePrecision(
-            task="multilabel",
-            num_labels=num_classes,
-            average="macro",
-        )
-        self.ap_weighted = AveragePrecision(
-            task="multilabel",
-            num_labels=num_classes,
-            average="weighted",
+        self.add_state("preds", default=[], dist_reduce_fx="cat")
+        self.add_state("target", default=[], dist_reduce_fx="cat")
+        self.add_state(
+            "cm",
+            default=torch.zeros(num_labels, 2, 2, dtype=torch.long),
+            dist_reduce_fx="sum",
         )
 
     def update(self, logits: Tensor, targets: Tensor) -> None:
         """Update metrics."""
-        self.f1_macro.update(logits, targets.long())
-        self.f1_weighted.update(logits, targets.long())
-        self.ap_macro.update(logits, targets.long())
-        self.ap_weighted.update(logits, targets.long())
+        logits = torch.sigmoid(logits)
+        targets = targets.long()
 
-    def compute(self) -> dict[str, Tensor]:
+        preds, target, _ = _multilabel_precision_recall_curve_format(
+            logits,
+            targets,
+            num_labels=self.num_labels,
+            thresholds=None,
+            ignore_index=None,
+        )
+        state = _multilabel_precision_recall_curve_update(
+            preds,
+            target,
+            num_labels=self.num_labels,
+            thresholds=None,
+        )
+
+        self.preds.append(state[0])
+        self.target.append(state[1])
+
+        self.cm += confusion_matrix(
+            logits > self.threshold_detect,
+            targets,
+            task="multilabel",
+            num_labels=self.num_labels,
+            normalize=None,
+        )
+
+    def compute(self) -> Tensor:
         """Compute metrics."""
-        return {
-            "macro_f1": self.f1_macro.compute(),
-            "weighted_f1": self.f1_weighted.compute(),
-            "macro_ap": self.ap_macro.compute(),
-            "weighted_ap": self.ap_weighted.compute(),
-        }
+        true_pos = self.cm[:, 1, 1]  # TP
+        false_pos = self.cm[:, 0, 1]  # FP
+        false_neg = self.cm[:, 1, 0]  # FN
+        label_weights = (true_pos + false_neg) / (true_pos + false_neg).float().sum()
 
-    def reset(self) -> None:
-        self.f1_macro.reset()
-        self.f1_weighted.reset()
-        self.ap_macro.reset()
-        self.ap_weighted.reset()
+        per_label_f1 = (2 * true_pos) / (2 * true_pos + false_pos + false_neg + SMOOTH)
+        per_label_ap = _multilabel_average_precision_compute(
+            (dim_zero_cat(self.preds), dim_zero_cat(self.target)),
+            self.num_labels,
+            average="none",
+            thresholds=None,
+            ignore_index=None,
+        )
+        return {
+            "average_f1": per_label_f1.mean(),  # macro F1
+            "average_ap": per_label_ap.nanmean(),  # macro mAP
+            "weighted_f1": (per_label_f1 * label_weights).sum(),
+            "weighted_ap": (per_label_ap * label_weights).nansum(),
+        }

@@ -27,7 +27,7 @@ def run_experiment(
     trainer: TrainerConfig,
 ) -> None:
     """Run experiment, with arguments set up using hydra zen."""
-    trainer_partial = partial(SSLTrainer, datasets=datasets, run=run, **vars(trainer))
+    trainer_partial = partial(SSLTrainer, run=run, **vars(trainer))
     model_partial = partial(SSLModule, datasets=datasets, **vars(model))
     data_partial = partial(SSLDataModule, datasets=datasets, **vars(data))
 

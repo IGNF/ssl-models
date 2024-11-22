@@ -18,6 +18,12 @@ class ModelConfig:  # noqa: D101
     num_levels: int = 3
     nb_mix_images: int = 4
     swin_abs_enc: bool = False
+    use_date_enc: bool = False
+    shuffle_mods: bool = False
+    mask_indep: bool = True
+    mask_shared: bool = True
+    encoder: str = "shared"
+    decoder: str = "shared"
 
 
 model_store = store(group="model")

@@ -8,6 +8,7 @@ import pandas as pd
 
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
+from ssl_models.dataset.utils import strs_datetimes
 
 
 class GeoPileDataset(GenericDataset):
@@ -60,10 +61,7 @@ class GeoPileDataset(GenericDataset):
         """Get dataset item."""
         meta = {}
         meta["rgb_path"] = self.root_dir / self.file_name[idx]
-        meta["rgb_dates"] = np.array(
-            np.datetime64("2019-07-01").astype(np.int64),
-            ndmin=1,
-        )
+        meta["rgb_dates"] = strs_datetimes(["2019-07-01"])
 
         inputs = self.preprocess_rasters(meta)
 
@@ -73,6 +71,7 @@ class GeoPileDataset(GenericDataset):
                 np.datetime64("2019-07-01").astype(np.int64),
                 ndmin=1,
             )
+        inputs["ref_date"] = inputs["rgb_dates"]
 
         return self.transform_rasters(inputs)
 
