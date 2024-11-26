@@ -144,7 +144,7 @@ class BaseMIM(nn.Module, ABC):
         )
 
         # shuffling of modalities
-        self.shuffle_enc_to_dec = shuffle_enc_to_dec if shuffle_mods else nn.Identity()
+        self.shuffle_mods = shuffle_mods
 
         # mask tokens
         self.mask_token = nn.ParameterDict(
@@ -290,7 +290,7 @@ class BaseMIM(nn.Module, ABC):
             x_enc, mask_attn, mask_rec = {}, {}, {}
             for name_mod in x:
                 x_enc[name_mod], mask_attn[name_mod], mask_rec[name_mod] = (
-                    self.mask_mod(x[name_mod])
+                    self.mask_mod(x[name_mod], name_mod)
                 )
             return x_enc, mask_attn, mask_rec
 
@@ -318,13 +318,17 @@ class BaseMIM(nn.Module, ABC):
             )
         return x_dec
 
-    def shuffle_mods(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
+    def shuffle_enc_to_dec(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         """Shuffle modalities and dates."""
-        x = self.unflatten_dates(x)
+        if self.shuffle_mods:
+            x_dec = self.unflatten_dates(x)
 
-        x_dec = self.shuffle_enc_to_dec(x)
+            x_dec = shuffle_enc_to_dec(x_dec)
 
-        return self.flatten_dates(x_dec)
+            x_dec = self.flatten_dates(x_dec)
+        else:
+            x_dec = x
+        return x_dec
 
     def rec_pixels(
         self,
@@ -543,7 +547,7 @@ class BaseMIM(nn.Module, ABC):
         x_enc = self.encode(x_enc, mask_attn)
 
         if ssl_phase == "pretrain":
-            x_dec = self.shuffle_mods(x_enc)
+            x_dec = self.shuffle_enc_to_dec(x_enc)
             x_dec = self.encoder_to_decoder(x_dec)
             x_dec = self.unmask(x_dec, mask_rec)
             x_dec = self.dec_add_encodings(x_dec, dates, ref_date)

@@ -59,7 +59,10 @@ class MAE(BaseMIM):
             mask_indep=mask_indep,
             mask_shared=mask_shared,
         )
-        self.mask_ratio = mask_ratio
+        self.mask_ratio = {
+            name_mod: mask_ratio if mask_indep else 1 - (1 - mask_ratio) / mod.num_dates
+            for name_mod, mod in datasets.dataset.inputs.items()
+        }
 
         self.encoder = nn.ModuleDict(
             {
@@ -106,7 +109,7 @@ class MAE(BaseMIM):
             },
         )
 
-    def mask_mod(self, x: Tensor) -> tuple[Tensor, None, Tensor]:
+    def mask_mod(self, x: Tensor, name_mod: str) -> tuple[Tensor, None, Tensor]:
         """Mask sequence."""
         B, L, _ = x.shape  # noqa: N806
 
@@ -115,7 +118,9 @@ class MAE(BaseMIM):
         random_indices = torch.argsort(noise, dim=-1)  # [B L]
         reverse_indices = torch.argsort(random_indices, dim=-1)
 
-        num_masked_patches = round(self.mask_ratio * L)  # Number of patches to mask
+        num_masked_patches = round(
+            self.mask_ratio[name_mod] * L,
+        )  # Number of patches to mask
         mask_rec = torch.zeros((B, L), dtype=x.dtype, device=x.device)
         mask_rec[:, :num_masked_patches] = 1
         mask_rec = torch.gather(

@@ -181,7 +181,7 @@ class MixMAE(BaseMIM):
             },
         )
 
-    def mask_mod(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    def mask_mod(self, x: Tensor, name_mod: str) -> tuple[Tensor, Tensor, Tensor]:
         """Mix sequence."""
         B_out, L, C = x.shape  # noqa: N806
         H, W = round(L**0.5), round(L**0.5)  # noqa: N806
