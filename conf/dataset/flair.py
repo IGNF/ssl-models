@@ -19,7 +19,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     ref_input: str | None = "aerial"
 
     filter_inputs: list[str] = field(
-        default_factory=lambda: ["aerial", "dtm_dsm", "spot", "s2", "s1"],
+        default_factory=lambda: ["aerial_rgbi", "dtm_dsm", "spot", "s2", "s1"],
     )  # selected input modalities
     filter_targets: list[str] = field(
         default_factory=lambda: ["flair"],
