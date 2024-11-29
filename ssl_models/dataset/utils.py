@@ -13,9 +13,9 @@ def dates_numpy(dates: list[datetime]) -> np.ndarray:
     )
 
 
-def strs_datetimes(date_strs: list[str]) -> np.ndarray:
+def strs_datetimes(date_strs: list[str], format_="%Y-%m-%d") -> np.ndarray:
     """Convert list of strs to list of datetimes."""
-    datetimes = [datetime.strptime(date_str, "%Y-%m-%d") for date_str in date_strs]  # noqa: DTZ007
+    datetimes = [datetime.strptime(date_str, format_) for date_str in date_strs]  # noqa: DTZ007
     return dates_numpy(datetimes)
 
 
@@ -51,13 +51,13 @@ def naip_datetimes(datetime_str: str) -> np.ndarray:
     return dates_numpy(datetimes)
 
 
-def dict_datetimes(datetime_dict: dict) -> np.ndarray:
+def dict_datetimes(datetime_dict: dict, start=0) -> np.ndarray:
     """Convert list of datetime strings to list of datetimes."""
     datetimes = [
         datetime.strptime(  # noqa: DTZ007
             str(datetime_dict[str(idx)]),
             "%Y%m%d",
         )
-        for idx in range(len(datetime_dict))
+        for idx in range(start, len(datetime_dict)+start)
     ]
     return dates_numpy(datetimes)
