@@ -71,7 +71,7 @@ class MixMAE(BaseMIM):
             case "msgfm" | "shared":
                 name_models = ["shared"]
             case "mod" | "group":
-                msg = "Group SSL not yet implemented with MixMAE."
+                msg = "Multimodal/multitemporal SSL not yet implemented with MixMAE."
                 raise NotImplementedError(msg)
             case _:
                 msg = f"Invalid multimodal mode {multimodal}."
@@ -155,13 +155,14 @@ class MixMAE(BaseMIM):
             {name_mod: nn.LayerNorm(decoder_dim) for name_mod in name_models},
         )
 
-    def mask_mod(
+    def mask_group(
         self,
         x: Tensor,
+        mask_token: Tensor,
         name_group: str,  # noqa: ARG002
-    ) -> tuple[Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """Mix sequence."""
-        B_out, L, C = x.shape  # noqa: N806
+        B, L, C = x.shape  # noqa: N806
         H, W = round(L**0.5), round(L**0.5)  # noqa: N806
         H_out, W_out, L_out = (  # noqa: N806
             H // self.stride,
@@ -169,56 +170,58 @@ class MixMAE(BaseMIM):
             L // self.stride**2,
         )
 
-        B = B_out // self.nb_mix_images  # noqa: N806
-        if B_out % self.nb_mix_images:
-            msg = (
-                f"Invalid batch size {B_out}. Expected multiple of {self.nb_mix_images}"
-            )
+        B_enc = B // self.nb_mix_images  # noqa: N806
+        if B % self.nb_mix_images:
+            msg = f"Invalid batch size {B}. Expected multiple of {self.nb_mix_images}"
             raise ValueError(msg)
 
-        # sample masked tokens
-        noise = torch.randn((B, L_out), device=x.device)  # [B L_out]
+        # sample mask
+        noise = torch.randn((B_enc, L_out), device=x.device)  # [B L_out]
         random_indices = torch.argsort(noise, dim=-1)  # [B L_out]
 
         mask = torch.arange(self.nb_mix_images, dtype=x.dtype, device=x.device)
-        mask = mask[None, :].repeat((B, ceil(L_out / self.nb_mix_images)))[:, :L_out]
+        mask = mask[None, :].repeat((B_enc, ceil(L_out / self.nb_mix_images)))[
+            :,
+            :L_out,
+        ]
         mask = torch.gather(
             mask,
             dim=1,
             index=random_indices,
         )
-        mask_rec = (
+        unmasked = (
             mask[:, None, :]
             == torch.arange(self.nb_mix_images, device=x.device)[None, :, None]
         )
-        mask_rec = 1 - mask_rec.reshape((B_out, L_out, 1)).float()
+        mask_rec = ~unmasked.reshape((B, L_out, 1))
 
-        mask = mask.reshape((B, 1, H_out, W_out))
+        mask = mask.reshape((B_enc, 1, H_out, W_out))
         mask_attn = F.interpolate(
             mask,
             size=(H, W),
             mode="nearest",
         )
-        mask_attn = mask_attn.reshape((B, L)).contiguous()
+        mask_attn = mask_attn.reshape((B_enc, L)).contiguous()
 
         # encode only unmasked tokens
-        mask_enc = (
+        unmasked = (
             mask_attn[:, None, :]
             == torch.arange(self.nb_mix_images, device=x.device)[None, :, None]
         )
-        mask_enc = mask_enc.reshape((B, self.nb_mix_images, L, 1)).float()
-        x_enc = x.reshape((B, self.nb_mix_images, L, C))
-        x_enc = (x_enc * mask_enc).sum(dim=1)
+        unmasked = unmasked.reshape((B_enc, self.nb_mix_images, L, 1)).float()
+        x_enc = x.reshape((B_enc, self.nb_mix_images, L, C))
+        x_enc = (x_enc * unmasked).sum(dim=1)
 
-        return x_enc, mask_attn, mask_rec
+        return x_enc, mask_token, mask_attn, mask_rec
 
-    def unmask_mod(self, x: Tensor, mask_rec: Tensor, mask_token: Tensor) -> Tensor:
+    def unmask_group(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
         """Unmask sequence, filling with mask token."""
         B_enc, L, C = x.shape  # noqa: N806
 
         mask_rec = mask_rec.reshape((B_enc, self.nb_mix_images, L, 1))
+        mask_token = mask_token.reshape((B_enc, self.nb_mix_images, L, -1))
         x = x.reshape((B_enc, 1, L, C))
-        x_dec = torch.where(mask_rec == 0, x, mask_token)
+        x_dec = torch.where(mask_rec, mask_token, x)
         return x_dec.flatten(0, 1)
 
     def encode_with_mask(

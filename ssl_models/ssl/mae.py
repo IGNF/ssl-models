@@ -53,7 +53,6 @@ class MAE(BaseMIM):
             fac_date_enc=fac_date_enc,
             multimodal=multimodal,
         )
-
         num_dates_mod, num_dates_group = {}, {}
         for name_mod, name_group in datasets.dataset.groups:
             mod = datasets.dataset.inputs[name_mod]
@@ -127,7 +126,7 @@ class MAE(BaseMIM):
     def mask_group(
         self,
         x: Tensor,
-        mask: Tensor,
+        mask_token: Tensor,
         name_group: str,
     ) -> tuple[Tensor, Tensor, None, Tensor]:
         """Mask sequence."""
@@ -141,8 +140,8 @@ class MAE(BaseMIM):
         num_masked_patches = round(
             self.mask_ratio[name_group] * L,
         )  # Number of patches to mask
-        mask_rec = torch.zeros((B, L), dtype=x.dtype, device=x.device)
-        mask_rec[:, :num_masked_patches] = 1
+        mask_rec = torch.zeros((B, L), dtype=torch.bool, device=x.device)
+        mask_rec[:, :num_masked_patches] = True
         mask_rec = torch.gather(
             mask_rec,
             dim=1,
@@ -155,17 +154,18 @@ class MAE(BaseMIM):
         masked_indices, _ = random_indices[:, :num_masked_patches].sort(dim=1)
         unmasked_indices, _ = random_indices[:, num_masked_patches:].sort(dim=1)
 
-        x_enc = x[batch_indices, unmasked_indices, :]  # [B L:(1 - mask_ratio) * C]
-        mask_enc = mask[batch_indices, masked_indices, :]  # [B L: mask_ratio * C]
+        x_enc = x[batch_indices, unmasked_indices, :]  # [B L:(1 - mask_ratio) C]
+        mask_token = mask_token[batch_indices, masked_indices, :]  # [B L: mask_ratio C]
 
-        return x_enc, mask_enc, None, mask_rec
+        return x_enc, mask_token, None, mask_rec
 
-    def unmask_group(self, x: Tensor, mask_enc: Tensor, mask_rec: Tensor) -> Tensor:
+    def unmask_group(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
         """Unmask sequence, filling with mask token."""
         B, L_enc, C = x.shape  # noqa: N806
         _, L, _ = mask_rec.shape  # noqa: N806
 
         # find masked and unmasked tokens
+        mask_rec = mask_rec.float()
         mask_rec = mask_rec.squeeze(dim=2)
         mask_rec = mask_rec.argsort(dim=1, descending=True)
         masked_indices, unmasked_indices = torch.split(
@@ -178,7 +178,7 @@ class MAE(BaseMIM):
         # collate encoded patches and mask tokens
         batch_indices = rearrange(torch.arange(B, device=x.device), "b -> b 1")
         x_dec = torch.zeros((B, L, C), dtype=x.dtype, device=x.device)
-        x_dec[batch_indices, masked_indices, :] = mask_enc
+        x_dec[batch_indices, masked_indices, :] = mask_token
         x_dec[batch_indices, unmasked_indices, :] = x
         return x_dec
 

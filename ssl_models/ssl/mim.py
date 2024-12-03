@@ -236,19 +236,20 @@ class BaseMIM(nn.Module, ABC):
         Tensor,
     ]:
         """Embed patches and fetch dates."""
-        x_enc, embed_inds, mask_enc, dates = {}, {}, {}, {}
+        x_enc, embed_inds, mask_token, dates = {}, {}, {}, {}
         for name_mod in self.dataset.inputs:
             x_enc[name_mod], embed_inds[name_mod] = self.patch_embed[name_mod](
                 batch[name_mod],
             )
-            mask_enc[name_mod] = self.mask_token[name_mod].expand(
-                (*x_enc[name_mod].shape[:-1], -1),
-            )
+            B = x_enc[name_mod].shape[0]  # noqa: N806
+            D = x_enc[name_mod].shape[1]  # noqa: N806
+            L_out = x_enc[name_mod].shape[2] // self.stride ** 2  # noqa: N806
+            mask_token[name_mod] = self.mask_token[name_mod].expand((B, D, L_out, -1))
             dates[name_mod] = batch[f"{name_mod}_dates"]
 
         return (
             self.group(x_enc),
-            self.group(mask_enc),
+            self.group(mask_token),
             embed_inds,
             dates,
             batch["ref_date"],
@@ -306,11 +307,11 @@ class BaseMIM(nn.Module, ABC):
     ) -> tuple[dict[str, Tensor], dict[str, Tensor | None], dict[str, Tensor | None]]:
         """Mask multimodal."""
         if ssl_phase == "pretrain":
-            x_enc, mask_enc, mask_attn, mask_rec = {}, {}, {}, {}
+            x_enc, mask_token, mask_attn, mask_rec = {}, {}, {}, {}
             for name_group in x:
                 (
                     x_enc[name_group],
-                    mask_enc[name_group],
+                    mask_token[name_group],
                     mask_attn[name_group],
                     mask_rec[name_group],
                 ) = self.mask_group(
@@ -318,11 +319,11 @@ class BaseMIM(nn.Module, ABC):
                     mask[name_group],
                     name_group,
                 )
-            return x_enc, mask_enc, mask_attn, mask_rec
+            return x_enc, mask_token, mask_attn, mask_rec
 
         # else, probe or finetune
-        mask_enc, mask_attn, mask_rec = ({name_group: None for name_group in x},) * 3
-        return x, mask_enc, mask_attn, mask_rec
+        mask_token, mask_attn, mask_rec = ({name_group: None for name_group in x},) * 3
+        return x, mask_token, mask_attn, mask_rec
 
     def unmask(
         self,
@@ -379,15 +380,18 @@ class BaseMIM(nn.Module, ABC):
         """Visu of reconstructed images, shared for all MIM modules."""
         pixels_masked = {}
         for name_mod in pixels_rec:
-            masked = mask_rec[name_mod] == 1
-            pixels_masked[name_mod] = torch.where(masked, 0, target[name_mod])
             pixels_masked[name_mod] = torch.where(
-                torch.all(masked, dim=2, keepdim=True),
+                mask_rec[name_mod],
+                0,
+                target[name_mod],
+            )
+            pixels_masked[name_mod] = torch.where(
+                torch.all(mask_rec[name_mod], dim=2, keepdim=True),
                 1,
                 pixels_masked[name_mod],
             )
             pixels_rec[name_mod] = torch.where(
-                masked,
+                mask_rec[name_mod],
                 pixels_rec[name_mod],
                 target[name_mod],
             )
@@ -414,7 +418,6 @@ class BaseMIM(nn.Module, ABC):
                 mean = target.mean(dim=-1, keepdim=True)
                 var = target.var(dim=-1, keepdim=True)
                 target = (target - mean) / (var + 1.0e-6) ** 0.5
-
             target = rearrange(
                 target,
                 "b d (h w) (p1 p2 c) -> b d c (h p1) (w p2)",
@@ -424,7 +427,7 @@ class BaseMIM(nn.Module, ABC):
             )
 
             loss_rec = self.loss_fn(target - pixels_rec[name_mod])
-            loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod].bool()).mean()
+            loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod]).mean()
             loss_recs.append(loss_rec)
         return torch.stack(loss_recs).mean()
 
@@ -534,7 +537,7 @@ class BaseMIM(nn.Module, ABC):
         """Abstract method for masking of group."""
 
     @abstractmethod
-    def unmask_group(self, x: Tensor, mask_enc: Tensor, mask_rec: Tensor) -> Tensor:
+    def unmask_group(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
         """Abstract method for unmasking of group."""
 
     @abstractmethod
@@ -560,17 +563,17 @@ class BaseMIM(nn.Module, ABC):
         stage: Literal["train", "val", "test"],
     ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         """Shared forward pass for all MIM modules."""
-        x_enc, mask_enc, embed_inds, dates, ref_date = self.embed(batch)
+        x_enc, mask_token, embed_inds, dates, ref_date = self.embed(batch)
         x_enc = self.enc_add_encodings(x_enc, dates, ref_date)
 
-        x_enc, mask_enc, mask_attn, mask_rec = self.mask(x_enc, mask_enc, ssl_phase)
+        x_enc, mask_token, mask_attn, mask_rec = self.mask(x_enc, mask_token, ssl_phase)
 
         x_enc = self.encode(x_enc, mask_attn)
 
         if ssl_phase == "pretrain":
             x_dec = self.shuffle_enc_to_dec(x_enc)
             x_dec = self.encoder_to_decoder(x_dec)
-            x_dec = self.unmask(x_dec, mask_enc, mask_rec)
+            x_dec = self.unmask(x_dec, mask_token, mask_rec)
             x_dec = self.dec_add_encodings(x_dec, dates, ref_date)
 
             x_dec = self.decode(x_dec)
