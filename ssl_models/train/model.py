@@ -8,7 +8,7 @@ from torch import Tensor
 from torch.nn import functional as F  # noqa: N812
 
 from conf.datasets import DatasetsConfig
-from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
+from ssl_models.ssl.mae import MAE, mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.ssl.mixmae import (
     mixmae_base,
     mixmae_huge,
@@ -138,15 +138,56 @@ class SSLModule(LightningModule):
             # use sqrt scaling rule with Adam
             self.trainer.base_lr * self.trainer.train_dataloader.batch_size**0.5
         )
+        match self.trainer.lw_decay:
+            case None:
+                grouped_params = self.model.parameters()
+                max_lr = lr
+            case _:
+                if not isinstance(self.model, MAE):
+                    msg = "Layer-wise decay only implemented for MAE."
+                    raise NotImplementedError(msg)
+
+                encoder = next(iter(self.model.encoder.values()))
+                num_layers = len(encoder.layers)
+
+                grouped_params = []
+                grouped_params.append(
+                    {
+                        "params": self.model.patch_embed.parameters(),
+                        "lr": lr * self.trainer.lw_decay ** (num_layers + 1),
+                        "name": "layer_0_embed",
+                    },
+                )
+                for idx in range(num_layers):
+                    grouped_params.append(
+                        {
+                            "params": [
+                                param
+                                for encoder in self.model.encoder.values()
+                                for param in encoder.layers[idx].parameters()
+                            ],
+                            "lr": lr * self.trainer.lw_decay ** (num_layers - idx),
+                            "name": f"layer_{idx+1}",
+                        },
+                    )
+                grouped_params.append(
+                    {
+                        "params": self.model.heads.parameters(),
+                        "lr": lr,
+                        "name": f"layer_{num_layers+1}_head",
+                    },
+                )
+                max_lr = [param["lr"] for param in grouped_params]
+
         optimizer = torch.optim.AdamW(
-            self.model.parameters(),
+            grouped_params,
             lr=lr,
             weight_decay=self.trainer.wd,
             betas=(self.trainer.b1, self.trainer.b2),
         )
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,
-            max_lr=lr,
+            max_lr=max_lr,
             total_steps=total_steps,
             pct_start=0.2,
             cycle_momentum=False,

@@ -39,6 +39,7 @@ class SSLTrainer(pl.Trainer):
         self.logged_images_per_epoch = run.logged_images_per_epoch
 
         self.base_lr = opt.base_lr
+        self.lw_decay = opt.lw_decay if isinstance(opt, OptFinetuneConfig) else None
         self.wd = opt.wd
         self.b1 = opt.b1
         self.b2 = opt.b2
