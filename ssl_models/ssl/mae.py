@@ -8,6 +8,7 @@ from torch import Tensor, nn
 from vit_pytorch.vit import Transformer
 
 from conf.datasets import DatasetsConfig
+from conf.mask import MaskConfig
 from ssl_models.ssl.mim import BaseMIM
 
 
@@ -17,6 +18,8 @@ class MAE(BaseMIM):
     def __init__(  # noqa: PLR0913
         self,
         datasets: DatasetsConfig,
+        mask: MaskConfig,
+        multimodal: Literal["msgfm", "shared", "mod", "group"],
         model: Literal["mae"],
         unpool: bool,
         num_levels: Literal[1],
@@ -30,17 +33,16 @@ class MAE(BaseMIM):
         decoder_heads: int,
         decoder_dim_head: int,
         decoder_mlp_ratio: float,
-        mask_ratio: float = 0.75,
         type_head: Literal["linear", "attentive"] = "linear",
         loss_fn: Literal[torch.square, torch.square] = torch.square,
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
-        multimodal: Literal["msgfm", "shared", "mod", "group"] = "mod",
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
             datasets=datasets,
+            multimodal=multimodal,
             model=model,
             unpool=unpool,
             num_levels=num_levels,
@@ -51,16 +53,17 @@ class MAE(BaseMIM):
             norm_pix_loss=norm_pix_loss,
             fac_abs_enc=fac_abs_enc,
             fac_date_enc=fac_date_enc,
-            multimodal=multimodal,
         )
+
+        self.len_bands = {
+            name_mod: 1 if isinstance(mod.bands, int) else len(mod.bands)
+            for name_mod, mod in datasets.dataset.inputs.items()
+        }
+
         num_dates_mod, num_dates_group = {}, {}
         for name_mod, name_group in datasets.dataset.groups:
             mod = datasets.dataset.inputs[name_mod]
-            num_dates = (
-                mod.num_dates
-                if isinstance(mod.bands, int)
-                else mod.num_dates * len(mod.bands)
-            )
+            num_dates = mod.num_dates * self.len_bands[name_mod]
             if name_mod not in num_dates_mod:
                 num_dates_mod[name_mod] = 0
             if name_group not in num_dates_group:
@@ -68,22 +71,37 @@ class MAE(BaseMIM):
             num_dates_mod[name_mod] += num_dates
             num_dates_group[name_group] += num_dates
 
+        self.mask_ratio = {}
+        self.mask_mod, self.mask_bands, self.mask_dates = {}, {}, {}
+        for name_mod, name_group in datasets.dataset.groups:
+            mod = datasets.dataset.inputs[name_mod]
+            self.mask_mod[name_mod] = (
+                mask.mask_mod
+                if num_dates_mod[name_mod] != num_dates_group[name_group]
+                else None
+            )
+            self.mask_bands[name_mod] = (
+                mask.mask_bands if self.len_bands[name_mod] > 1 else None
+            )
+            self.mask_dates[name_mod] = mask.mask_dates if mod.num_dates > 1 else None
+
         match multimodal:
             case "msgfm" | "shared":
                 name_models = ["shared"]
-                self.mask_ratio = {name_mod: mask_ratio for name_mod in num_dates_mod}
+                for name_mod in num_dates_mod:
+                    self.mask_ratio[name_mod] = mask.mask_ratio
+                    self.mask_mod[name_mod] = None
+                    self.mask_bands[name_mod] = None
+                    self.mask_dates[name_mod] = None
             case "mod":
                 name_models = list(num_dates_mod.keys())
-                self.mask_ratio = {
-                    name_mod: 1 - (1 - mask_ratio) / float(num_dates)
-                    for name_mod, num_dates in num_dates_mod.items()
-                }
+                for name_mod, num_dates in num_dates_mod.items():
+                    self.mask_ratio[name_mod] = 1 - (1 - mask.mask_ratio) / num_dates
+                    self.mask_mod[name_mod] = None
             case "group":
                 name_models = list(num_dates_group.keys())
-                self.mask_ratio = {
-                    name_group: 1 - (1 - mask_ratio) / float(num_dates)
-                    for name_group, num_dates in num_dates_group.items()
-                }
+                for name_group, num_dates in num_dates_group.items():
+                    self.mask_ratio[name_group] = 1 - (1 - mask.mask_ratio) / num_dates
             case _:
                 msg = f"Invalid multimodal mode {multimodal}."
                 raise ValueError(msg)
@@ -123,10 +141,59 @@ class MAE(BaseMIM):
             },
         )
 
-    def mask_group(
+    def mask_struct(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
+        """Structural masking of modalities, band groups, dates."""
+        mask_group, mask_mod = {}, {}
+        for name_group in x:
+            B, L, _ = x[name_group].shape  # noqa: N806
+            mask_group[name_group] = torch.ones((B, L, 1), dtype=torch.bool)
+            mask_mod[name_group] = torch.ones((B, L, 1), dtype=torch.bool)
+
+        mask_mod = self.ungroup(mask_mod)
+
+        while any(
+            mask_group[name_group].all(dim=(1, 2)).any(dim=0)
+            for name_group in mask_group
+        ):
+            mask = {}
+            for name_mod, len_bands in self.len_bands.items():
+                B, D, L, _ = mask_mod[name_mod].shape  # noqa: N806
+                G = len_bands  # noqa: N806
+                mask[name_mod] = torch.zeros(
+                    (B, G, D // G, L),
+                    dtype=torch.bool,
+                )
+                if self.mask_mod[name_mod]:
+                    mask[name_mod] += torch.rand((B, 1, 1, 1)) < self.mask_mod[name_mod]
+                if self.mask_bands[name_mod]:
+                    mask[name_mod] += (
+                        torch.rand((B, G, 1, 1)) < self.mask_bands[name_mod]
+                    )
+                if self.mask_dates[name_mod]:
+                    mask[name_mod] += (
+                        torch.rand((B, G, D // G, 1)) < self.mask_dates[name_mod]
+                    )
+                mask[name_mod] = mask[name_mod].reshape((B, D, L, 1))
+
+            mask = self.group(mask)
+
+            for name_group in mask_group:
+                mask_group[name_group] = torch.where(
+                    mask_group[name_group].all(dim=1, keepdim=True),
+                    mask[name_group],
+                    mask_group[name_group],
+                )
+
+        return {
+            name_group: mask_group[name_group].to(x[name_group].device)
+            for name_group in mask_group
+        }
+
+    def mask_seq(
         self,
         x: Tensor,
         mask_token: Tensor,
+        mask_rec: Tensor,
         name_group: str,
     ) -> tuple[Tensor, Tensor, None, Tensor]:
         """Mask sequence."""
@@ -134,6 +201,7 @@ class MAE(BaseMIM):
 
         # sample masked tokens
         noise = torch.randn((B, L), device=x.device)  # [B L]
+        noise *= 1 - mask_rec.reshape((B, L)).float()
         random_indices = torch.argsort(noise, dim=-1)  # [B L]
         reverse_indices = torch.argsort(random_indices, dim=-1)
 
@@ -159,7 +227,7 @@ class MAE(BaseMIM):
 
         return x_enc, mask_token, None, mask_rec
 
-    def unmask_group(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
+    def unmask_seq(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
         """Unmask sequence, filling with mask token."""
         B, L_enc, C = x.shape  # noqa: N806
         _, L, _ = mask_rec.shape  # noqa: N806
@@ -178,7 +246,7 @@ class MAE(BaseMIM):
         # collate encoded patches and mask tokens
         batch_indices = rearrange(torch.arange(B, device=x.device), "b -> b 1")
         x_dec = torch.zeros((B, L, C), dtype=x.dtype, device=x.device)
-        x_dec[batch_indices, masked_indices, :] = mask_token
+        x_dec[batch_indices, masked_indices, :] = mask_token.to(x.dtype)
         x_dec[batch_indices, unmasked_indices, :] = x
         return x_dec
 

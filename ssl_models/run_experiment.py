@@ -6,6 +6,7 @@ from clearml import Task
 
 from conf.data import DataConfig
 from conf.datasets import DatasetsConfig
+from conf.mask import MaskConfig
 from conf.model import ModelConfig
 from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
 from conf.run import RunConfig
@@ -23,12 +24,13 @@ def run_experiment(
     opt_finetune: OptFinetuneConfig,
     datasets: DatasetsConfig,
     data: DataConfig,
+    mask: MaskConfig,
     model: ModelConfig,
     trainer: TrainerConfig,
 ) -> None:
     """Run experiment, with arguments set up using hydra zen."""
     trainer_partial = partial(SSLTrainer, run=run, **vars(trainer))
-    model_partial = partial(SSLModule, datasets=datasets, **vars(model))
+    model_partial = partial(SSLModule, datasets=datasets, mask=mask, **vars(model))
     data_partial = partial(SSLDataModule, datasets=datasets, **vars(data))
 
     if run.load_ckpt_path:

@@ -15,6 +15,7 @@ Experiment = builds(
         {"opt_finetune": "default_finetune"},
         {"datasets": "default_datasets"},
         {"data": "default_data"},
+        {"mask": "default_mask"},
         {"model": "default_model"},
         {"trainer": "default_trainer"},
     ],
@@ -24,6 +25,7 @@ Experiment = builds(
     opt_finetune=MISSING,
     datasets=MISSING,
     data=MISSING,
+    mask=MISSING,
     model=MISSING,
     trainer=MISSING,
 )

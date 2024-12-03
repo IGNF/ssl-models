@@ -105,9 +105,6 @@ class DatasetConfig:
                 for name_mod, mod in self.inputs.items()
                 if (name_mod, name_group) in groups
             )
-            if len({mod.num_dates for mod in mods}) > 1:
-                msg = "Grouped modalities must have the same number of dates"
-                raise ValueError(msg)
             if len({mod.image_size for mod in mods}) > 1:
                 msg = "Grouped modalities must have the same image sizes"
                 raise ValueError(msg)

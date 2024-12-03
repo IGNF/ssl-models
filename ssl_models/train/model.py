@@ -8,7 +8,8 @@ from torch import Tensor
 from torch.nn import functional as F  # noqa: N812
 
 from conf.datasets import DatasetsConfig
-from ssl_models.ssl.mae import MAE, mae_large, mae_medium, mae_small, mae_tiny
+from conf.mask import MaskConfig
+from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.ssl.mixmae import (
     mixmae_base,
     mixmae_huge,
@@ -29,21 +30,19 @@ class SSLModule(LightningModule):
         self,
         # shared args
         datasets: DatasetsConfig,
+        mask: MaskConfig,
+        multimodal: Literal["msgfm", "shared", "mod", "group"],
         model: Literal["mae", "mixmae"],
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         unpool: bool = False,
-        # mae args
-        mask_ratio: float = 0.75,
         # mixmae args
-        nb_mix_images: int = 4,
         num_levels: Literal[3, 4] = 3,
         swin_version: Literal[1, 2] = 1,
         v2_attn: bool = True,
         swin_abs_enc: bool = False,
         use_date_enc: bool = True,
-        multimodal: Literal["msgfm", "shared", "mod", "group"] = "mod",
     ) -> None:
         super().__init__()
 
@@ -100,9 +99,9 @@ class SSLModule(LightningModule):
         if model_size in model_map:
             model_args = {
                 "datasets": datasets,
+                "mask": mask,
+                "multimodal": multimodal,
                 "model": model,
-                "mask_ratio": mask_ratio,
-                "nb_mix_images": nb_mix_images,
                 "unpool": unpool,
                 "num_levels": num_levels,
                 "swin_version": swin_version,
@@ -112,7 +111,6 @@ class SSLModule(LightningModule):
                 "norm_pix_loss": norm_pix_loss,
                 "fac_abs_enc": fac_abs_enc,
                 "fac_date_enc": fac_date_enc,
-                "multimodal": multimodal,
             }
             self.model = model_map[model_size](**model_args)
         else:

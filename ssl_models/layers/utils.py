@@ -100,7 +100,12 @@ def ungroup_mods(
         x = {}
         for name_group in x_group:
             name_mods = group_to_mods[name_group]
-            x_mods = torch.tensor_split(x_group[name_group], len(name_mods), dim=1)
+            group_dates = sum(num_dates[name_mod] for name_mod in name_mods)
+            splits = [
+                num_dates[name_mod] * (x_group[name_group].shape[1] // group_dates)
+                for name_mod in name_mods
+            ]
+            x_mods = torch.split(x_group[name_group], splits, dim=1)
             for name_mod, x_mod in zip(name_mods, x_mods):
                 x[name_mod] = x_mod
     else:
@@ -140,7 +145,7 @@ def encode_dates(
     date_dim: int,
     fac_date_enc: float,
     grid_size: int,
-    bands: list[list[int]] | int,
+    len_bands: int,
 ) -> Tensor:
     """Encode day of year, hour of day, and difference to reference date."""
     dates = dates.reshape(dates.shape + (1,) * (5 - dates.ndim))
@@ -174,9 +179,9 @@ def encode_dates(
     pad_diff = diff.expand(-1, -1, -1, date_dim - 4)
     date_encoding = torch.cat([pad_zeros, pad_diff, date_encoding], dim=-1)
 
-    if isinstance(bands, int):
+    if len_bands == 1:
         return date_encoding
-    return torch.repeat_interleave(date_encoding, len(bands), dim=1)
+    return torch.repeat_interleave(date_encoding, len_bands, dim=1)
 
 
 def posemb_sincos_2d(

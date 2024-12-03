@@ -32,6 +32,7 @@ class BaseMIM(nn.Module, ABC):
     def __init__(  # noqa: C901
         self,
         datasets: DatasetsConfig,
+        multimodal: Literal["msgfm", "shared", "mod", "group"],
         model: Literal["mae", "mixmae"],
         unpool: bool,
         num_levels: Literal[1, 3, 4],
@@ -43,7 +44,6 @@ class BaseMIM(nn.Module, ABC):
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
-        multimodal: Literal["msgfm", "shared", "mod", "group"] = "mod",
     ) -> None:
         super().__init__()
         self.dataset = datasets.dataset
@@ -52,12 +52,15 @@ class BaseMIM(nn.Module, ABC):
         self.stride = 2 ** (num_levels - 1)
 
         # patchify and pixelify
-        self.bands, self.grid_size, self.out_grid_size = {}, {}, {}
+        self.len_bands = {
+            name_mod: 1 if isinstance(mod.bands, int) else len(mod.bands)
+            for name_mod, mod in datasets.dataset.inputs.items()
+        }
+        self.grid_size, self.out_grid_size = {}, {}
         self.patch_embed, self.embed_to_rec = nn.ModuleDict(), nn.ModuleDict()
         for name_mod, mod in self.dataset.inputs.items():
             bands = mod.bands
             patch_size = mod.patch_size.mae if model == "mae" else mod.patch_size.mixmae
-            self.bands[name_mod] = bands
             self.grid_size[name_mod] = mod.image_size // patch_size
             self.out_grid_size[name_mod] = mod.image_size // (patch_size * self.stride)
             self.patch_embed[name_mod] = Patchify(
@@ -115,7 +118,7 @@ class BaseMIM(nn.Module, ABC):
                 date_dim=date_dim,
                 fac_date_enc=fac_date_enc,
                 grid_size=self.grid_size[name_mod],
-                bands=self.bands[name_mod],
+                len_bands=self.len_bands[name_mod],
             )
             for name_mod in self.dataset.inputs
         }
@@ -126,7 +129,7 @@ class BaseMIM(nn.Module, ABC):
                 date_dim=date_dim,
                 fac_date_enc=fac_date_enc,
                 grid_size=self.out_grid_size[name_mod],
-                bands=self.bands[name_mod],
+                len_bands=self.len_bands[name_mod],
             )
             for name_mod in self.dataset.inputs
         }
@@ -142,11 +145,7 @@ class BaseMIM(nn.Module, ABC):
             multimodal=multimodal,
             groups=self.dataset.groups,
             num_dates={
-                name_mod: (
-                    mod.num_dates
-                    if isinstance(mod.bands, int)
-                    else mod.num_dates * len(mod.bands)
-                )
+                name_mod: mod.num_dates * self.len_bands[name_mod]
                 for name_mod, mod in self.dataset.inputs.items()
             },
         )
@@ -157,8 +156,10 @@ class BaseMIM(nn.Module, ABC):
         # mask tokens
         self.mask_token = nn.ParameterDict(
             {
-                name_mod: nn.Parameter(torch.randn(1, 1, decoder_dim))
-                for name_mod in self.dataset.inputs
+                name_mod: nn.Parameter(
+                    torch.randn(1, len_bands, 1, 1, decoder_dim),
+                )
+                for name_mod, len_bands in self.len_bands.items()
             },
         )
 
@@ -243,8 +244,12 @@ class BaseMIM(nn.Module, ABC):
             )
             B = x_enc[name_mod].shape[0]  # noqa: N806
             D = x_enc[name_mod].shape[1]  # noqa: N806
-            L_out = x_enc[name_mod].shape[2] // self.stride ** 2  # noqa: N806
-            mask_token[name_mod] = self.mask_token[name_mod].expand((B, D, L_out, -1))
+            G = self.len_bands[name_mod]  # noqa: N806
+            L_out = x_enc[name_mod].shape[2] // self.stride**2  # noqa: N806
+            mask_token[name_mod] = self.mask_token[name_mod].half()
+            mask_token[name_mod] = (
+                mask_token[name_mod].expand((B, -1, D // G, L_out, -1)).flatten(1, 2)
+            )
             dates[name_mod] = batch[f"{name_mod}_dates"]
 
         return (
@@ -273,7 +278,7 @@ class BaseMIM(nn.Module, ABC):
                 dates=dates[name_mod],
                 ref_date=ref_date,
             )
-            x_enc[name_mod] += pos_encoding + date_encoding
+            x_enc[name_mod] = x_enc[name_mod] + pos_encoding + date_encoding
 
         return self.group(x_enc)
 
@@ -295,7 +300,7 @@ class BaseMIM(nn.Module, ABC):
                 dates=dates[name_mod],
                 ref_date=ref_date,
             )
-            x_dec[name_mod] += pos_encoding + date_encoding
+            x_dec[name_mod] = x_dec[name_mod] + pos_encoding + date_encoding
 
         return self.group(x_dec)
 
@@ -307,16 +312,19 @@ class BaseMIM(nn.Module, ABC):
     ) -> tuple[dict[str, Tensor], dict[str, Tensor | None], dict[str, Tensor | None]]:
         """Mask multimodal."""
         if ssl_phase == "pretrain":
-            x_enc, mask_token, mask_attn, mask_rec = {}, {}, {}, {}
+            mask_rec = self.mask_struct(x)
+
+            x_enc, mask_token, mask_attn = {}, {}, {}
             for name_group in x:
                 (
                     x_enc[name_group],
                     mask_token[name_group],
                     mask_attn[name_group],
                     mask_rec[name_group],
-                ) = self.mask_group(
+                ) = self.mask_seq(
                     x[name_group],
                     mask[name_group],
+                    mask_rec[name_group],
                     name_group,
                 )
             return x_enc, mask_token, mask_attn, mask_rec
@@ -334,7 +342,7 @@ class BaseMIM(nn.Module, ABC):
         """Unmask multimodal."""
         x_dec = {}
         for name_group in x:
-            x_dec[name_group] = self.unmask_group(
+            x_dec[name_group] = self.unmask_seq(
                 x[name_group],
                 mask[name_group],
                 mask_rec[name_group],
@@ -528,17 +536,22 @@ class BaseMIM(nn.Module, ABC):
         return x
 
     @abstractmethod
-    def mask_group(
-        self,
-        x: Tensor,
-        mask: Tensor,
-        name_group: str,
-    ) -> tuple[Tensor, Tensor, Tensor | None, Tensor]:
-        """Abstract method for masking of group."""
+    def mask_struct(self, x: Tensor) -> dict[str, Tensor | None]:
+        """Abstract method for structural masking."""
 
     @abstractmethod
-    def unmask_group(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
-        """Abstract method for unmasking of group."""
+    def mask_seq(
+        self,
+        x: Tensor,
+        mask_token: Tensor,
+        mask_rec: Tensor | None,
+        name_group: str,
+    ) -> tuple[Tensor, Tensor, Tensor | None, Tensor]:
+        """Abstract method for masking of sequence."""
+
+    @abstractmethod
+    def unmask_seq(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
+        """Abstract method for unmasking of sequence."""
 
     @abstractmethod
     def encode(

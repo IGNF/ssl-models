@@ -15,6 +15,7 @@ from timm.models.vision_transformer import Block
 from torch import Tensor, nn
 
 from conf.datasets import DatasetsConfig
+from conf.mask import MaskConfig
 from ssl_models.layers.swin import MixMAELayer
 from ssl_models.ssl.mim import BaseMIM
 
@@ -25,6 +26,8 @@ class MixMAE(BaseMIM):
     def __init__(  # noqa: PLR0913
         self,
         datasets: DatasetsConfig,
+        mask: MaskConfig,
+        multimodal: Literal["msgfm", "shared", "mod", "group"],
         model: Literal["mixmae"],
         unpool: bool,
         num_levels: Literal[3, 4],
@@ -34,7 +37,6 @@ class MixMAE(BaseMIM):
         window_size: tuple,
         swin_version: Literal[1, 2],
         v2_attn: bool,
-        nb_mix_images: int = 4,
         type_head: Literal["linear", "attentive"] = "linear",
         loss_fn: Literal[torch.square, torch.square] = torch.square,
         norm_pix_loss: bool = True,
@@ -50,11 +52,11 @@ class MixMAE(BaseMIM):
         drop_path_rate: float = 0.0,
         pretrained_window_sizes: tuple[int, int, int, int] = [0, 0, 0, 0],
         use_checkpoint: bool = False,
-        multimodal: Literal["msgfm", "shared", "mod", "group"] = "mod",
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
             datasets=datasets,
+            multimodal=multimodal,
             model=model,
             unpool=unpool,
             num_levels=num_levels,
@@ -65,7 +67,6 @@ class MixMAE(BaseMIM):
             norm_pix_loss=norm_pix_loss,
             fac_abs_enc=fac_abs_enc,
             fac_date_enc=fac_date_enc,
-            multimodal=multimodal,
         )
         match multimodal:
             case "msgfm" | "shared":
@@ -77,7 +78,7 @@ class MixMAE(BaseMIM):
                 msg = f"Invalid multimodal mode {multimodal}."
                 raise ValueError(msg)
 
-        self.nb_mix_images = nb_mix_images
+        self.nb_mix_images = mask.nb_mix_images
         self.stride = 2 ** (num_levels - 1)
 
         # encoder args
@@ -119,7 +120,7 @@ class MixMAE(BaseMIM):
                             use_checkpoint=use_checkpoint,
                             pretrained_window_size=pretrained_window_sizes[idx_layer],
                             swin_version=swin_version,
-                            nb_mix_images=nb_mix_images,
+                            nb_mix_images=mask.nb_mix_images,
                             v2_attn=v2_attn,
                         )
                         for name_mod in name_models
@@ -155,10 +156,15 @@ class MixMAE(BaseMIM):
             {name_mod: nn.LayerNorm(decoder_dim) for name_mod in name_models},
         )
 
-    def mask_group(
+    def mask_struct(self, x: dict[str, Tensor]) -> dict[str, None]:
+        """Structural masking of modalities, band groups, dates."""
+        return {name_group: None for name_group in x}
+
+    def mask_seq(
         self,
         x: Tensor,
         mask_token: Tensor,
+        mask_rec: None,
         name_group: str,  # noqa: ARG002
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """Mix sequence."""
@@ -214,7 +220,7 @@ class MixMAE(BaseMIM):
 
         return x_enc, mask_token, mask_attn, mask_rec
 
-    def unmask_group(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
+    def unmask_seq(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
         """Unmask sequence, filling with mask token."""
         B_enc, L, C = x.shape  # noqa: N806
 
