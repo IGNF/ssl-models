@@ -52,9 +52,12 @@ class BaseMIM(nn.Module, ABC):
         self.stride = 2 ** (num_levels - 1)
 
         # patchify and pixelify
-        self.len_bands = {
-            name_mod: 1 if isinstance(mod.bands, int) else len(mod.bands)
+        self.num_bands = {
+            name_mod: [mod.bands] if isinstance(mod.bands, int) else list(map(len, mod.bands))
             for name_mod, mod in datasets.dataset.inputs.items()
+        }
+        self.len_bands = {
+            name_mod: len(num_bands) for name_mod, num_bands in self.num_bands.items()
         }
         self.grid_size, self.out_grid_size = {}, {}
         self.patch_embed, self.embed_to_rec = nn.ModuleDict(), nn.ModuleDict()
@@ -148,6 +151,7 @@ class BaseMIM(nn.Module, ABC):
                 name_mod: mod.num_dates * self.len_bands[name_mod]
                 for name_mod, mod in self.dataset.inputs.items()
             },
+            grid_size=self.grid_size,
         )
 
         # shuffling of modalities
@@ -413,31 +417,47 @@ class BaseMIM(nn.Module, ABC):
     ) -> Tensor:
         """Shared loss computation for all MIM modules."""
         loss_recs = []
+        weights = []
         for name_mod in pixels_rec:
-            H = self.out_grid_size[name_mod]  # noqa: N806
+            D = batch[name_mod].shape[1]  # noqa: N806
+            H, W = (  # noqa: N806
+                self.out_grid_size[name_mod],
+                self.out_grid_size[name_mod],
+            )
             P = batch[name_mod].shape[3] // H  # noqa: N806
             target = rearrange(
                 batch[name_mod],
-                "b d c (h p1) (w p2) -> b d (h w) (p1 p2 c)",
+                "b d c (h p1) (w p2) -> b d (h w) (p1 p2) c",
                 p1=P,
                 p2=P,
             )
             if self.norm_pix_loss:
-                mean = target.mean(dim=-1, keepdim=True)
-                var = target.var(dim=-1, keepdim=True)
-                target = (target - mean) / (var + 1.0e-6) ** 0.5
+                target_groups = list(
+                    torch.split(
+                        target,
+                        self.num_bands[name_mod],
+                        dim=-1,
+                    ),
+                )
+                for idx, target_group in enumerate(target_groups):
+                    mean = target_group.mean(dim=(-2, -1), keepdim=True)
+                    var = target_group.var(dim=(-2, -1), keepdim=True)
+                    target_groups[idx] = (target_group - mean) / (var + 1.0e-6) ** 0.5
+                target = torch.cat(target_groups, dim=-1)
             target = rearrange(
                 target,
-                "b d (h w) (p1 p2 c) -> b d c (h p1) (w p2)",
+                "b d (h w) (p1 p2) c -> b d c (h p1) (w p2)",
                 h=H,
                 p1=P,
                 p2=P,
             )
 
+            weight = D * H * W
+            weights.append(weight)
             loss_rec = self.loss_fn(target - pixels_rec[name_mod])
             loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod]).mean()
-            loss_recs.append(loss_rec)
-        return torch.stack(loss_recs).mean()
+            loss_recs.append(weight * loss_rec)
+        return torch.stack(loss_recs).sum() / sum(weights)
 
     def compute_loss_pred(
         self,

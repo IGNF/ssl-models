@@ -9,9 +9,9 @@ from hydra_zen import store
 class MaskConfig:  # noqa: D101
     mask_ratio: float = 0.75
     nb_mix_images: int = 4
-    mask_mod: float | None = 0.5
-    mask_bands: float | None = 0.5
-    mask_dates: float | None = 0.5
+    mask_mod: float | None = None
+    mask_bands: float | None = None
+    mask_dates: float | None = None
 
 
 model_store = store(group="mask")

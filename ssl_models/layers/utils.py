@@ -78,6 +78,7 @@ def ungroup_mods(
     multimodal: Literal["msgfm", "shared", "mod", "group"],
     groups: list[tuple],
     num_dates: dict[str, int],
+    grid_size: dict[str, int],
 ) -> dict[str, Tensor]:
     """Ungroup modality sequences."""
     match multimodal:
@@ -100,10 +101,8 @@ def ungroup_mods(
         x = {}
         for name_group in x_group:
             name_mods = group_to_mods[name_group]
-            group_dates = sum(num_dates[name_mod] for name_mod in name_mods)
             splits = [
-                num_dates[name_mod] * (x_group[name_group].shape[1] // group_dates)
-                for name_mod in name_mods
+                num_dates[name_mod] * grid_size[name_mod] ** 2 for name_mod in name_mods
             ]
             x_mods = torch.split(x_group[name_group], splits, dim=1)
             for name_mod, x_mod in zip(name_mods, x_mods):

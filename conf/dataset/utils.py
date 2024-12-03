@@ -99,22 +99,6 @@ class DatasetConfig:
             name_groups.add(name_group)
             groups.append((name_mod, name_group))
 
-        for name_group in name_groups:
-            mods = (
-                mod
-                for name_mod, mod in self.inputs.items()
-                if (name_mod, name_group) in groups
-            )
-            if len({mod.image_size for mod in mods}) > 1:
-                msg = "Grouped modalities must have the same image sizes"
-                raise ValueError(msg)
-            if (
-                len({mod.patch_size.mae for mod in mods}) > 1
-                or len({mod.patch_size.mixmae for mod in mods}) > 1
-            ):
-                msg = "Grouped modalities must have the same patch sizes"
-                raise ValueError(msg)
-
         return groups
 
     def __post_init__(self, resolutions_meters: dict[str, int]) -> None:
