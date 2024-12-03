@@ -4,6 +4,7 @@ import itertools
 
 import numpy as np
 import torch
+from sympy.ntheory import factorint
 from torch import Tensor
 
 from ssl_models import RNG
@@ -114,8 +115,7 @@ def encode_dates(
     doy = 2 * np.pi * doy
     hour = 2 * np.pi * hour
     date_encoding = torch.stack(
-        [
-            diff,
+        [diff] * 4 + [
             torch.sin(doy),
             torch.cos(doy),
             torch.sin(hour),
@@ -126,10 +126,8 @@ def encode_dates(
     date_encoding = reshape_encoding(date_encoding, grid_size=grid_size)
     date_encoding *= fac_date_enc
 
-    diff, date_encoding = torch.split(date_encoding, [1, 4], dim=-1)
-    pad_zeros = torch.zeros_like(diff).expand(-1, -1, -1, dim - date_dim)
-    pad_diff = diff.expand(-1, -1, -1, date_dim - 4)
-    return torch.cat([pad_zeros, pad_diff, date_encoding], dim=-1)
+    date_encoding = date_encoding.tile(dims=(1, 1, 1, dim // (2 * 8)))
+    return torch.cat([torch.zeros_like(date_encoding), date_encoding], dim=-1)
 
 
 def posemb_sincos_2d(
@@ -157,16 +155,10 @@ def posemb_sincos_2d(
     return pos_encoding.to(dtype)
 
 
-def downsampling_from_patch_size(unpool: bool, patch_size: int) -> int:
-    """Infer number of unpooling downsamplings associated with a given patch size."""
+def downsamplings_from_patch_size(unpool: bool, patch_size: int) -> int:
+    """Infer downsamplings associated with a given patch size."""
+    downsamplings = []
     if unpool:
-        num_downsampling = round(np.log2(patch_size))
-        if 2**num_downsampling != patch_size:
-            msg = (
-                f"Invalid patch size {patch_size}."
-                " Expected power of 2 when using unpooling."
-            )
-            raise ValueError(msg)
-    else:
-        num_downsampling = None
-    return num_downsampling
+        for prime, power in factorint(patch_size).items():
+            downsamplings += [prime] * power
+    return downsamplings

@@ -3,7 +3,7 @@
 from einops import rearrange
 from torch import Tensor, nn
 
-from ssl_models.layers.utils import downsampling_from_patch_size
+from ssl_models.layers.utils import downsamplings_from_patch_size
 
 
 class Patchify(nn.Module):
@@ -19,7 +19,7 @@ class Patchify(nn.Module):
         super().__init__()
         self.patch_size = patch_size
         self.unpool = unpool
-        self.num_downsampling = downsampling_from_patch_size(unpool, patch_size)
+        self.downsamplings = downsamplings_from_patch_size(unpool, patch_size)
 
         self.conv_skip = nn.Conv2d(
             in_chans,
@@ -30,37 +30,47 @@ class Patchify(nn.Module):
         self.norm_skip = nn.GroupNorm(1, embed_dim)
         if self.unpool:
             channels = []
-            for idx in range(self.num_downsampling):
+            for idx, _ in enumerate(self.downsamplings):
                 pow_in = idx
                 pow_out = idx + 1
-                channels_in = 4 * 2**pow_in if idx > 0 else in_chans
-                channels_out = 4 * 2**pow_out
+                channels_in = 8 * 2**pow_in if idx > 0 else in_chans
+                channels_out = 8 * 2**pow_out
                 channels.append((channels_in, channels_out))
 
-            self.convs = nn.ModuleDict(
+            self.convs = nn.ModuleList(
                 [
-                    [
-                        f"conv_{idx}",
-                        nn.Conv2d(
-                            channels_in,
-                            channels_out,
-                            kernel_size=2,
-                            padding_mode="reflect",
-                            padding="same",
-                        ),
-                    ]
+                    nn.Conv2d(
+                        channels_in,
+                        channels_out,
+                        kernel_size=self.downsamplings[idx],
+                        padding_mode="reflect",
+                        padding="same",
+                    )
                     for idx, (channels_in, channels_out) in enumerate(channels)
                 ],
             )
-            self.norms = nn.ModuleDict(
+            self.norms = nn.ModuleList(
                 [
-                    [f"norm_{idx}", nn.GroupNorm(1, channels_out)]
+                    nn.GroupNorm(1, channels_out)
                     for idx, (_, channels_out) in enumerate(channels)
                 ],
             )
-            self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)
+            self.max_pool = nn.ModuleList(
+                [
+                    nn.MaxPool2d(
+                        kernel_size=downsampling,
+                        stride=downsampling,
+                        return_indices=True,
+                    )
+                    for downsampling in self.downsamplings
+                ],
+            )
             self.conv = nn.Conv2d(
-                4 * 2**self.num_downsampling,
+                (
+                    8 * 2 ** len(self.downsamplings)
+                    if len(self.downsamplings) > 0
+                    else in_chans
+                ),
                 embed_dim,
                 kernel_size=1,
             )
@@ -84,10 +94,10 @@ class Patchify(nn.Module):
                 p1=self.patch_size,
                 p2=self.patch_size,
             )
-            for idx in range(self.num_downsampling):
-                xb = self.convs[f"conv_{idx}"](xb)
-                xb = self.norms[f"norm_{idx}"](xb)
-                xb, ind = self.max_pool(xb)
+            for idx, _ in enumerate(self.downsamplings):
+                xb = self.convs[idx](xb)
+                xb = self.norms[idx](xb)
+                xb, ind = self.max_pool[idx](xb)
                 inds.append(ind)
 
             xb = self.conv(xb)
@@ -118,7 +128,7 @@ class Pixelify(nn.Module):
         super().__init__()
         self.patch_size = patch_size
         self.unpool = unpool
-        self.num_downsampling = downsampling_from_patch_size(unpool, patch_size)
+        self.downsamplings = downsamplings_from_patch_size(unpool, patch_size)
 
         self.conv_skip = nn.Conv2d(
             embed_dim,
@@ -127,42 +137,44 @@ class Pixelify(nn.Module):
         )
         if self.unpool:
             channels = []
-            for idx in range(self.num_downsampling):
-                pow_in = self.num_downsampling - idx
-                pow_out = self.num_downsampling - (idx + 1)
-                channels_in = 4 * 2**pow_in
-                channels_out = 4 * 2**pow_out
+            for idx, _ in enumerate(self.downsamplings):
+                pow_in = len(self.downsamplings) - idx
+                pow_out = len(self.downsamplings) - (idx + 1)
+                channels_in = 8 * 2**pow_in
+                channels_out = 8 * 2**pow_out
                 channels.append((channels_in, channels_out))
 
             self.conv = nn.Conv2d(
                 embed_dim,
-                4 * 2**self.num_downsampling,
+                8 * 2 ** len(self.downsamplings),
                 kernel_size=1,
             )
-            self.norm = nn.GroupNorm(1, 4 * 2**self.num_downsampling)
-            self.max_unpool = nn.MaxUnpool2d(kernel_size=2, stride=2)
-            self.convs = nn.ModuleDict(
+            self.norm = nn.GroupNorm(1, 8 * 2 ** len(self.downsamplings))
+            self.convs = nn.ModuleList(
                 [
-                    [
-                        f"conv_{idx}",
-                        nn.Conv2d(
-                            channels_in,
-                            channels_out,
-                            kernel_size=2,
-                            padding_mode="reflect",
-                            padding="same",
-                        ),
-                    ]
+                    nn.Conv2d(
+                        channels_in,
+                        channels_out,
+                        kernel_size=self.downsamplings[::-1][idx],
+                        padding_mode="reflect",
+                        padding="same",
+                    )
                     for idx, (channels_in, channels_out) in enumerate(channels)
                 ],
             )
-            self.norms = nn.ModuleDict(
+            self.norms = nn.ModuleList(
                 [
-                    [f"norm_{idx}", nn.GroupNorm(1, channels_out)]
+                    nn.GroupNorm(1, channels_out)
                     for idx, (_, channels_out) in enumerate(channels)
                 ],
             )
-            self.fc = nn.Conv2d(4, out_chans, kernel_size=1)
+            self.max_unpool = nn.ModuleList(
+                [
+                    nn.MaxUnpool2d(kernel_size=downsampling, stride=downsampling)
+                    for downsampling in self.downsamplings[::-1]
+                ],
+            )
+            self.fc = nn.Conv2d(8, out_chans, kernel_size=1)
 
     def forward(
         self,
@@ -187,9 +199,9 @@ class Pixelify(nn.Module):
             xb = self.conv(xb)
             xb = self.norm(xb)
             for idx, ind in enumerate(inds[::-1]):
-                xb = self.max_unpool(xb, ind)
-                xb = self.convs[f"conv_{idx}"](xb)
-                xb = self.norms[f"norm_{idx}"](xb)
+                xb = self.max_unpool[idx](xb, ind)
+                xb = self.convs[idx](xb)
+                xb = self.norms[idx](xb)
             xb = self.fc(xb)
             xb = xb + skip
         else:
