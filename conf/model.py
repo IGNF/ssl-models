@@ -20,10 +20,10 @@ class ModelConfig:  # noqa: D101
     swin_abs_enc: bool = False
     use_date_enc: bool = True
     shuffle_mods: bool = False
-    mask_indep: bool = True
-    mask_shared: bool = True
-    encoder: str = "shared"
-    decoder: str = "shared"
+    mask_indep: bool = False
+    mask_shared: bool = False
+    encoder: str = "mod"
+    decoder: str = "mod"
 
 
 model_store = store(group="model")

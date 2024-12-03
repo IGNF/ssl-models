@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import albumentations as A  # noqa: N812
 import numpy as np
 import pandas as pd
 
@@ -18,12 +17,15 @@ class S2NAIPDataset(GenericDataset):
         self,
         root_dir: Path,
         csv_path: Path,
-        transform: A.Compose | None,
+        use_transform: bool,
         dataset: DatasetConfig,
         *args,  # noqa: ARG002, ANN002
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
-        super().__init__(transform=transform, dataset=dataset)
+        super().__init__(
+            use_transform=use_transform,
+            dataset=dataset,
+        )
 
         csv_data = pd.read_csv(csv_path)
 

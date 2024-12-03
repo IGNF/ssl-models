@@ -78,14 +78,19 @@ class SSLTrainer(pl.Trainer):
         )
         callbacks.append(
             ModelCheckpoint(
+                filename=self.ssl_phase + "-{epoch}",
+                save_weights_only=True,
+            ),
+        )
+        callbacks.append(
+            ModelCheckpoint(
                 monitor=(
                     "pretrain_loss_rec/val"
                     if self.ssl_phase == "pretrain"
                     else f"{self.ssl_phase}_loss_pred/val"
                 ),
                 save_top_k=1,
-                filename="best",
-                save_last=True,
+                filename=self.ssl_phase + "-best",
                 save_weights_only=True,
             ),
         )
