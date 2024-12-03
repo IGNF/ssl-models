@@ -2,6 +2,7 @@
 
 import warnings
 from abc import ABC
+from math import lcm
 from pathlib import Path
 
 import h5py
@@ -40,45 +41,46 @@ class GenericDataset(Dataset, ABC):
             msg = "A modality is missing in meta data."
             raise ValueError(msg)
 
-        sizes, sizes_date = {}, {}
+        res, sizes_date = {}, {}
         for name_mod, mod in self.dataset.rasters.items():
-            sizes[name_mod] = round(self.dataset.ground_meters / mod.resolution_meters)
+            res[name_mod] = int(mod.resolution_meters * 100)
             sizes_date[name_mod] = len(meta[f"{name_mod}_dates"])
 
-        # sample spatial and temporal slices
-        size_min = min(sizes.values())
-        crop_min = (self.dataset.crop_meters / self.dataset.ground_meters) * size_min
-        start_min = self.rng.integers(
-            low=0,
-            high=size_min - round(crop_min) + 1,
-            size=2,
-        )
-        if not crop_min.is_integer():
-            msg = "Crop range does not correspond to an integer number of pixels."
+        lcm_ = lcm(*res.values()) / 100
+
+        if self.dataset.crop_meters % lcm_ != 0:
+            msg = (
+                f"Crop meters does not correspond to an integer number of pixels."
+                f"Consider using {lcm_}"
+            )
             raise ValueError(msg)
 
-        for name_mod, size in sizes.items():
-            if size % size_min != 0:
-                msg = f"Size of raster {name_mod} not a multiple of size min."
-                raise ValueError(msg)
-
         start, end = {}, {}
-        for name_mod, mod in self.dataset.rasters.items():
-            start_mod = start_min * round(sizes[name_mod] // size_min)
-            start_mod += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
+        for name_mod, mod in res.items():
+            size = round(self.dataset.ground_meters / (mod / 100))
+            nb_pixels = int(self.dataset.crop_meters * 100 / res[name_mod])
+
+            start_min = self.rng.integers(
+                low=0,
+                high=size - nb_pixels + 1,
+                size=2,
+            )
+
+            start_min += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
+            start_mod = start_min
+
             start_mod_date = self.rng.integers(
                 low=0,
-                high=sizes_date[name_mod] % mod.num_dates + 1,
+                high=sizes_date[name_mod] % self.dataset.rasters[name_mod].num_dates
+                + 1,
             )
             start[name_mod] = (*start_mod, start_mod_date)
-
-            end_mod = start_mod + round(crop_min) * round(sizes[name_mod] // size_min)
-            end_mod_date = start_mod_date + mod.num_dates * (
-                sizes_date[name_mod] // mod.num_dates
+            end_mod = start_min + nb_pixels
+            end_mod_date = start_mod_date + self.dataset.rasters[name_mod].num_dates * (
+                sizes_date[name_mod] // self.dataset.rasters[name_mod].num_dates
             )
             end[name_mod] = (*end_mod, end_mod_date)
 
-        # read raster slices
         inputs = {}
         for name_mod, mod in self.dataset.rasters.items():
             input_mod, dates_mod = self.preprocess_raster(
@@ -89,6 +91,7 @@ class GenericDataset(Dataset, ABC):
                 meta.get(f"{name_mod}_h5_mask", None),
                 start[name_mod],
                 end[name_mod],
+                meta.get(f"{name_mod}_stacked_dates", None),
                 **vars(mod),
             )
             inputs[name_mod] = input_mod
@@ -96,7 +99,7 @@ class GenericDataset(Dataset, ABC):
 
         return inputs
 
-    def preprocess_raster(
+    def preprocess_raster(  # noqa: PLR0915
         self,
         path_mod: Path,
         dates_mod: np.ndarray,
@@ -105,6 +108,7 @@ class GenericDataset(Dataset, ABC):
         h5_mask: str | None,
         start: tuple[int],
         end: tuple[int],
+        stacked_dates: bool | None,
         bands: int | list[int],
         num_dates: int = 1,
         mask_threshold: float = 100.0,  # threshold on percentage cover
@@ -123,6 +127,8 @@ class GenericDataset(Dataset, ABC):
         match path_mod.suffix:
             case ".tif" | ".png" | ".jpg" | ".jpeg":
                 with rasterio.open(path_mod) as src:
+                    if stacked_dates:
+                        bands = bands * len(dates_mod)
                     bands = range(1, bands + 1) if isinstance(bands, int) else bands
                     window = Window(
                         start[1],
@@ -133,6 +139,17 @@ class GenericDataset(Dataset, ABC):
                     input_mod = src.read(bands, window=window)
                     input_mod = input_mod.reshape(
                         (len(dates_mod), -1, *input_mod.shape[1:]),
+                    )
+                if use_mask and mask is not None:
+                    bands = len(dates_mod) * 2
+                    bands = range(1, bands + 1)
+                    with rasterio.open(mask) as src:
+                        mask_mod = src.read(bands, window=window)
+                        mask_mod = mask_mod.reshape(
+                            (len(dates_mod), -1, *mask_mod.shape[1:]),
+                        )
+                    mask_mod = mask_mod.reshape(
+                        (len(dates_mod), *mask_mod.shape[1:]),
                     )
             case ".npy":
                 npy_file = np.load(path_mod, mmap_mode="r")

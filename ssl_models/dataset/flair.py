@@ -30,6 +30,17 @@ class FLAIRDataset(GenericDataset):
 
         patch_ids = csv_data["patch_id"].tolist()
 
+        deps = {x.split("_", maxsplit=1)[0] for x in patch_ids}
+        dpkg_dep_dates = {}
+        for dep in deps:
+            dpkg_dep_dates[dep] = {}
+            for mod in ["aerial", "spot"]:
+                dpkg_dep_dates[dep][mod] = gpd.read_file(
+                    root_dir / f"{dep}_ALL_MTD" / f"{dep}_{mod.upper()}_MTD_DATES.gpkg",
+                    columns=["patch_id", "date"],
+                    ignore_geometry=True,
+                )
+
         self.root_dir = root_dir
         self.patch_ids = patch_ids
 
@@ -42,15 +53,11 @@ class FLAIRDataset(GenericDataset):
             "s1_asc": "sentinel1-asc_ts",
             "s1_desc": "sentinel1-desc_ts",
             "flair_cosia": "aerial_label-cosia",
-            # "flair_lpis": "all_label-lpis"
+            "flair_lpis": "all_label-lpis",
         }
 
         self.mod_mtd_json = ["s1_asc", "s1_desc", "s2"]
-        self.mod_mtd_gpkg = [
-            "aerial",
-            "aerial_rlt",
-            "spot",
-        ]
+        self.dep_mtd_dpkg = dpkg_dep_dates
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
@@ -61,73 +68,57 @@ class FLAIRDataset(GenericDataset):
 
         # tif images
         for mod, mod_name in self.mod_names_match.items():
-            if mod == "aerial_rlt":
-                meta[f"{mod}_path"] = (
-                    self.root_dir
-                    / f"{patch_domain.split('-')[0]}-195X_{mod_name.upper()}"
-                    / patch_area
-                    / f"{patch_domain}_{mod_name.upper()}_{patch_area}_{patch_position}.tif"
+            meta[f"{mod}_path"] = (
+                self.root_dir
+                / f"{patch_domain}_{mod_name.upper()}"
+                / patch_area
+                / (
+                    f"{patch_domain}_{mod_name.upper()}"
+                    f"_{patch_area}_{patch_position}.tif"
                 )
-            else:
-                meta[f"{mod}_path"] = (
-                    self.root_dir
-                    / f"{patch_domain}_{mod_name.upper()}"
-                    / patch_area
-                    / f"{patch_domain}_{mod_name.upper()}_{patch_area}_{patch_position}.tif"
-                )
+            )
+
         # mtd json
         for mod in self.mod_mtd_json:
-            mtd_filename = (
-                patch_metadata_dir
-                / f"{patch_domain}_{self.mod_names_match[mod].split('_')[0].upper()}_MTD_DATES.json"
+            mtd_filename = patch_metadata_dir / (
+                f"{patch_domain}_"
+                f"{self.mod_names_match[mod].split('_')[0].upper()}_MTD_DATES.json"
             )
-            with open(mtd_filename) as file:
+            with mtd_filename.open() as file:
                 dates_dict = json.load(file)[f"{patch_domain}_{patch_area}"]
             meta[f"{mod}_dates"] = dict_datetimes(dates_dict, start=1)
 
         # mtd gpkg
-        for mod in self.mod_mtd_gpkg:
-            if mod == "aerial_rlt":
-                mtd_filename = (
-                    patch_metadata_dir
-                    / f"{patch_domain.split('-')[0]}-195X_{self.mod_names_match[mod].split('_')[0].upper()}_MTD_DATES.gpkg"
-                )
-            else:
-                mtd_filename = (
-                    patch_metadata_dir
-                    / f"{patch_domain}_{self.mod_names_match[mod].split('_')[0].upper()}_MTD_DATES.gpkg"
-                )
-            mtd = gpd.read_file(mtd_filename)
-            mtd = mtd.set_index("patch_id")
-            if mod == "aerial_rlt":
-                date_start = strs_datetimes(
-                    [mtd.loc[
-                        f"{patch_domain}_{patch_area}_{patch_position}",
-                        "date_start",
-                    ]],
-                    format_="%Y%m%d"
-                )
-                date_end = strs_datetimes(
-                    [mtd.loc[
-                        f"{patch_domain}_{patch_area}_{patch_position}",
-                        "date_end",
-                    ]],
-                    format_="%Y%m%d" 
-                )
-                meta[f"{mod}_dates"] = date_start + (date_end - date_start) / 2
-            else:
-                meta[f"{mod}_dates"] = strs_datetimes(
-                    [mtd.loc[f"{patch_domain}_{patch_area}_{patch_position}", "date"]],
-                    format_="%Y%m%d"
-                )
+        mtd_aerial = self.dep_mtd_dpkg[patch_domain]["aerial"].set_index("patch_id")
+        mtd_spot = self.dep_mtd_dpkg[patch_domain]["spot"].set_index("patch_id")
+        meta["aerial_dates"] = strs_datetimes(
+            [mtd_aerial.loc[f"{patch_domain}_{patch_area}_{patch_position}", "date"]],
+            format_="%Y%m%d",
+        )
+        meta["spot_dates"] = strs_datetimes(
+            [mtd_spot.loc[f"{patch_domain}_{patch_area}_{patch_position}", "date"]],
+            format_="%Y%m%d",
+        )
 
-        # meta["aerial_shift"] = 6
         meta["dem_dates"] = meta["aerial_dates"]
-        meta["flair_cosia_dates"] = meta["aerial_dates"]
-        # meta["all_label_lpis"] = None
+        for target in self.dataset.targets:
+            meta[f"{target}_dates"] = meta["aerial_dates"]
+
+        meta["s2_mask"] = (
+            self.root_dir
+            / f"{patch_domain}_SENTINEL2_MSK-SC"
+            / patch_area
+            / f"{patch_domain}_SENTINEL2_MSK-SC_{patch_area}_{patch_position}.tif"
+        )
+        meta["s2_stacked_dates"] = True
+        meta["s1_asc_stacked_dates"] = True
+        meta["s1_desc_stacked_dates"] = True
+
         inputs = self.preprocess_rasters(meta)
         inputs["ref_date"] = meta["aerial_dates"]
-        inputs["flair_cosia"] -= 1
+
+        if "flair_cosia" in inputs:
+            inputs["flair_cosia"] -= 1
 
         return inputs
 

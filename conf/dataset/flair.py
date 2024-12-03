@@ -15,22 +15,24 @@ from ssl_models.dataset.flair import FLAIRDataset
 class FLAIRConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "FLAIR-INC_TOY"
     weight: float = 1.0
-    crop_meters: float = 500 * 0.2  # TODO
+    crop_meters: float = 256 * 0.2
     ref_input: str | None = "aerial"
 
     filter_inputs: list[str] = field(
         default_factory=lambda: [
             "aerial",
-            "aerial_rlt",
             "dem",
             "spot",
             "s2",
             "s1_asc",
-            "s1_desc"
+            "s1_desc",
         ],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["flair_cosia"],
+        default_factory=lambda: [
+            "flair_cosia",
+            # "flair_lpis"
+        ],
     )  # selected target modalities
 
     aerial: InputRasterConfig = field(
@@ -41,16 +43,6 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             norm_fac=255.0,
         ),
     )
-
-    aerial_rlt: InputRasterConfig = field(
-        default_factory=lambda: InputRasterConfig(
-            image_size=256,
-            patch_size=PatchSizeConfig(mae=16, mixmae=4),
-            bands=4,
-            norm_fac=255.0,
-        ),
-    )
-
     dem: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=256,
@@ -100,7 +92,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = FLAIRDataset
-        self.ground_meters = 500 * 0.2
+        self.ground_meters = 102.4
 
         self.flair_cosia = TargetRasterConfig(
             type_target="segment",
@@ -108,15 +100,23 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             missing_val=-1,
             bands=1,
         )
+
+        self.flair_lpis = TargetRasterConfig(
+            type_target="segment",
+            num_classes=45,
+            missing_val=-1,
+            bands=1,
+        )
+
         super().__post_init__(
-            resolutions_meters={  # TODO
+            resolutions_meters={
                 "flair_cosia": 0.2,
+                "flair_lpis": 0.2,
                 "aerial": 0.2,
-                "aerial_rlt": 0.4,
                 "dem": 0.2,
                 "spot": 1.6,
-                "s2": 10,
-                "s1_asc": 10,
-                "s1_desc": 10,
+                "s2": 10.24,
+                "s1_asc": 10.24,
+                "s1_desc": 10.24,
             },
         )
