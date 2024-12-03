@@ -1,6 +1,7 @@
 """Utils module."""
 
 import itertools
+from typing import Literal
 
 import numpy as np
 import torch
@@ -41,37 +42,77 @@ def shuffle_enc_to_dec(x: dict[str, Tensor]) -> dict[str, Tensor]:
     return x_dec
 
 
-def flatten_dates(
-    tensor_dict: dict[str, Tensor],
-    dim: int,
+def group_mods(
+    x: dict[str, Tensor],
+    multimodal: Literal["msgfm", "shared", "mod", "group"],
+    groups: list[tuple],
 ) -> dict[str, Tensor]:
-    """Flatten date dimension in tensor dict."""
-    for name_mod in tensor_dict:
-        tensor_dict[name_mod] = tensor_dict[name_mod].flatten(dim, dim + 1)
-    return tensor_dict
+    """Group modality sequences."""
+    match multimodal:
+        case "msgfm" | "shared":
+            dim = 0
+            groups = None
+        case "mod":
+            dim = 1
+            groups = None
+        case "group":
+            dim = 1
+
+    x = {name_mod: x_mod.flatten(dim, dim + 1) for name_mod, x_mod in x.items()}
+
+    if groups is not None:
+        x_group = {}
+        for name_mod, name_group in groups:
+            if name_group not in x_group:
+                x_group[name_group] = []
+            x_group[name_group].append(x[name_mod])
+        return {
+            name_group: torch.cat(x_group[name_group], dim=1) for name_group in x_group
+        }
+
+    return x
 
 
-def unflatten_dates(
-    tensor_dict: dict[str, Tensor],
-    dim: int,
+def ungroup_mods(
+    x_group: dict[str, Tensor],
+    multimodal: Literal["msgfm", "shared", "mod", "group"],
+    groups: list[tuple],
     num_dates: dict[str, int],
 ) -> dict[str, Tensor]:
-    """Unflatten date dimension in tensor dict."""
-    for name_mod in tensor_dict:
+    """Ungroup modality sequences."""
+    match multimodal:
+        case "msgfm" | "shared":
+            dim = 0
+            groups = None
+        case "mod":
+            dim = 1
+            groups = None
+        case "group":
+            dim = 1
+
+    if groups is not None:
+        group_to_mods = {}
+        for name_mod, name_group in groups:
+            if name_group not in group_to_mods:
+                group_to_mods[name_group] = []
+            group_to_mods[name_group].append(name_mod)
+
+        x = {}
+        for name_group in x_group:
+            name_mods = group_to_mods[name_group]
+            x_mods = torch.tensor_split(x_group[name_group], len(name_mods), dim=1)
+            for name_mod, x_mod in zip(name_mods, x_mods):
+                x[name_mod] = x_mod
+    else:
+        x = x_group
+
+    for name_mod in x:
         if dim == 0:
-            tensor_dict[name_mod] = tensor_dict[name_mod].unflatten(
-                0,
-                (-1, num_dates[name_mod]),
-            )
+            x[name_mod] = x[name_mod].unflatten(0, (-1, num_dates[name_mod]))
         elif dim == 1:
-            tensor_dict[name_mod] = tensor_dict[name_mod].unflatten(
-                1,
-                (num_dates[name_mod], -1),
-            )
-        else:
-            msg = f"Invalid dimension {dim} to unflatten"
-            raise ValueError(msg)
-    return tensor_dict
+            x[name_mod] = x[name_mod].unflatten(1, (num_dates[name_mod], -1))
+
+    return x
 
 
 def reshape_encoding(encoding: Tensor, grid_size: int) -> Tensor:
@@ -99,6 +140,7 @@ def encode_dates(
     date_dim: int,
     fac_date_enc: float,
     grid_size: int,
+    bands: list[list[int]] | int,
 ) -> Tensor:
     """Encode day of year, hour of day, and difference to reference date."""
     dates = dates.reshape(dates.shape + (1,) * (5 - dates.ndim))
@@ -115,7 +157,8 @@ def encode_dates(
     doy = 2 * np.pi * doy
     hour = 2 * np.pi * hour
     date_encoding = torch.stack(
-        [diff] * 4 + [
+        [
+            diff,
             torch.sin(doy),
             torch.cos(doy),
             torch.sin(hour),
@@ -126,8 +169,14 @@ def encode_dates(
     date_encoding = reshape_encoding(date_encoding, grid_size=grid_size)
     date_encoding *= fac_date_enc
 
-    date_encoding = date_encoding.tile(dims=(1, 1, 1, dim // (2 * 8)))
-    return torch.cat([torch.zeros_like(date_encoding), date_encoding], dim=-1)
+    diff, date_encoding = torch.split(date_encoding, [1, 4], dim=-1)
+    pad_zeros = torch.zeros_like(diff).expand(-1, -1, -1, dim - date_dim)
+    pad_diff = diff.expand(-1, -1, -1, date_dim - 4)
+    date_encoding = torch.cat([pad_zeros, pad_diff, date_encoding], dim=-1)
+
+    if isinstance(bands, int):
+        return date_encoding
+    return torch.repeat_interleave(date_encoding, len(bands), dim=1)
 
 
 def posemb_sincos_2d(

@@ -1,13 +1,46 @@
 """Patchify/pixelify layers."""
 
-from einops import rearrange
+import torch
+from einops import rearrange, repeat
 from torch import Tensor, nn
 
 from ssl_models.layers.utils import downsamplings_from_patch_size
 
 
 class Patchify(nn.Module):
-    """Patchify the input cube & create embeddings per patch."""
+    """Patchify the input cube & create embeddings."""
+
+    def __init__(
+        self,
+        bands: int | list[list[int]],
+        embed_dim: int,
+        patch_size: int,
+        unpool: bool,
+    ) -> None:
+        super().__init__()
+        self.num_bands = [bands] if isinstance(bands, int) else list(map(len, bands))
+        self.patchify_bands = nn.ModuleList(
+            [
+                PatchifyBands(
+                    embed_dim=embed_dim,
+                    in_chans=in_chans,
+                    patch_size=patch_size,
+                    unpool=unpool,
+                )
+                for in_chans in self.num_bands
+            ],
+        )
+
+    def forward(self, x: Tensor) -> tuple[Tensor, list[list[Tensor]]]:
+        x = torch.split(x, self.num_bands, dim=2)
+        x, inds = zip(
+            *[self.patchify_bands[idx](x[idx]) for idx, _ in enumerate(x)],
+        )
+        return torch.cat(x, dim=1), list(inds)
+
+
+class PatchifyBands(nn.Module):
+    """Patchify the input cube & create embeddings per patch/bands."""
 
     def __init__(
         self,
@@ -76,10 +109,10 @@ class Patchify(nn.Module):
             )
             self.norm = nn.GroupNorm(1, embed_dim)
 
-    def forward(self, xb: Tensor) -> tuple[Tensor, list[Tensor]]:
-        _, D, _, H, W = xb.shape  # noqa: N806
-        xb = rearrange(xb, "b d c hp1 wp2 -> (b d) c hp1 wp2")
-        skip = self.conv_skip(xb)
+    def forward(self, x: Tensor) -> tuple[Tensor, list[Tensor]]:
+        _, D, _, H, W = x.shape  # noqa: N806
+        x = rearrange(x, "b d c hp1 wp2 -> (b d) c hp1 wp2")
+        skip = self.conv_skip(x)
         skip = self.norm_skip(skip)
         skip = rearrange(
             skip,
@@ -88,35 +121,91 @@ class Patchify(nn.Module):
 
         inds = []
         if self.unpool:
-            xb = rearrange(
-                xb,
+            x = rearrange(
+                x,
                 "bd c (h p1) (w p2) -> (bd h w) c p1 p2",
                 p1=self.patch_size,
                 p2=self.patch_size,
             )
             for idx, _ in enumerate(self.downsamplings):
-                xb = self.convs[idx](xb)
-                xb = self.norms[idx](xb)
-                xb, ind = self.max_pool[idx](xb)
+                x = self.convs[idx](x)
+                x = self.norms[idx](x)
+                x, ind = self.max_pool[idx](x)
                 inds.append(ind)
 
-            xb = self.conv(xb)
-            xb = self.norm(xb)
-            xb = xb + skip
+            x = self.conv(x)
+            x = self.norm(x)
+            x = x + skip
         else:
-            xb = skip
-        xb = rearrange(
-            xb,
+            x = skip
+        x = rearrange(
+            x,
             "(b d h w) c 1 1 -> b d (h w) c",
             d=D,
             h=H // self.patch_size,
             w=W // self.patch_size,
         )
-        return xb, inds
+        return x, inds
 
 
 class Pixelify(nn.Module):
-    """Pixelify for reconstruction."""
+    """Pixelify per patch."""
+
+    def __init__(
+        self,
+        embed_dim: int,
+        bands: int | list[list[int]],
+        patch_size: int,
+        unpool: bool,
+    ) -> None:
+        super().__init__()
+        self.patch_size = patch_size
+        self.num_bands = [bands] if isinstance(bands, int) else list(map(len, bands))
+        self.pixelify_bands = nn.ModuleList(
+            [
+                PixelifyBands(
+                    embed_dim=embed_dim,
+                    out_chans=out_chans,
+                    patch_size=patch_size,
+                    unpool=unpool,
+                )
+                for out_chans in self.num_bands
+            ],
+        )
+
+    def forward(
+        self,
+        x: Tensor,
+        mask: Tensor,
+        inds: list[list[Tensor]],
+    ) -> tuple[Tensor, Tensor]:
+        x = rearrange(x, "b (d g) l c -> g b d l c", g=len(self.num_bands))
+        mask = repeat(
+            mask,
+            "b (d g) (h w) c -> g b d c (h p1) (w p2)",
+            g=len(self.num_bands),
+            p1=self.patch_size,
+            p2=self.patch_size,
+            h=round(mask.shape[2] ** 0.5),
+        )
+
+        x_rec, mask_rec = [], []
+        for idx, pixelify in enumerate(self.pixelify_bands):
+            x_rec.append(pixelify(x[idx], inds[idx]))
+            mask_rec.append(mask[idx].expand((-1, -1, self.num_bands[idx], -1, -1)))
+
+        if len(self.num_bands) > 1:
+            x_rec = torch.cat(x_rec, dim=2)
+            mask_rec = torch.cat(mask_rec, dim=2)
+        else:
+            x_rec = x_rec.pop()
+            mask_rec = mask_rec.pop()
+
+        return x_rec, mask_rec
+
+
+class PixelifyBands(nn.Module):
+    """Pixelify per patch/bands."""
 
     def __init__(
         self,
@@ -178,17 +267,17 @@ class Pixelify(nn.Module):
 
     def forward(
         self,
-        xb: Tensor,
+        x: Tensor,
         inds: list[Tensor],
     ) -> Tensor:
-        B, D, L, _ = xb.shape  # noqa: N806
+        B, D, L, _ = x.shape  # noqa: N806
         H = round(L**0.5)  # noqa: N806
 
-        xb = rearrange(
-            xb,
+        x = rearrange(
+            x,
             "b d l c -> (b d l) c 1 1",
         )
-        skip = self.conv_skip(xb)
+        skip = self.conv_skip(x)
         skip = rearrange(
             skip,
             "bdl (p1 p2 c) 1 1 -> bdl c p1 p2",
@@ -196,19 +285,19 @@ class Pixelify(nn.Module):
             p2=self.patch_size,
         )
         if self.unpool:
-            xb = self.conv(xb)
-            xb = self.norm(xb)
+            x = self.conv(x)
+            x = self.norm(x)
             for idx, ind in enumerate(inds[::-1]):
-                xb = self.max_unpool[idx](xb, ind)
-                xb = self.convs[idx](xb)
-                xb = self.norms[idx](xb)
-            xb = self.fc(xb)
-            xb = xb + skip
+                x = self.max_unpool[idx](x, ind)
+                x = self.convs[idx](x)
+                x = self.norms[idx](x)
+            x = self.fc(x)
+            x = x + skip
         else:
-            xb = skip
+            x = skip
 
         return rearrange(
-            xb,
+            x,
             "(b d h w) c p1 p2 -> b d c (h p1) (w p2)",
             b=B,
             d=D,

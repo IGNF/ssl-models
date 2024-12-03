@@ -36,11 +36,7 @@ class MAE(BaseMIM):
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
-        shuffle_mods: bool = False,
-        mask_indep: bool = True,
-        mask_shared: bool = True,
-        encoder: Literal["shared", "mod", "multimodal"] = "shared",
-        decoder: Literal["shared", "mod", "multimodal"] = "shared",
+        multimodal: Literal["msgfm", "shared", "mod", "group"] = "mod",
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
@@ -55,14 +51,43 @@ class MAE(BaseMIM):
             norm_pix_loss=norm_pix_loss,
             fac_abs_enc=fac_abs_enc,
             fac_date_enc=fac_date_enc,
-            shuffle_mods=shuffle_mods,
-            mask_indep=mask_indep,
-            mask_shared=mask_shared,
+            multimodal=multimodal,
         )
-        self.mask_ratio = {
-            name_mod: mask_ratio if mask_indep else 1 - (1 - mask_ratio) / mod.num_dates
-            for name_mod, mod in datasets.dataset.inputs.items()
-        }
+
+        num_dates_mod, num_dates_group = {}, {}
+        for name_mod, name_group in datasets.dataset.groups:
+            mod = datasets.dataset.inputs[name_mod]
+            num_dates = (
+                mod.num_dates
+                if isinstance(mod.bands, int)
+                else mod.num_dates * len(mod.bands)
+            )
+            if name_mod not in num_dates_mod:
+                num_dates_mod[name_mod] = 0
+            if name_group not in num_dates_group:
+                num_dates_group[name_group] = 0
+            num_dates_mod[name_mod] += num_dates
+            num_dates_group[name_group] += num_dates
+
+        match multimodal:
+            case "msgfm" | "shared":
+                name_models = ["shared"]
+                self.mask_ratio = {name_mod: mask_ratio for name_mod in num_dates_mod}
+            case "mod":
+                name_models = list(num_dates_mod.keys())
+                self.mask_ratio = {
+                    name_mod: 1 - (1 - mask_ratio) / float(num_dates)
+                    for name_mod, num_dates in num_dates_mod.items()
+                }
+            case "group":
+                name_models = list(num_dates_group.keys())
+                self.mask_ratio = {
+                    name_group: 1 - (1 - mask_ratio) / float(num_dates)
+                    for name_group, num_dates in num_dates_group.items()
+                }
+            case _:
+                msg = f"Invalid multimodal mode {multimodal}."
+                raise ValueError(msg)
 
         self.encoder = nn.ModuleDict(
             {
@@ -73,11 +98,7 @@ class MAE(BaseMIM):
                     dim_head=dim_head,
                     mlp_dim=embed_dim * mlp_ratio,
                 )
-                for name_mod in (
-                    (encoder,)
-                    if encoder in ("shared", "multimodal")
-                    else datasets.dataset.inputs
-                )
+                for name_mod in name_models
             },
         )
         self.enc_to_dec = nn.ModuleDict(
@@ -87,9 +108,7 @@ class MAE(BaseMIM):
                     if embed_dim != decoder_dim
                     else nn.Identity()
                 )
-                for name_mod in (
-                    ("shared",) if mask_shared else datasets.dataset.inputs
-                )
+                for name_mod in name_models
             },
         )
         self.decoder = nn.ModuleDict(
@@ -101,15 +120,16 @@ class MAE(BaseMIM):
                     dim_head=decoder_dim_head,
                     mlp_dim=embed_dim * decoder_mlp_ratio,
                 )
-                for name_mod in (
-                    (decoder,)
-                    if decoder in ("shared", "multimodal")
-                    else datasets.dataset.inputs
-                )
+                for name_mod in name_models
             },
         )
 
-    def mask_mod(self, x: Tensor, name_mod: str) -> tuple[Tensor, None, Tensor]:
+    def mask_group(
+        self,
+        x: Tensor,
+        mask: Tensor,
+        name_group: str,
+    ) -> tuple[Tensor, Tensor, None, Tensor]:
         """Mask sequence."""
         B, L, _ = x.shape  # noqa: N806
 
@@ -119,7 +139,7 @@ class MAE(BaseMIM):
         reverse_indices = torch.argsort(random_indices, dim=-1)
 
         num_masked_patches = round(
-            self.mask_ratio[name_mod] * L,
+            self.mask_ratio[name_group] * L,
         )  # Number of patches to mask
         mask_rec = torch.zeros((B, L), dtype=x.dtype, device=x.device)
         mask_rec[:, :num_masked_patches] = 1
@@ -132,12 +152,15 @@ class MAE(BaseMIM):
 
         # encode only unmasked tokens
         batch_indices = rearrange(torch.arange(B, device=x.device), "b -> b 1")
-        unmasked_indices = random_indices[:, num_masked_patches:]
-        unmasked_indices, _ = unmasked_indices.sort(dim=1)
-        x_enc = x[batch_indices, unmasked_indices, :]  # [B L:(1 - mask_ratio) C]
-        return x_enc, None, mask_rec
+        masked_indices, _ = random_indices[:, :num_masked_patches].sort(dim=1)
+        unmasked_indices, _ = random_indices[:, num_masked_patches:].sort(dim=1)
 
-    def unmask_mod(self, x: Tensor, mask_rec: Tensor, mask_token: Tensor) -> Tensor:
+        x_enc = x[batch_indices, unmasked_indices, :]  # [B L:(1 - mask_ratio) * C]
+        mask_enc = mask[batch_indices, masked_indices, :]  # [B L: mask_ratio * C]
+
+        return x_enc, mask_enc, None, mask_rec
+
+    def unmask_group(self, x: Tensor, mask_enc: Tensor, mask_rec: Tensor) -> Tensor:
         """Unmask sequence, filling with mask token."""
         B, L_enc, C = x.shape  # noqa: N806
         _, L, _ = mask_rec.shape  # noqa: N806
@@ -155,7 +178,7 @@ class MAE(BaseMIM):
         # collate encoded patches and mask tokens
         batch_indices = rearrange(torch.arange(B, device=x.device), "b -> b 1")
         x_dec = torch.zeros((B, L, C), dtype=x.dtype, device=x.device)
-        x_dec[batch_indices, masked_indices, :] = mask_token.to(x.dtype)
+        x_dec[batch_indices, masked_indices, :] = mask_enc
         x_dec[batch_indices, unmasked_indices, :] = x
         return x_dec
 

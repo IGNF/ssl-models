@@ -24,7 +24,7 @@ class PatchSizeConfig:
 class RasterConfig:
     """Generic raster modality config."""
 
-    bands: list[int] | int = MISSING
+    bands: int | list[list[int]] = MISSING
     mask_threshold: float = 100.0
     num_dates: int = 1
     norm_fac: float | None = None
@@ -36,6 +36,7 @@ class InputConfig:
 
     image_size: int = MISSING
     patch_size: PatchSizeConfig = MISSING
+    name_group: str | None = None
 
 
 @dataclass
@@ -65,8 +66,6 @@ class InputRasterConfig(RasterConfig, InputConfig):
 class TargetRasterConfig(RasterConfig, TargetConfig):
     """Target raster modality config."""
 
-    num_dates: int = 1
-
 
 @dataclass
 class DatasetConfig:
@@ -92,6 +91,35 @@ class DatasetConfig:
             mod = getattr(self, name_mod)
             mod.resolution_meters = float(resolution_meters)
 
+    def _set_groups(self) -> list[tuple]:
+        name_groups = set()
+        groups = []
+        for name_mod, mod in self.inputs.items():
+            name_group = mod.name_group if mod.name_group is not None else name_mod
+            name_groups.add(name_group)
+            groups.append((name_mod, name_group))
+
+        for name_group in name_groups:
+            mods = (
+                mod
+                for name_mod, mod in self.inputs.items()
+                if (name_mod, name_group) in groups
+            )
+            if len({mod.num_dates for mod in mods}) > 1:
+                msg = "Grouped modalities must have the same number of dates"
+                raise ValueError(msg)
+            if len({mod.image_size for mod in mods}) > 1:
+                msg = "Grouped modalities must have the same image sizes"
+                raise ValueError(msg)
+            if (
+                len({mod.patch_size.mae for mod in mods}) > 1
+                or len({mod.patch_size.mixmae for mod in mods}) > 1
+            ):
+                msg = "Grouped modalities must have the same patch sizes"
+                raise ValueError(msg)
+
+        return groups
+
     def __post_init__(self, resolutions_meters: dict[str, int]) -> None:
         """Check validity of modalities and further define non configurable attrs."""
         self._set_resolutions(resolutions_meters)
@@ -116,16 +144,19 @@ class DatasetConfig:
             if isinstance(mod, RasterConfig)
         }
 
+        self.groups = self._set_groups()
+
         if self.ref_input is not None:
+            if any(name_mod not in self.rasters for name_mod in self.targets):
+                msg = "All targets should be rasters when ref input is provided."
+                raise ValueError(msg)
             if self.ref_input not in self.filter_inputs:
                 msg = (
                     f"Invalid reference input {self.ref_input}."
                     f"Expected one of {self.filter_inputs}"
                 )
                 raise ValueError(msg)
-            if self.inputs[self.ref_input].num_dates != 1:
-                msg = (
-                    f"Invalid number of dates for reference input {self.ref_input}."
-                    f"Expected single date."
-                )
+        else:  # noqa: PLR5501
+            if any(name_mod in self.rasters for name_mod in self.targets):
+                msg = "None of the targets should be rasters when ref input is None."
                 raise ValueError(msg)

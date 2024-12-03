@@ -25,7 +25,7 @@ NDIM_RASTER = 5  # (batch, dates, channels, height, width)
 class SSLModule(LightningModule):
     """SSL module."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         # shared args
         datasets: DatasetsConfig,
@@ -43,11 +43,7 @@ class SSLModule(LightningModule):
         v2_attn: bool = True,
         swin_abs_enc: bool = False,
         use_date_enc: bool = True,
-        shuffle_mods: bool = False,
-        mask_indep: bool = True,
-        mask_shared: bool = True,
-        encoder: Literal["shared", "mod", "multimodal"] = "shared",
-        decoder: Literal["shared", "mod", "multimodal"] = "shared",
+        multimodal: Literal["msgfm", "shared", "mod", "group"] = "mod",
     ) -> None:
         super().__init__()
 
@@ -116,11 +112,7 @@ class SSLModule(LightningModule):
                 "norm_pix_loss": norm_pix_loss,
                 "fac_abs_enc": fac_abs_enc,
                 "fac_date_enc": fac_date_enc,
-                "shuffle_mods": shuffle_mods,
-                "mask_indep": mask_indep,
-                "mask_shared": mask_shared,
-                "encoder": encoder,
-                "decoder": decoder,
+                "multimodal": multimodal,
             }
             self.model = model_map[model_size](**model_args)
         else:

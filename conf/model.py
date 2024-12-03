@@ -19,11 +19,7 @@ class ModelConfig:  # noqa: D101
     nb_mix_images: int = 4
     swin_abs_enc: bool = False
     use_date_enc: bool = True
-    shuffle_mods: bool = False
-    mask_indep: bool = False
-    mask_shared: bool = False
-    encoder: str = "mod"
-    decoder: str = "mod"
+    multimodal: str = "mod"
 
 
 model_store = store(group="model")

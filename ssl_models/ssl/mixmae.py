@@ -50,11 +50,7 @@ class MixMAE(BaseMIM):
         drop_path_rate: float = 0.0,
         pretrained_window_sizes: tuple[int, int, int, int] = [0, 0, 0, 0],
         use_checkpoint: bool = False,
-        shuffle_mods: bool = False,
-        mask_indep: bool = True,
-        mask_shared: bool = True,
-        encoder: Literal["shared", "mod", "multimodal"] = "shared",
-        decoder: Literal["shared", "mod", "multimodal"] = "shared",
+        multimodal: Literal["msgfm", "shared", "mod", "group"] = "mod",
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
@@ -69,16 +65,17 @@ class MixMAE(BaseMIM):
             norm_pix_loss=norm_pix_loss,
             fac_abs_enc=fac_abs_enc,
             fac_date_enc=fac_date_enc,
-            shuffle_mods=shuffle_mods,
-            mask_indep=mask_indep,
-            mask_shared=mask_shared,
+            multimodal=multimodal,
         )
-        if not mask_indep:
-            msg = "Dependent masking not yet implemented with MixMAE."
-            raise NotImplementedError(msg)
-        if encoder == "multimodal":
-            msg = "Multimodal encoder not yet implemented with MixMAE."
-            raise NotImplementedError(msg)
+        match multimodal:
+            case "msgfm" | "shared":
+                name_models = ["shared"]
+            case "mod" | "group":
+                msg = "Group SSL not yet implemented with MixMAE."
+                raise NotImplementedError(msg)
+            case _:
+                msg = f"Invalid multimodal mode {multimodal}."
+                raise ValueError(msg)
 
         self.nb_mix_images = nb_mix_images
         self.stride = 2 ** (num_levels - 1)
@@ -125,31 +122,17 @@ class MixMAE(BaseMIM):
                             nb_mix_images=nb_mix_images,
                             v2_attn=v2_attn,
                         )
-                        for name_mod in (
-                            ("shared",)
-                            if encoder == "shared"
-                            else datasets.dataset.inputs
-                        )
+                        for name_mod in name_models
                     },
                 )
                 for idx_layer in range(num_levels)
             ],
         )
         self.encoder_norm = nn.ModuleDict(
-            {
-                name_mod: nn.LayerNorm(encoder_dim)
-                for name_mod in (
-                    ("shared",) if encoder == "shared" else datasets.dataset.inputs
-                )
-            },
+            {name_mod: nn.LayerNorm(encoder_dim) for name_mod in name_models},
         )
         self.enc_to_dec = nn.ModuleDict(
-            {
-                name_mod: nn.Linear(encoder_dim, decoder_dim)
-                for name_mod in (
-                    ("shared",) if mask_shared else datasets.dataset.inputs
-                )
-            },
+            {name_mod: nn.Linear(encoder_dim, decoder_dim) for name_mod in name_models},
         )
         self.decoder_blocks = nn.ModuleList(
             [
@@ -162,26 +145,21 @@ class MixMAE(BaseMIM):
                             qkv_bias=True,
                             norm_layer=nn.LayerNorm,
                         )
-                        for name_mod in (
-                            ("shared",)
-                            if decoder == "shared"
-                            else datasets.dataset.inputs
-                        )
+                        for name_mod in name_models
                     },
                 )
                 for _ in range(decoder_depth)
             ],
         )
         self.decoder_norm = nn.ModuleDict(
-            {
-                name_mod: nn.LayerNorm(decoder_dim)
-                for name_mod in (
-                    ("shared",) if decoder == "shared" else datasets.dataset.inputs
-                )
-            },
+            {name_mod: nn.LayerNorm(decoder_dim) for name_mod in name_models},
         )
 
-    def mask_mod(self, x: Tensor, name_mod: str) -> tuple[Tensor, Tensor, Tensor]:
+    def mask_mod(
+        self,
+        x: Tensor,
+        name_group: str,  # noqa: ARG002
+    ) -> tuple[Tensor, Tensor, Tensor]:
         """Mix sequence."""
         B_out, L, C = x.shape  # noqa: N806
         H, W = round(L**0.5), round(L**0.5)  # noqa: N806
@@ -249,12 +227,12 @@ class MixMAE(BaseMIM):
         mask_attn: dict[str, Tensor | None],
         model: nn.Module,
     ) -> dict[str, Tensor]:
-        """Apply MAE encoder."""
-        for name_mod in x:
-            model_mod = model[name_mod] if name_mod in model else model["shared"]
-            x[name_mod], mask_attn[name_mod] = model_mod(
-                x[name_mod],
-                mask_attn[name_mod],
+        """Apply encoder."""
+        for name_group in x:
+            model_group = model[name_group] if name_group in model else model["shared"]
+            x[name_group], mask_attn[name_group] = model_group(
+                x[name_group],
+                mask_attn[name_group],
             )
         return x, mask_attn
 

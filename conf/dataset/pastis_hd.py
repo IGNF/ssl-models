@@ -70,7 +70,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
             type_target="segment",
             num_classes=19,
             missing_val=19,
-            bands=[0],
+            bands=1,
         )
         super().__post_init__(
             resolutions_meters={

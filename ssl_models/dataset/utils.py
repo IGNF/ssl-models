@@ -15,7 +15,10 @@ def dates_numpy(dates: list[datetime]) -> np.ndarray:
 
 def strs_datetimes(date_strs: list[str], format_: str = "%Y-%m-%d") -> np.ndarray:
     """Convert list of strs to list of datetimes."""
-    datetimes = [datetime.strptime(date_str, format_) for date_str in date_strs]  # noqa: DTZ007
+    datetimes = [
+        datetime.strptime(date_str, "%Y-%m-%d")  # noqa: DTZ007
+        for date_str in date_strs
+    ]
     return dates_numpy(datetimes)
 
 

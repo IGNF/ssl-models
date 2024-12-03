@@ -107,7 +107,7 @@ class GenericDataset(Dataset, ABC):
         h5_mask: str | None,
         start: tuple[int],
         end: tuple[int],
-        bands: int | list[int],
+        bands: int | list[list[int]],
         num_dates: int = 1,
         mask_threshold: float = 100.0,  # threshold on percentage cover
         norm_fac: float | None = None,
@@ -119,7 +119,11 @@ class GenericDataset(Dataset, ABC):
             slice(start[1], end[1]),
             slice(start[2], end[2]),
         )
-        bands = range(bands) if isinstance(bands, int) else bands
+        bands = (
+            range(bands)
+            if isinstance(bands, int)
+            else [idx for band in bands for idx in band]
+        )
         use_mask = (mask_threshold / 100.0) < 1.0
         mask_mod = None  # by default, no mask is used
 
