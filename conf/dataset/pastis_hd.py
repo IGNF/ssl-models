@@ -6,6 +6,7 @@ from conf.dataset.utils import (
     DatasetConfig,
     InputRasterConfig,
     PatchSizeConfig,
+    TargetConfig,
     TargetRasterConfig,
 )
 from ssl_models.dataset.pastis_hd import PASTISHDDataset
@@ -19,10 +20,10 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     ref_input: str | None = "s2"
 
     filter_inputs: list[str] = field(
-        default_factory=lambda: ["spot", "s2", "s1_asc", "s1_des"],
+        default_factory=lambda: ["spot", "s2"],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["pastis_seg"],
+        default_factory=lambda: ["pastis_seg", "pastis_mlc"],
     )  # selected target modalities
 
     spot: InputRasterConfig = field(
@@ -36,27 +37,30 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     s2: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_size=PatchSizeConfig(mae=4, mixmae=1),
             bands=10,
             num_dates=8,
+            patch_dates=4,
             norm_fac=10000.0,
         ),
     )
     s1_asc: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_size=PatchSizeConfig(mae=4, mixmae=1),
             bands=3,
             num_dates=2,
+            patch_dates=4,
             norm_fac=20.0,
         ),
     )
     s1_des: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_size=PatchSizeConfig(mae=4, mixmae=1),
             bands=3,
             num_dates=2,
+            patch_dates=4,
             norm_fac=20.0,
         ),
     )
@@ -71,6 +75,10 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
             num_classes=19,
             missing_val=19,
             bands=1,
+        )
+        self.pastis_mlc = TargetConfig(
+            type_target="multilabel_classif",
+            num_classes=18,
         )
         super().__post_init__(
             resolutions_meters={

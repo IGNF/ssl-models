@@ -55,6 +55,16 @@ class GenericDataset(Dataset, ABC):
             )
             raise ValueError(msg)
 
+        for name_mod, size in sizes.items():
+            if size % size_min != 0:
+                msg = f"Size of raster {name_mod} not a multiple of size min."
+                raise ValueError(msg)
+
+        for name_mod, mod in self.dataset.inputs.items():
+            if mod.patch_dates and sizes[name_mod] % mod.patch_dates:
+                msg = f"Size of raster {name_mod} not a multiple of rand dates extent."
+                raise ValueError(msg)
+
         start, end = {}, {}
         for name_mod, mod in res.items():
             size = round(self.dataset.ground_meters / (mod / 100))
@@ -109,6 +119,7 @@ class GenericDataset(Dataset, ABC):
         end: tuple[int],
         bands: int | list[list[int]],
         num_dates: int = 1,
+        patch_dates: int | None = None,
         mask_threshold: float = 100.0,  # threshold on percentage cover
         norm_fac: float | None = None,
         **kwargs,  # noqa: ARG002, ANN003
@@ -175,7 +186,17 @@ class GenericDataset(Dataset, ABC):
                 input_mod = np.where(mask_mod, np.nan, input_mod)
 
             pan_mod = input_mod.sum(axis=2, keepdims=True)
-            pan_mod = 0 * pan_mod + self.rng.random(pan_mod.shape)
+            if patch_dates:
+                pan_mod = self.rng.random(
+                    (
+                        *pan_mod.shape[:-2],
+                        pan_mod.shape[-2] // patch_dates,
+                        pan_mod.shape[-1] // patch_dates,
+                    ),
+                )
+                pan_mod = np.repeat(pan_mod, repeats=patch_dates, axis=-2)
+                pan_mod = np.repeat(pan_mod, repeats=patch_dates, axis=-1)
+
             mid_finite = np.isfinite(pan_mod).sum(axis=1, keepdims=True)
             mid_finite = np.floor_divide(mid_finite, 2)
             median_inds = np.argsort(pan_mod, axis=1)

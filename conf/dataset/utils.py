@@ -36,6 +36,7 @@ class InputConfig:
 
     image_size: int = MISSING
     patch_size: PatchSizeConfig = MISSING
+    patch_dates: int | None = None
     name_group: str | None = None
 
 
