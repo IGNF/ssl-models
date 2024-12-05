@@ -53,7 +53,9 @@ class BaseMIM(nn.Module, ABC):
 
         # patchify and pixelify
         self.num_bands = {
-            name_mod: [mod.bands] if isinstance(mod.bands, int) else list(map(len, mod.bands))
+            name_mod: (
+                [mod.bands] if isinstance(mod.bands, int) else list(map(len, mod.bands))
+            )
             for name_mod, mod in datasets.dataset.inputs.items()
         }
         self.len_bands = {
@@ -419,6 +421,7 @@ class BaseMIM(nn.Module, ABC):
         loss_recs = []
         weights = []
         for name_mod in pixels_rec:
+            G = self.len_bands[name_mod]  # noqa: N806
             D = batch[name_mod].shape[1]  # noqa: N806
             H, W = (  # noqa: N806
                 self.out_grid_size[name_mod],
@@ -452,7 +455,7 @@ class BaseMIM(nn.Module, ABC):
                 p2=P,
             )
 
-            weight = D * H * W
+            weight = G * D * H * W
             weights.append(weight)
             loss_rec = self.loss_fn(target - pixels_rec[name_mod])
             loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod]).mean()
@@ -471,48 +474,55 @@ class BaseMIM(nn.Module, ABC):
 
         ref_input = self.dataset.ref_input
         if ref_input is not None:
+            x_ref = {}
             for name_mod in x_enc:
                 D = x_enc[name_mod].shape[1]  # noqa: N806
                 H = self.out_grid_size[name_mod]  # noqa: N806
-                x_enc[name_mod] = rearrange(
+                x_ref[name_mod] = rearrange(
                     x_enc[name_mod],
                     "b d (h w) c -> (b d) c h w",
                     h=H,
                 )
-                x_enc[name_mod] = F.interpolate(
-                    x_enc[name_mod],
+                x_ref[name_mod] = F.interpolate(
+                    x_ref[name_mod],
                     (self.out_grid_size[ref_input],) * 2,
                     mode="bilinear",
                 )
-                x_enc[name_mod] = rearrange(
-                    x_enc[name_mod],
+                x_ref[name_mod] = rearrange(
+                    x_ref[name_mod],
                     "(b d) c h w -> b d (h w) c",
                     d=D,
                 )
-            x_enc = torch.cat([x_enc[name_mod] for name_mod in x_enc], dim=1)
-        else:
-            x_enc = torch.cat(
-                [x_enc[name_mod].flatten(1, 2) for name_mod in x_enc],
+            x_ref = torch.cat(
+                [x_ref[name_mod] for (name_mod, _) in self.dataset.groups],
                 dim=1,
             )
+
+        x_enc = torch.cat(
+            [x_enc[name_mod].flatten(1, 2) for (name_mod, _) in self.dataset.groups],
+            dim=1,
+        )
 
         loss_pred = 0
         for name_target, target in self.dataset.targets.items():
             targets = batch[name_target]
-            logits = self.heads[name_target](x_enc, ssl_phase)
 
             match target.type_target:
                 case "segment":
+                    logits = self.heads[name_target](x_ref, ssl_phase)
                     logits = rearrange(logits, "b 1 c h w -> (b h w) c")
                     targets = rearrange(targets, "b 1 1 h w -> (b h w)")
                     targets = targets.long()
                 case "change_detect":
+                    logits = self.heads[name_target](x_ref, ssl_phase)
                     logits = rearrange(logits, "b 1 1 h w -> (b h w)")
                     targets = rearrange(targets, "b 1 1 h w -> (b h w)")
                     targets = targets.float()
                 case "multilabel_classif":
+                    logits = self.heads[name_target](x_enc, ssl_phase)
                     targets = targets.float()
                 case "classif":
+                    logits = self.heads[name_target](x_enc, ssl_phase)
                     targets = targets.long()
 
             if targets.ndim > 1:
