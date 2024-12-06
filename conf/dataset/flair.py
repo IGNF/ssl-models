@@ -13,16 +13,26 @@ from ssl_models.dataset.flair import FLAIRDataset
 
 @dataclass
 class FLAIRConfig(DatasetConfig):  # noqa: D101
-    rel_dir: str = "FLAIR_INC"
+    rel_dir: str = "FLAIR-INC_TOY"
     weight: float = 1.0
-    crop_meters: float = 250 * 0.2
+    crop_meters: float = 256 * 0.2
     ref_input: str | None = "aerial"
 
     filter_inputs: list[str] = field(
-        default_factory=lambda: ["aerial", "dtm_dsm", "spot", "s2", "s1"],
+        default_factory=lambda: [
+            "aerial",
+            "dem",
+            "spot",
+            "s2",
+            "s1_asc",
+            "s1_desc",
+        ],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["flair"],
+        default_factory=lambda: [
+            "flair_cosia",
+            # "flair_lpis"
+        ],
     )  # selected target modalities
 
     aerial: InputRasterConfig = field(
@@ -33,10 +43,10 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             norm_fac=255.0,
         ),
     )
-    dtm_dsm: InputRasterConfig = field(
+    dem: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=256,
-            patch_size=PatchSizeConfig(mae=32, mixmae=8),
+            patch_size=PatchSizeConfig(mae=16, mixmae=8),
             bands=2,
             norm_fac=1.0,
         ),
@@ -45,7 +55,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            bands=3,
+            bands=4,
             norm_fac=255.0,
         ),
     )
@@ -59,7 +69,17 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             norm_fac=10000.0,
         ),
     )
-    s1: InputRasterConfig = field(
+    s1_asc: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=16,
+            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            bands=2,
+            num_dates=4,
+            norm_fac=20.0,
+        ),
+    )
+
+    s1_desc: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
@@ -72,20 +92,31 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = FLAIRDataset
-        self.ground_meters = 500 * 0.2
+        self.ground_meters = 102.4
 
-        self.flair = TargetRasterConfig(
+        self.flair_cosia = TargetRasterConfig(
             type_target="segment",
             num_classes=19,
             missing_val=-1,
+            bands=1,
         )
+
+        self.flair_lpis = TargetRasterConfig(
+            type_target="segment",
+            num_classes=45,
+            missing_val=-1,
+            bands=1,
+        )
+
         super().__post_init__(
             resolutions_meters={
-                "flair": 0.2,
+                "flair_cosia": 0.2,
+                "flair_lpis": 0.2,
                 "aerial": 0.2,
-                "dtm_dsm": 0.2,
-                "spot": 1.0,
-                "s2": 10.0,
-                "s1": 10.0,
+                "dem": 0.2,
+                "spot": 1.6,
+                "s2": 10.24,
+                "s1_asc": 10.24,
+                "s1_desc": 10.24,
             },
         )
