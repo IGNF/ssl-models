@@ -55,7 +55,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            bands=3,
+            bands=4,
             norm_fac=255.0,
         ),
     )

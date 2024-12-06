@@ -110,17 +110,14 @@ class FLAIRDataset(GenericDataset):
             / patch_area
             / f"{patch_domain}_SENTINEL2_MSK-SC_{patch_area}_{patch_position}.tif"
         )
-        meta["s2_stacked_dates"] = True
-        meta["s1_asc_stacked_dates"] = True
-        meta["s1_desc_stacked_dates"] = True
 
         inputs = self.preprocess_rasters(meta)
         inputs["ref_date"] = meta["aerial_dates"]
 
         if "flair_cosia" in inputs:
-            inputs["flair_cosia"] -= 1
+            inputs["flair_cosia"] -= 1  # to start labels at 0
 
-        return inputs
+        return self.transform_rasters(inputs)
 
     def __len__(self) -> int:
         """Return length of dataset."""

@@ -91,7 +91,6 @@ class GenericDataset(Dataset, ABC):
                 meta.get(f"{name_mod}_h5_mask", None),
                 start[name_mod],
                 end[name_mod],
-                meta.get(f"{name_mod}_stacked_dates", None),
                 **vars(mod),
             )
             inputs[name_mod] = input_mod
@@ -108,7 +107,6 @@ class GenericDataset(Dataset, ABC):
         h5_mask: str | None,
         start: tuple[int],
         end: tuple[int],
-        stacked_dates: bool | None,
         bands: int | list[int],
         num_dates: int = 1,
         mask_threshold: float = 100.0,  # threshold on percentage cover
@@ -127,19 +125,18 @@ class GenericDataset(Dataset, ABC):
         match path_mod.suffix:
             case ".tif" | ".png" | ".jpg" | ".jpeg":
                 with rasterio.open(path_mod) as src:
-                    if stacked_dates:
-                        bands = bands * len(dates_mod)
-                    bands = range(1, bands + 1) if isinstance(bands, int) else bands
+                    bands = range(bands) if isinstance(bands, int) else bands
                     window = Window(
                         start[1],
                         start[0],
                         end[1] - start[1],
                         end[0] - start[0],
                     )
-                    input_mod = src.read(bands, window=window)
+                    input_mod = src.read(window=window)
                     input_mod = input_mod.reshape(
                         (len(dates_mod), -1, *input_mod.shape[1:]),
                     )
+                    input_mod = input_mod[:, bands]
                 if use_mask and mask is not None:
                     bands = len(dates_mod) * 2
                     bands = range(1, bands + 1)
