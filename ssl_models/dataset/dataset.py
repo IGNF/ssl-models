@@ -32,14 +32,14 @@ class GenericDataset(Dataset, ABC):
     def preprocess_rasters(
         self,
         meta: dict[str, Path | str | np.ndarray],
-        ) -> dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Read raster inputs."""
         if any(
             f"{name_mod}_path" not in meta or f"{name_mod}_dates" not in meta
             for name_mod in self.dataset.rasters
-            ):
-                msg = "A modality is missing in meta data."
-                raise ValueError(msg)
+        ):
+            msg = "A modality is missing in meta data."
+            raise ValueError(msg)
 
         res, sizes_date = {}, {}
         for name_mod, mod in self.dataset.rasters.items():
@@ -50,16 +50,19 @@ class GenericDataset(Dataset, ABC):
 
         if self.dataset.crop_meters % lcm_ != 0:
             msg = (
-            f"Crop meters does not correspond to an integer number of pixels."
-            f"Consider using {lcm_}"
+                f"Crop meters does not correspond to an integer number of pixels."
+                f"Consider using {lcm_}"
             )
             raise ValueError(msg)
 
-        start_min_meter = self.rng.integers(
-        low=0,
-        high=(self.dataset.ground_meters - self.dataset.crop_meters) // lcm_,
-        size=2,
-        ) * 10
+        start_min_meter = (
+            self.rng.integers(
+                low=0,
+                high=(self.dataset.ground_meters - self.dataset.crop_meters) // lcm_,
+                size=2,
+            )
+            * 10
+        )
 
         start, end = {}, {}
         for name_mod, mod in res.items():
@@ -67,7 +70,7 @@ class GenericDataset(Dataset, ABC):
 
             start_mod = start_min_meter / (mod / 100)
             start_mod = start_mod.astype(int)
-            start_mod += meta.get(f"{name_mod}_shift", 0) # align TreeSatAI-TS aerial
+            start_mod += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
             start_mod_date = self.rng.integers(
                 low=0,
                 high=sizes_date[name_mod] % self.dataset.rasters[name_mod].num_dates
@@ -95,7 +98,6 @@ class GenericDataset(Dataset, ABC):
             inputs[f"{name_mod}_dates"] = dates_mod
 
         return inputs
-
 
     def preprocess_raster(  # noqa: PLR0915
         self,

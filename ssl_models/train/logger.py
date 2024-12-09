@@ -9,9 +9,8 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from torch import Tensor
 from torch.nn.functional import one_hot
+from torchvision.transforms.functional import InterpolationMode, resize
 from torchvision.utils import draw_segmentation_masks
-from torchvision.transforms.functional import resize
-from torchvision.transforms.functional import InterpolationMode
 
 BANDS_RGB = 3
 
@@ -75,7 +74,8 @@ class ImageLogger(Callback):
         )
 
     def log_pretrain_images(
-        self, trainer: Trainer,
+        self,
+        trainer: Trainer,
         outputs: Tensor,
         batch: Tensor,
         log_index: str,
@@ -101,7 +101,8 @@ class ImageLogger(Callback):
             )
 
     def log_probe_or_finetune_images(
-        self, trainer: Trainer,
+        self,
+        trainer: Trainer,
         outputs: Tensor,
         batch: Tensor,
         log_index: str,
@@ -116,7 +117,7 @@ class ImageLogger(Callback):
             mask = resize(
                 mask,
                 image.shape[1:],
-                interpolation=InterpolationMode.NEAREST
+                interpolation=InterpolationMode.NEAREST,
             )
             mask_overlay = draw_segmentation_masks(
                 image,
@@ -124,10 +125,10 @@ class ImageLogger(Callback):
                 alpha=0.2,
             )
             trainer.tb_logger.add_image(
-                    f"{trainer.ssl_phase}_{name_target}_{log_index}_input",
-                    ImageLogger.to_numpy(mask_overlay),
-                    epoch,
-                )
+                f"{trainer.ssl_phase}_{name_target}_{log_index}_input",
+                ImageLogger.to_numpy(mask_overlay),
+                epoch,
+            )
             # pred mask
             image = batch[ref_input][0, 0][:3]
             mask = pred[0, 0].type(torch.bool)
@@ -138,10 +139,10 @@ class ImageLogger(Callback):
                 alpha=0.5,
             )
             trainer.tb_logger.add_image(
-                    f"{trainer.ssl_phase}_{name_target}_{log_index}_pred",
-                    ImageLogger.to_numpy(mask_overlay),
-                    epoch,
-                )
+                f"{trainer.ssl_phase}_{name_target}_{log_index}_pred",
+                ImageLogger.to_numpy(mask_overlay),
+                epoch,
+            )
 
     def on_batch_end(
         self,
@@ -172,13 +173,7 @@ class ImageLogger(Callback):
             self.log_pretrain_images(trainer, outputs, batch, log_index, epoch)
         else:
             log_index = f"{stage}/{prefix_idx}"
-            self.log_probe_or_finetune_images(
-                trainer,
-                outputs,
-                batch,
-                log_index,
-                epoch
-            )
+            self.log_probe_or_finetune_images(trainer, outputs, batch, log_index, epoch)
 
     def on_train_batch_end(
         self,
