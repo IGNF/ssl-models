@@ -16,7 +16,7 @@ from ssl_models.dataset.pastis_hd import PASTISHDDataset
 class PASTISHDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "PASTIS-HD"
     weight: float = 1.0
-    crop_meters: float = 160 * 1.0
+    crop_meters: float = 80 * 1.0
     ref_input: str | None = "s2"
 
     filter_inputs: list[str] = field(
@@ -28,39 +28,39 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
 
     spot: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=160,
-            patch_size=PatchSizeConfig(mae=8, mixmae=4),
+            image_size=80,
+            patch_size=PatchSizeConfig(mae=8, mixmae=2),
             bands=3,
             norm_fac=255.0,
         ),
     )
     s2: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=16,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            image_size=8,
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_dates=1,
             bands=10,
             num_dates=8,
-            patch_dates=4,
             norm_fac=10000.0,
         ),
     )
     s1_asc: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=16,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            image_size=8,
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_dates=1,
             bands=3,
-            num_dates=2,
-            patch_dates=4,
+            num_dates=1,
             norm_fac=20.0,
         ),
     )
     s1_des: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=16,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            image_size=8,
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_dates=1,
             bands=3,
-            num_dates=2,
-            patch_dates=4,
+            num_dates=1,
             norm_fac=20.0,
         ),
     )

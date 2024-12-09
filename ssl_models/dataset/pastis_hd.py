@@ -16,10 +16,11 @@ class PASTISHDDataset(GenericDataset):
 
     def __init__(
         self,
-        root_dir: str | Path,
+        root_dir: Path,
         csv_path: str | Path,
         use_transform: bool,
         dataset: DatasetConfig,
+        num_repeats: int = 10,
         *args,  # noqa: ARG002, ANN002
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
@@ -30,6 +31,7 @@ class PASTISHDDataset(GenericDataset):
 
         self.root_dir = Path(root_dir)
         self.image_ids = image_ids
+        self.num_repeats = num_repeats
 
         self.s2_dates = [
             dict_datetimes(meta_data.loc[str(image_id), "dates-S2"])
@@ -47,6 +49,8 @@ class PASTISHDDataset(GenericDataset):
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
+        idx = idx % len(self.image_ids)
+
         image_id = self.image_ids[idx]
         spot_path = (
             self.root_dir
@@ -85,4 +89,4 @@ class PASTISHDDataset(GenericDataset):
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return len(self.image_ids)
+        return len(self.image_ids) * self.num_repeats

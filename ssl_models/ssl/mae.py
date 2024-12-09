@@ -96,12 +96,14 @@ class MAE(BaseMIM):
             case "mod":
                 name_models = list(num_dates_mod.keys())
                 for name_mod, num_dates in num_dates_mod.items():
-                    self.mask_ratio[name_mod] = 1 - (1 - mask.mask_ratio) / num_dates
+                    scale_fac = num_dates if mask.mask_scale else 1.0
+                    self.mask_ratio[name_mod] = 1 - (1 - mask.mask_ratio) / scale_fac
                     self.mask_mod[name_mod] = None
             case "group":
                 name_models = list(num_dates_group.keys())
                 for name_group, num_dates in num_dates_group.items():
-                    self.mask_ratio[name_group] = 1 - (1 - mask.mask_ratio) / num_dates
+                    scale_fac = num_dates if mask.mask_scale else 1.0
+                    self.mask_ratio[name_group] = 1 - (1 - mask.mask_ratio) / scale_fac
             case _:
                 msg = f"Invalid multimodal mode {multimodal}."
                 raise ValueError(msg)

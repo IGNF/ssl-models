@@ -46,48 +46,42 @@ class GenericDataset(Dataset, ABC):
             res[name_mod] = int(mod.resolution_meters * 100)
             sizes_date[name_mod] = len(meta[f"{name_mod}_dates"])
 
-        lcm_ = lcm(*res.values()) / 100
-
-        if self.dataset.crop_meters % lcm_ != 0:
-            msg = (
-                f"Crop meters does not correspond to an integer number of pixels."
-                f"Consider using {lcm_}"
-            )
+        # sample spatial and temporal slices
+        size_min = min(sizes.values())
+        crop_min = (self.dataset.crop_meters / self.dataset.ground_meters) * size_min
+        if not crop_min.is_integer():
+            msg = "Crop range does not correspond to an integer number of pixels."
             raise ValueError(msg)
 
+        crop_min = round(crop_min)
+        start_min = self.rng.integers(low=0, high=size_min - crop_min + 1, size=2)
         for name_mod, size in sizes.items():
             if size % size_min != 0:
                 msg = f"Size of raster {name_mod} not a multiple of size min."
                 raise ValueError(msg)
 
         for name_mod, mod in self.dataset.inputs.items():
-            if mod.patch_dates and sizes[name_mod] % mod.patch_dates:
+            if (
+                mod.patch_dates
+                and (crop_min * (sizes[name_mod] // size_min)) % mod.patch_dates
+            ):
                 msg = f"Size of raster {name_mod} not a multiple of rand dates extent."
                 raise ValueError(msg)
 
         start, end = {}, {}
-        for name_mod, mod in res.items():
-            size = round(self.dataset.ground_meters / (mod / 100))
-            nb_pixels = int(self.dataset.crop_meters * 100 / res[name_mod])
-
-            start_min = self.rng.integers(
-                low=0,
-                high=size - nb_pixels + 1,
-                size=2,
-            )
-
-            start_min += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
-            start_mod = start_min
-
+        for name_mod, mod in self.dataset.rasters.items():
+            start_mod = start_min * (sizes[name_mod] // size_min)
+            start_mod += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
             start_mod_date = self.rng.integers(
                 low=0,
                 high=sizes_date[name_mod] % self.dataset.rasters[name_mod].num_dates
                 + 1,
             )
             start[name_mod] = (*start_mod, start_mod_date)
-            end_mod = start_min + nb_pixels
-            end_mod_date = start_mod_date + self.dataset.rasters[name_mod].num_dates * (
-                sizes_date[name_mod] // self.dataset.rasters[name_mod].num_dates
+
+            end_mod = start_mod + crop_min * (sizes[name_mod] // size_min)
+            end_mod_date = start_mod_date + mod.num_dates * (
+                sizes_date[name_mod] // mod.num_dates
             )
             end[name_mod] = (*end_mod, end_mod_date)
 
