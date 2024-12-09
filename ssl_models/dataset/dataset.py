@@ -32,14 +32,14 @@ class GenericDataset(Dataset, ABC):
     def preprocess_rasters(
         self,
         meta: dict[str, Path | str | np.ndarray],
-    ) -> dict[str, np.ndarray]:
+        ) -> dict[str, np.ndarray]:
         """Read raster inputs."""
         if any(
             f"{name_mod}_path" not in meta or f"{name_mod}_dates" not in meta
             for name_mod in self.dataset.rasters
-        ):
-            msg = "A modality is missing in meta data."
-            raise ValueError(msg)
+            ):
+                msg = "A modality is missing in meta data."
+                raise ValueError(msg)
 
         res, sizes_date = {}, {}
         for name_mod, mod in self.dataset.rasters.items():
@@ -50,37 +50,35 @@ class GenericDataset(Dataset, ABC):
 
         if self.dataset.crop_meters % lcm_ != 0:
             msg = (
-                f"Crop meters does not correspond to an integer number of pixels."
-                f"Consider using {lcm_}"
+            f"Crop meters does not correspond to an integer number of pixels."
+            f"Consider using {lcm_}"
             )
             raise ValueError(msg)
 
+        start_min_meter = self.rng.integers(
+        low=0,
+        high=(self.dataset.ground_meters - self.dataset.crop_meters) // lcm_,
+        size=2,
+        ) * 10
+
         start, end = {}, {}
         for name_mod, mod in res.items():
-            size = round(self.dataset.ground_meters / (mod / 100))
             nb_pixels = int(self.dataset.crop_meters * 100 / res[name_mod])
 
-            start_min = self.rng.integers(
-                low=0,
-                high=size - nb_pixels + 1,
-                size=2,
-            )
-
-            start_min += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
-            start_mod = start_min
-
+            start_mod = start_min_meter / (mod / 100)
+            start_mod = start_mod.astype(int)
+            start_mod += meta.get(f"{name_mod}_shift", 0) # align TreeSatAI-TS aerial
             start_mod_date = self.rng.integers(
                 low=0,
                 high=sizes_date[name_mod] % self.dataset.rasters[name_mod].num_dates
                 + 1,
             )
             start[name_mod] = (*start_mod, start_mod_date)
-            end_mod = start_min + nb_pixels
+            end_mod = start_mod + nb_pixels
             end_mod_date = start_mod_date + self.dataset.rasters[name_mod].num_dates * (
                 sizes_date[name_mod] // self.dataset.rasters[name_mod].num_dates
             )
             end[name_mod] = (*end_mod, end_mod_date)
-
         inputs = {}
         for name_mod, mod in self.dataset.rasters.items():
             input_mod, dates_mod = self.preprocess_raster(
@@ -97,6 +95,7 @@ class GenericDataset(Dataset, ABC):
             inputs[f"{name_mod}_dates"] = dates_mod
 
         return inputs
+
 
     def preprocess_raster(  # noqa: PLR0915
         self,
