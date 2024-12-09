@@ -427,12 +427,20 @@ class BaseMIM(nn.Module, ABC):
 
         loss_pred = 0
         pixels_pred = {}
+        pixels_pred["ref_input"] = ref_inputs
         for name_target, target in self.dataset.targets.items():
             targets = batch[name_target]
             logits = self.heads[name_target](x_enc, ssl_phase)
 
             match target.type_target:
                 case "segment":
+                    pixels_pred[name_target] = torch.argmax(
+                        torch.unsqueeze(
+                            logits,
+                            dim=1,
+                        ),
+                        dim=1,
+                    )
                     logits = rearrange(logits, "b 1 c h w -> (b h w) c")
                     targets = rearrange(targets, "b 1 1 h w -> (b h w)")
                     targets = targets.long()
@@ -472,7 +480,7 @@ class BaseMIM(nn.Module, ABC):
                 logits_selected,
                 targets_selected,
             )
-        return loss_pred
+        return loss_pred, pixels_pred
 
     def encode_or_decode(
         self,
@@ -562,11 +570,11 @@ class BaseMIM(nn.Module, ABC):
             return loss_rec, pixels_masked, pixels_rec, None
 
         # else, probe or finetune
-        loss_pred = self.compute_loss_pred(
+        loss_pred, pixels_pred = self.compute_loss_pred(
             x_enc,
             batch,
             ssl_phase,
             stage,
         )
         self.metrics[f"loss_pred_{stage}"].update(loss_pred)
-        return None, None, None, loss_pred
+        return None, None, pixels_pred, loss_pred

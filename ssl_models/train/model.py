@@ -186,7 +186,7 @@ class SSLModule(LightningModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Probing/finetuning step."""
-        _, _, _, loss_pred = self.model(
+        _, _, pixels_pred, loss_pred = self.model(
             batch,
             stage=stage,
             ssl_phase=self.trainer.ssl_phase,
@@ -198,7 +198,7 @@ class SSLModule(LightningModule):
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
         )
-        return {"loss": loss_pred, "masked": None, "rec": None}
+        return {"loss": loss_pred, "masked": None, "pred": pixels_pred}
 
     def shared_step(
         self,
