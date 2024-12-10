@@ -16,11 +16,11 @@ from ssl_models.dataset.pastis_hd import PASTISHDDataset
 class PASTISHDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "PASTIS-HD"
     weight: float = 1.0
-    crop_meters: float = 80 * 1.0
+    crop_meters: float = 320
     ref_input: str | None = "s2"
 
     filter_inputs: list[str] = field(
-        default_factory=lambda: ["spot", "s2"],
+        default_factory=lambda: ["spot", "s2", "s1_asc", "s1_des"],
     )  # selected input modalities
     filter_targets: list[str] = field(
         default_factory=lambda: ["pastis_seg", "pastis_mlc"],
@@ -28,17 +28,17 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
 
     spot: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=80,
-            patch_size=PatchSizeConfig(mae=8, mixmae=2),
+            image_size=320,
+            patch_size=PatchSizeConfig(mae=32, mixmae=8),
             bands=3,
             norm_fac=255.0,
         ),
     )
     s2: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=8,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
-            patch_dates=1,
+            image_size=32,
+            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            patch_dates=4,
             bands=10,
             num_dates=8,
             norm_fac=10000.0,
@@ -46,9 +46,9 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     )
     s1_asc: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=8,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
-            patch_dates=1,
+            image_size=32,
+            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            patch_dates=4,
             bands=3,
             num_dates=1,
             norm_fac=20.0,
@@ -56,9 +56,9 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     )
     s1_des: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=8,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
-            patch_dates=1,
+            image_size=32,
+            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            patch_dates=4,
             bands=3,
             num_dates=1,
             norm_fac=20.0,

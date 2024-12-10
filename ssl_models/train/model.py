@@ -9,7 +9,7 @@ from torch.nn import functional as F  # noqa: N812
 
 from conf.datasets import DatasetsConfig
 from conf.mask import MaskConfig
-from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
+from ssl_models.ssl.mae import MAE, mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.ssl.mixmae import (
     mixmae_base,
     mixmae_huge,
