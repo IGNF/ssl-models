@@ -78,14 +78,14 @@ class DatasetConfig:
                 msg = f"Invalid modality {name_mod} specified in resolution."
                 raise ValueError(msg)
 
-            ground_pixels = self.ground_meters / float(resolution_meters)
-            crop_pixels = self.crop_meters / float(resolution_meters)
+            total_size = self.total_meters / float(resolution_meters)
+            crop_size = self.crop_meters / float(resolution_meters)
             is_filtered = name_mod in self.filter_inputs + self.filter_targets
-            if not ground_pixels.is_integer() and is_filtered:
+            if not total_size.is_integer() and is_filtered:
                 msg = f"Modality {name_mod}'s resolution does not divide image extent."
                 raise ValueError(msg)
 
-            if not crop_pixels.is_integer() and is_filtered:
+            if not crop_size.is_integer() and is_filtered:
                 msg = f"Modality {name_mod}'s resolution does not divide crop extent."
                 raise ValueError(msg)
 

@@ -2,7 +2,7 @@
 
 import warnings
 from abc import ABC
-from math import lcm
+from math import gcd
 from pathlib import Path
 
 import h5py
@@ -41,50 +41,43 @@ class GenericDataset(Dataset, ABC):
             msg = "A modality is missing in meta data."
             raise ValueError(msg)
 
-        res, sizes_date = {}, {}
+        sizes, sizes_date = {}, {}
         for name_mod, mod in self.dataset.rasters.items():
-            res[name_mod] = int(mod.resolution_meters * 100)
+            sizes[name_mod] = round(self.dataset.total_meters / mod.resolution_meters)
             sizes_date[name_mod] = len(meta[f"{name_mod}_dates"])
 
-        # sample spatial and temporal slices
-        size_min = min(sizes.values())
-        crop_min = (self.dataset.crop_meters / self.dataset.ground_meters) * size_min
-        if not crop_min.is_integer():
-            msg = "Crop range does not correspond to an integer number of pixels."
+        size_gcd = gcd(*sizes.values())
+        crop_gcd = self.dataset.crop_meters / self.dataset.total_meters * size_gcd
+        if not crop_gcd.is_integer():
+            msg = (
+                f"Crop meters does not correspond to an integer number of pixels."
+                f"Use a multiple of {self.dataset.total_meters / size_gcd}."
+            )
             raise ValueError(msg)
 
-        crop_min = round(crop_min)
-        start_min = self.rng.integers(low=0, high=size_min - crop_min + 1, size=2)
-        for name_mod, size in sizes.items():
-            if size % size_min != 0:
-                msg = f"Size of raster {name_mod} not a multiple of size min."
-                raise ValueError(msg)
-
-        for name_mod, mod in self.dataset.inputs.items():
-            if (
-                mod.patch_dates
-                and (crop_min * (sizes[name_mod] // size_min)) % mod.patch_dates
-            ):
-                msg = f"Size of raster {name_mod} not a multiple of rand dates extent."
-                raise ValueError(msg)
-
+        crop_gcd = round(crop_gcd)
+        start_gcd = self.rng.integers(
+            low=0,
+            high=size_gcd - crop_gcd + 1,
+            size=2,
+        )
         start, end = {}, {}
         for name_mod, mod in self.dataset.rasters.items():
-            start_mod = start_min * (sizes[name_mod] // size_min)
+            start_mod = start_gcd * (sizes[name_mod] // size_gcd)
             start_mod += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
             start_mod_date = self.rng.integers(
                 low=0,
-                high=sizes_date[name_mod] % self.dataset.rasters[name_mod].num_dates
-                + 1,
+                high=sizes_date[name_mod] % mod.num_dates + 1,
             )
             start[name_mod] = (*start_mod, start_mod_date)
 
-            end_mod = start_mod + crop_min * (sizes[name_mod] // size_min)
+            end_mod = (start_gcd + crop_gcd) * (sizes[name_mod] // size_gcd)
             end_mod_date = start_mod_date + mod.num_dates * (
                 sizes_date[name_mod] // mod.num_dates
             )
             end[name_mod] = (*end_mod, end_mod_date)
 
+        # read raster slices
         inputs = {}
         for name_mod, mod in self.dataset.rasters.items():
             input_mod, dates_mod = self.preprocess_raster(
@@ -146,6 +139,12 @@ class GenericDataset(Dataset, ABC):
                         (len(dates_mod), -1, *input_mod.shape[1:]),
                     )
                     input_mod = input_mod[:, bands]
+                if use_mask and mask is not None:
+                    with rasterio.open(mask) as src:
+                        mask_mod = src.read(window=window)
+                        mask_mod = mask_mod.reshape(
+                            (len(dates_mod), -1, *mask_mod.shape[1:]),
+                        )
             case ".npy":
                 npy_file = np.load(path_mod, mmap_mode="r")
                 if npy_file.ndim < 4:  # noqa: PLR2004

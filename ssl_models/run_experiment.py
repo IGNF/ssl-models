@@ -65,8 +65,9 @@ def run_experiment(
         )
         task.set_parameters_as_dict(config)
 
-    LOGGER.info("Pretrain")
-    trainer_pretrain.fit_and_test(model=model, datamodule=data_pretrain)
+    if opt_pretrain.epochs > 0:
+        LOGGER.info("Pretrain")
+        trainer_pretrain.fit_and_test(model=model, datamodule=data_pretrain)
 
     if opt_probe.epochs > 0:
         LOGGER.info("Probe")

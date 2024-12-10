@@ -68,7 +68,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = PASTISHDDataset
-        self.ground_meters = 1280 * 1.0
+        self.total_meters = 1280 * 1.0
 
         self.pastis_seg = TargetRasterConfig(
             type_target="segment",

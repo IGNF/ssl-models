@@ -27,16 +27,17 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
 
     aerial: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=256,
-            patch_size=PatchSizeConfig(mae=16, mixmae=4),
+            image_size=300,
+            patch_size=PatchSizeConfig(mae=20, mixmae=5),
             bands=4,
             norm_fac=255.0,
         ),
     )
     s2: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=32,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            image_size=6,
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_dates=1,
             bands=10,
             num_dates=4,
             mask_threshold=0.0,
@@ -45,27 +46,31 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     )
     s1_asc: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=32,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            image_size=6,
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_dates=1,
             bands=2,
             num_dates=1,
             norm_fac=0.25,
+            name_group="sen1",
         ),
     )
     s1_des: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=32,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            image_size=6,
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_dates=1,
             bands=2,
             num_dates=1,
             norm_fac=0.25,
+            name_group="sen1",
         ),
     )
 
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = TreeSatAITSDataset
-        self.ground_meters = 60.0
+        self.total_meters = 60.0
 
         self.treesat_mlc = TargetConfig(
             type_target="multilabel_classif",

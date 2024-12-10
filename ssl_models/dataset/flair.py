@@ -51,7 +51,7 @@ class FLAIRDataset(GenericDataset):
             "spot": "spot_rgbi",
             "s2": "sentinel2_ts",
             "s1_asc": "sentinel1-asc_ts",
-            "s1_desc": "sentinel1-desc_ts",
+            "s1_des": "sentinel1-desc_ts",
             "flair_cosia": "aerial_label-cosia",
             "flair_lpis": "all_label-lpis",
         }

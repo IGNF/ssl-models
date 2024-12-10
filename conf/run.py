@@ -27,7 +27,7 @@ class RunConfig:  # noqa: D101
     )
     use_clearml: bool = True
     clearml_project_name: str = "ssl"
-    clearml_tags: list[str] = field(default_factory=lambda: ["treesat", "hydra"])
+    clearml_tags: list[str] = field(default_factory=lambda: ["multimodal", "hydra"])
     clearml_offline_mode: bool = False
 
 
