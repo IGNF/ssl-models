@@ -15,14 +15,9 @@ from conf.dataset.utils import RasterConfig
 from conf.datasets import DatasetsConfig
 from ssl_models.layers.embed import Patchify, Pixelify
 from ssl_models.layers.head import ClassificationHead, PixelifyHead
-from ssl_models.layers.utils import (
-    encode_dates,
-    group_mods,
-    posemb_sincos_2d,
-    reshape_encoding,
-    shuffle_enc_to_dec,
-    ungroup_mods,
-)
+from ssl_models.layers.utils import (encode_dates, group_mods,
+                                     posemb_sincos_2d, reshape_encoding,
+                                     shuffle_enc_to_dec, ungroup_mods)
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
 
@@ -535,23 +530,23 @@ class BaseMIM(nn.Module, ABC):
             if len(inds) == 0:
                 continue
 
-            # logits_selected = torch.index_select(
-            #     logits,
-            #     dim=0,
-            #     index=inds,
-            # )
-            # targets_selected = torch.index_select(
-            #     targets,
-            #     dim=0,
-            #     index=inds,
-            # )
-            loss_pred += self.loss_pred[name_target](
+            logits_selected = torch.index_select(
                 logits,
+                dim=0,
+                index=inds,
+            )
+            targets_selected = torch.index_select(
                 targets,
+                dim=0,
+                index=inds,
+            )
+            loss_pred += self.loss_pred[name_target](
+                logits_selected,
+                targets_selected,
             )
             self.metrics[f"{name_target}_{stage}"].update(
-                logits,
-                targets,
+                logits_selected,
+                targets_selected,
             )
         return loss_pred
 

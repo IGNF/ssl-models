@@ -188,10 +188,12 @@ class GenericDataset(Dataset, ABC):
                 mask_mod = mask_mod & ~mask_mod.all(axis=1, keepdims=True)
                 input_mod = np.where(mask_mod, np.nan, input_mod)
 
-            pan_mod = input_mod.sum(axis=2, keepdims=True)
             if self.random_dates:
-                pan_mod = self.rng.random(pan_mod.shape).astype(pan_mod.dtype)
-            pan_mod = pan_mod.mean(axis=(3, 4))
+                pan_mod = self.rng.random(input_mod.shape).astype(input_mod.dtype)
+            else:
+                pan_mod = input_mod
+            pan_mod = pan_mod.mean(axis=(2, 3, 4), keepdims=True)
+            pan_mod = np.tile(pan_mod, (1, 1, 1, *pan_mod.shape[-2:]))
 
             mid_finite = np.isfinite(pan_mod).sum(axis=1, keepdims=True)
             mid_finite = np.floor_divide(mid_finite, 2)
