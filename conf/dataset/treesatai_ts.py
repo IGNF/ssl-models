@@ -14,7 +14,6 @@ from ssl_models.dataset.treesatai_ts import TreeSatAITSDataset
 @dataclass
 class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "TreeSatAI-TS"
-    weight: float = 1.0
     crop_meters: float = 60.0
     ref_input: str | None = None
 
@@ -37,7 +36,6 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=6,
             patch_size=PatchSizeConfig(mae=1, mixmae=1),
-            patch_dates=1,
             bands=10,
             num_dates=4,
             mask_threshold=0.0,
@@ -48,7 +46,6 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=6,
             patch_size=PatchSizeConfig(mae=1, mixmae=1),
-            patch_dates=1,
             bands=2,
             num_dates=1,
             norm_fac=0.25,
@@ -59,7 +56,6 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=6,
             patch_size=PatchSizeConfig(mae=1, mixmae=1),
-            patch_dates=1,
             bands=2,
             num_dates=1,
             norm_fac=0.25,

@@ -1,6 +1,7 @@
 """PASTIS-HD dataset module."""
 
 from pathlib import Path
+from typing import Literal
 
 import geopandas as gpd
 import numpy as np
@@ -16,16 +17,22 @@ class PASTISHDDataset(GenericDataset):
 
     def __init__(
         self,
-        root_dir: Path,
-        csv_path: str | Path,
-        use_transform: bool,
         dataset: DatasetConfig,
+        root_dir: Path,
+        stage: Literal["train", "val", "test"],
+        use_transform: bool,
+        random_dates: bool,
         num_repeats: int = 10,
-        *args,  # noqa: ARG002, ANN002
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
-        super().__init__(use_transform=use_transform, dataset=dataset)
+        super().__init__(
+            dataset=dataset,
+            stage=stage,
+            use_transform=use_transform,
+            random_dates=random_dates,
+        )
 
+        csv_path = root_dir / f"{stage}.csv"
         image_ids = pd.read_csv(csv_path)["image"]
         meta_data = gpd.read_file(root_dir / "metadata.geojson").set_index("id")
 

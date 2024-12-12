@@ -66,8 +66,12 @@ class PatchifyBands(nn.Module):
             for idx, _ in enumerate(self.downsamplings):
                 pow_in = idx
                 pow_out = idx + 1
-                channels_in = 8 * 2**pow_in if idx > 0 else in_chans
-                channels_out = 8 * 2**pow_out
+                channels_in = (
+                    256 // 2 ** (len(self.downsamplings) - pow_in)
+                    if idx > 0
+                    else in_chans
+                )
+                channels_out = 256 // 2 ** (len(self.downsamplings) - pow_out)
                 channels.append((channels_in, channels_out))
 
             self.convs = nn.ModuleList(
@@ -99,11 +103,7 @@ class PatchifyBands(nn.Module):
                 ],
             )
             self.conv = nn.Conv2d(
-                (
-                    8 * 2 ** len(self.downsamplings)
-                    if len(self.downsamplings) > 0
-                    else in_chans
-                ),
+                (256 if len(self.downsamplings) > 0 else in_chans),
                 embed_dim,
                 kernel_size=1,
             )
@@ -229,8 +229,8 @@ class PixelifyBands(nn.Module):
             for idx, _ in enumerate(self.downsamplings):
                 pow_in = len(self.downsamplings) - idx
                 pow_out = len(self.downsamplings) - (idx + 1)
-                channels_in = 8 * 2**pow_in
-                channels_out = 8 * 2**pow_out
+                channels_in = 256 // 2 ** (len(self.downsamplings) - pow_in)
+                channels_out = 256 // 2 ** (len(self.downsamplings) - pow_out)
                 channels.append((channels_in, channels_out))
 
             self.conv = nn.Conv2d(
@@ -263,7 +263,11 @@ class PixelifyBands(nn.Module):
                     for downsampling in self.downsamplings[::-1]
                 ],
             )
-            self.fc = nn.Conv2d(8, out_chans, kernel_size=1)
+            self.fc = nn.Conv2d(
+                256 // 2 ** len(self.downsamplings),
+                out_chans,
+                kernel_size=1,
+            )
 
     def forward(
         self,

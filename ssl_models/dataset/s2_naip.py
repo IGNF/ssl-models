@@ -1,6 +1,7 @@
 """S2-NAIP dataset module."""
 
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -15,18 +16,21 @@ class S2NAIPDataset(GenericDataset):
 
     def __init__(
         self,
-        root_dir: Path,
-        csv_path: Path,
-        use_transform: bool,
         dataset: DatasetConfig,
-        *args,  # noqa: ARG002, ANN002
+        root_dir: Path,
+        stage: Literal["train", "val", "test"],
+        use_transform: bool,
+        random_dates: bool,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
-            use_transform=use_transform,
             dataset=dataset,
+            stage=stage,
+            use_transform=use_transform,
+            random_dates=random_dates,
         )
 
+        csv_path = root_dir / f"{stage}.csv"
         csv_data = pd.read_csv(csv_path)
 
         self.root_dir = root_dir

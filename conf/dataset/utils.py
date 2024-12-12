@@ -25,7 +25,7 @@ class RasterConfig:
     """Generic raster modality config."""
 
     bands: int | list[list[int]] = MISSING
-    mask_threshold: float = 100.0
+    mask_threshold: float = 0.0
     num_dates: int = 1
     norm_fac: float | None = None
 
@@ -36,7 +36,6 @@ class InputConfig:
 
     image_size: int = MISSING
     patch_size: PatchSizeConfig = MISSING
-    patch_dates: int | None = None
     name_group: str | None = None
 
 

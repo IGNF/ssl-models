@@ -4,6 +4,7 @@ import warnings
 from abc import ABC
 from math import gcd
 from pathlib import Path
+from typing import Literal
 
 import h5py
 import numpy as np
@@ -22,12 +23,23 @@ class GenericDataset(Dataset, ABC):
 
     def __init__(
         self,
-        use_transform: bool,
         dataset: DatasetConfig,
+        stage: Literal["train", "val", "test"],
+        use_transform: bool,
+        random_dates: bool,
     ) -> None:
         self.rng = np.random.default_rng(seed=42)
         self.use_transform = use_transform
         self.dataset = dataset
+        self.random_dates = random_dates and stage == "train"
+
+    @staticmethod
+    def unflatten(x: np.ndarray, axis: int, reshape_axis: tuple) -> np.ndarray:
+        """Unflatten specific axes in numpy array."""
+        if axis == -1:
+            axis = x.ndim - 1
+        shape = (*x.shape[:axis], *reshape_axis, *x.shape[axis + 1 :])
+        return x.reshape(shape)
 
     def preprocess_rasters(
         self,
@@ -90,7 +102,7 @@ class GenericDataset(Dataset, ABC):
                 end[name_mod],
                 **vars(mod),
             )
-            inputs[name_mod] = input_mod
+            inputs[name_mod] = input_mod + meta.get(f"{name_mod}_val_shift", 0)
             inputs[f"{name_mod}_dates"] = dates_mod
 
         return inputs
@@ -105,10 +117,9 @@ class GenericDataset(Dataset, ABC):
         start: tuple[int],
         end: tuple[int],
         bands: int | list[list[int]],
-        num_dates: int = 1,
-        patch_dates: int | None = None,
-        mask_threshold: float = 100.0,  # threshold on percentage cover
-        norm_fac: float | None = None,
+        num_dates: int,
+        mask_threshold: float,  # threshold on mask percentage cover
+        norm_fac: float | None,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> tuple[np.ndarray, np.ndarray]:
         """Read raster modality."""
@@ -135,16 +146,12 @@ class GenericDataset(Dataset, ABC):
                         end[0] - start[0],
                     )
                     input_mod = src.read(window=window)
-                    input_mod = input_mod.reshape(
-                        (len(dates_mod), -1, *input_mod.shape[1:]),
-                    )
+                    input_mod = self.unflatten(input_mod, 0, (len(dates_mod), -1))
                     input_mod = input_mod[:, bands]
                 if use_mask and mask is not None:
                     with rasterio.open(mask) as src:
                         mask_mod = src.read(window=window)
-                        mask_mod = mask_mod.reshape(
-                            (len(dates_mod), -1, *mask_mod.shape[1:]),
-                        )
+                        mask_mod = self.unflatten(mask_mod, 0, (len(dates_mod), -1))
             case ".npy":
                 npy_file = np.load(path_mod, mmap_mode="r")
                 if npy_file.ndim < 4:  # noqa: PLR2004
@@ -168,27 +175,23 @@ class GenericDataset(Dataset, ABC):
 
         if len(dates_mod) != num_dates:
             input_mod = input_mod[slices[2]]
-            input_mod = input_mod.reshape((num_dates, -1, *input_mod.shape[1:]))
-            dates_mod = dates_mod[slices[2]]
-            dates_mod = dates_mod.reshape((num_dates, -1, dates_mod.shape[1], 1, 1))
+            input_mod = self.unflatten(input_mod, 0, (num_dates, -1))
+            dates_mod = dates_mod[slices[2], :, None, None]
+            dates_mod = self.unflatten(dates_mod, 0, (num_dates, -1))
             if mask_mod is not None:
                 mask_mod = mask_mod[slices[2]]
-                mask_mod = mask_mod.reshape((num_dates, -1, *mask_mod.shape[1:]))
-                mask_mod = (mask_mod > mask_threshold).any(axis=2, keepdims=True)
+                mask_mod = self.unflatten(mask_mod, 0, (num_dates, -1))
+                mask_mod = (mask_mod > mask_threshold).any(
+                    axis=(2, 3, 4),
+                    keepdims=True,
+                )
                 mask_mod = mask_mod & ~mask_mod.all(axis=1, keepdims=True)
                 input_mod = np.where(mask_mod, np.nan, input_mod)
 
             pan_mod = input_mod.sum(axis=2, keepdims=True)
-            if patch_dates:
-                pan_mod = self.rng.random(
-                    (
-                        *pan_mod.shape[:-2],
-                        pan_mod.shape[-2] // patch_dates,
-                        pan_mod.shape[-1] // patch_dates,
-                    ),
-                )
-                pan_mod = np.repeat(pan_mod, repeats=patch_dates, axis=-2)
-                pan_mod = np.repeat(pan_mod, repeats=patch_dates, axis=-1)
+            if self.random_dates:
+                pan_mod = self.rng.random(pan_mod.shape).astype(pan_mod.dtype)
+            pan_mod = pan_mod.mean(axis=(3, 4))
 
             mid_finite = np.isfinite(pan_mod).sum(axis=1, keepdims=True)
             mid_finite = np.floor_divide(mid_finite, 2)

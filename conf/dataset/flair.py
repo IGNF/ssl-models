@@ -14,9 +14,8 @@ from ssl_models.dataset.flair import FLAIRDataset
 @dataclass
 class FLAIRConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "FLAIR-INC_TOY"
-    weight: float = 1.0
     crop_meters: float = 256 * 0.2
-    ref_input: str | None = "aerial"
+    ref_input: str | None = "aerial"  # defines grid for raster targets
 
     filter_inputs: list[str] = field(
         default_factory=lambda: [
