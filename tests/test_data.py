@@ -10,20 +10,22 @@ from tests import TEST_DATA_DIR
 
 
 @pytest.mark.parametrize(
-    "stage, ssl_phase, use_transform",
+    "stage, ssl_phase, use_transform, random_dates",
     itertools.product(
         ("fit", "validate"),
         ("pretrain", "probe", "finetune"),
-        (False, True),
+        (True, False),
+        (True, False),
     ),
 )
-def test_data(datasets_geopile, stage, ssl_phase, use_transform):
+def test_data(datasets_geopile, stage, ssl_phase, use_transform, random_dates):
     data_module = SSLDataModule(
         datasets=datasets_geopile,
         ssl_phase=ssl_phase,
         batch_size=2,
         num_workers=1,
         use_transform=use_transform,
+        random_dates=random_dates,
     )
     data_module.setup(stage=stage)
     data_loader = data_module.val_dataloader()

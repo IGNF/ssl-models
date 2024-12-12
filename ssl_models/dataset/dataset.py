@@ -188,10 +188,10 @@ class GenericDataset(Dataset, ABC):
                 mask_mod = mask_mod & ~mask_mod.all(axis=1, keepdims=True)
                 input_mod = np.where(mask_mod, np.nan, input_mod)
 
+            pan_mod = input_mod
             if self.random_dates:
-                pan_mod = self.rng.random(input_mod.shape).astype(input_mod.dtype)
-            else:
-                pan_mod = input_mod
+                pan_mod *= 0  # randomize but keep NaNs
+                pan_mod += self.rng.random(input_mod.shape).astype(input_mod.dtype)
             pan_mod = pan_mod.mean(axis=(2, 3, 4), keepdims=True)
             pan_mod = np.tile(pan_mod, (1, 1, 1, *pan_mod.shape[-2:]))
 
