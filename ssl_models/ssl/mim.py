@@ -15,9 +15,14 @@ from conf.dataset.utils import RasterConfig
 from conf.datasets import DatasetsConfig
 from ssl_models.layers.embed import Patchify, Pixelify
 from ssl_models.layers.head import ClassificationHead, PixelifyHead
-from ssl_models.layers.utils import (encode_dates, group_mods,
-                                     posemb_sincos_2d, reshape_encoding,
-                                     shuffle_enc_to_dec, ungroup_mods)
+from ssl_models.layers.utils import (
+    encode_dates,
+    group_mods,
+    posemb_sincos_2d,
+    reshape_encoding,
+    shuffle_enc_to_dec,
+    ungroup_mods,
+)
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
 
