@@ -208,10 +208,10 @@ def posemb_sincos_2d(
     return pos_encoding.to(dtype)
 
 
-def downsamplings_from_patch_size(unpool: bool, patch_size: int) -> int:
+def downsamplings_from_patch_size(unpool_dim: int | None, patch_size: int) -> list[int]:
     """Infer downsamplings associated with a given patch size."""
     downsamplings = []
-    if unpool:
+    if unpool_dim:
         for prime, power in factorint(patch_size).items():
             downsamplings += [prime] * power
     return downsamplings

@@ -99,6 +99,7 @@ class PixelifyHead(PixelifyBands, Head):
         self,
         type_head: Literal["mean", "attentive"],
         dim: int,
+        unpool_dim: int | None,
         out_chans: int,
         patch_size: int,
         heads: int = 8,
@@ -107,7 +108,7 @@ class PixelifyHead(PixelifyBands, Head):
             embed_dim=dim,
             out_chans=out_chans,
             patch_size=patch_size,
-            unpool=False,
+            unpool_dim=unpool_dim,
         )
         match type_head:
             case "linear":

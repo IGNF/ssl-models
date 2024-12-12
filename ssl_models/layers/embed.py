@@ -1,6 +1,7 @@
 """Patchify/pixelify layers."""
 
 import torch
+import torch.nn.functional as F  # noqa: N812
 from einops import rearrange, repeat
 from torch import Tensor, nn
 
@@ -15,7 +16,7 @@ class Patchify(nn.Module):
         bands: int | list[list[int]],
         embed_dim: int,
         patch_size: int,
-        unpool: bool,
+        unpool_dim: int | None,
     ) -> None:
         super().__init__()
         self.num_bands = [bands] if isinstance(bands, int) else list(map(len, bands))
@@ -25,7 +26,7 @@ class Patchify(nn.Module):
                     embed_dim=embed_dim,
                     in_chans=in_chans,
                     patch_size=patch_size,
-                    unpool=unpool,
+                    unpool_dim=unpool_dim,
                 )
                 for in_chans in self.num_bands
             ],
@@ -47,12 +48,12 @@ class PatchifyBands(nn.Module):
         in_chans: int,
         embed_dim: int,
         patch_size: int,
-        unpool: bool,
+        unpool_dim: int | None,
     ) -> None:
         super().__init__()
         self.patch_size = patch_size
-        self.unpool = unpool
-        self.downsamplings = downsamplings_from_patch_size(unpool, patch_size)
+        self.unpool_dim = unpool_dim
+        self.downsamplings = downsamplings_from_patch_size(unpool_dim, patch_size)
 
         self.conv_skip = nn.Conv2d(
             in_chans,
@@ -61,17 +62,13 @@ class PatchifyBands(nn.Module):
             stride=self.patch_size,
         )
         self.norm_skip = nn.GroupNorm(1, embed_dim)
-        if self.unpool:
+        if self.unpool_dim:
             channels = []
             for idx, _ in enumerate(self.downsamplings):
-                pow_in = idx
-                pow_out = idx + 1
-                channels_in = (
-                    256 // 2 ** (len(self.downsamplings) - pow_in)
-                    if idx > 0
-                    else in_chans
-                )
-                channels_out = 256 // 2 ** (len(self.downsamplings) - pow_out)
+                pow_in = len(self.downsamplings) - idx
+                pow_out = len(self.downsamplings) - (idx + 1)
+                channels_in = self.unpool_dim // 2**pow_in if idx > 0 else in_chans
+                channels_out = self.unpool_dim // 2**pow_out
                 channels.append((channels_in, channels_out))
 
             self.convs = nn.ModuleList(
@@ -103,7 +100,7 @@ class PatchifyBands(nn.Module):
                 ],
             )
             self.conv = nn.Conv2d(
-                (256 if len(self.downsamplings) > 0 else in_chans),
+                self.unpool_dim if len(self.downsamplings) > 0 else in_chans,
                 embed_dim,
                 kernel_size=1,
             )
@@ -120,7 +117,7 @@ class PatchifyBands(nn.Module):
         )
 
         inds = []
-        if self.unpool:
+        if self.unpool_dim:
             x = rearrange(
                 x,
                 "bd c (h p1) (w p2) -> (bd h w) c p1 p2",
@@ -156,7 +153,7 @@ class Pixelify(nn.Module):
         embed_dim: int,
         bands: int | list[list[int]],
         patch_size: int,
-        unpool: bool,
+        unpool_dim: int | None,
     ) -> None:
         super().__init__()
         self.patch_size = patch_size
@@ -167,7 +164,7 @@ class Pixelify(nn.Module):
                     embed_dim=embed_dim,
                     out_chans=out_chans,
                     patch_size=patch_size,
-                    unpool=unpool,
+                    unpool_dim=unpool_dim,
                 )
                 for out_chans in self.num_bands
             ],
@@ -212,33 +209,33 @@ class PixelifyBands(nn.Module):
         embed_dim: int,
         out_chans: int,
         patch_size: int,
-        unpool: bool,
+        unpool_dim: int | None,
     ) -> None:
         super().__init__()
         self.patch_size = patch_size
-        self.unpool = unpool
-        self.downsamplings = downsamplings_from_patch_size(unpool, patch_size)
+        self.unpool_dim = unpool_dim
+        self.downsamplings = downsamplings_from_patch_size(unpool_dim, patch_size)
 
         self.conv_skip = nn.Conv2d(
             embed_dim,
             out_chans * self.patch_size**2,
             kernel_size=1,
         )
-        if self.unpool:
+        if self.unpool_dim:
             channels = []
             for idx, _ in enumerate(self.downsamplings):
-                pow_in = len(self.downsamplings) - idx
-                pow_out = len(self.downsamplings) - (idx + 1)
-                channels_in = 256 // 2 ** (len(self.downsamplings) - pow_in)
-                channels_out = 256 // 2 ** (len(self.downsamplings) - pow_out)
+                pow_in = idx
+                pow_out = idx + 1
+                channels_in = self.unpool_dim // 2**pow_in
+                channels_out = self.unpool_dim // 2**pow_out
                 channels.append((channels_in, channels_out))
 
             self.conv = nn.Conv2d(
                 embed_dim,
-                8 * 2 ** len(self.downsamplings),
+                self.unpool_dim,
                 kernel_size=1,
             )
-            self.norm = nn.GroupNorm(1, 8 * 2 ** len(self.downsamplings))
+            self.norm = nn.GroupNorm(1, self.unpool_dim)
             self.convs = nn.ModuleList(
                 [
                     nn.Conv2d(
@@ -257,14 +254,8 @@ class PixelifyBands(nn.Module):
                     for idx, (_, channels_out) in enumerate(channels)
                 ],
             )
-            self.max_unpool = nn.ModuleList(
-                [
-                    nn.MaxUnpool2d(kernel_size=downsampling, stride=downsampling)
-                    for downsampling in self.downsamplings[::-1]
-                ],
-            )
             self.fc = nn.Conv2d(
-                256 // 2 ** len(self.downsamplings),
+                self.unpool_dim // 2 ** len(self.downsamplings),
                 out_chans,
                 kernel_size=1,
             )
@@ -288,11 +279,19 @@ class PixelifyBands(nn.Module):
             p1=self.patch_size,
             p2=self.patch_size,
         )
-        if self.unpool:
+        if self.unpool_dim:
             x = self.conv(x)
             x = self.norm(x)
-            for idx, ind in enumerate(inds[::-1]):
-                x = self.max_unpool[idx](x, ind)
+            for idx, downsampling in enumerate(self.downsamplings[::-1]):
+                if len(inds) > 0:
+                    upsample = nn.MaxUnpool2d(downsampling, stride=downsampling)
+                    x = upsample(x, inds[::-1][idx])
+                else:
+                    x = F.interpolate(
+                        x,
+                        (x.shape[-2] * downsampling, x.shape[-1] * downsampling),
+                        mode="bilinear",
+                    )
                 x = self.convs[idx](x)
                 x = self.norms[idx](x)
             x = self.fc(x)

@@ -36,7 +36,7 @@ class SSLModule(LightningModule):
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
-        unpool: bool = False,
+        unpool_dim: int | None = None,
         # mixmae args
         num_levels: Literal[3, 4] = 3,
         swin_version: Literal[1, 2] = 1,
@@ -102,7 +102,7 @@ class SSLModule(LightningModule):
                 "mask": mask,
                 "multimodal": multimodal,
                 "model": model,
-                "unpool": unpool,
+                "unpool_dim": unpool_dim,
                 "num_levels": num_levels,
                 "swin_version": swin_version,
                 "v2_attn": v2_attn,

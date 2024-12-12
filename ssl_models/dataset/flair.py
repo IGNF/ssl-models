@@ -96,7 +96,6 @@ class FLAIRDataset(GenericDataset):
         meta["dem_dates"] = aerial_date
         meta["flair_lpis_dates"] = aerial_date
         meta["flair_cosia_dates"] = aerial_date
-        meta["flair_cosia_shift"] = -1
 
         inputs = self.preprocess_rasters(meta)
 

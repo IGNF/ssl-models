@@ -102,7 +102,7 @@ class GenericDataset(Dataset, ABC):
                 end[name_mod],
                 **vars(mod),
             )
-            inputs[name_mod] = input_mod + meta.get(f"{name_mod}_val_shift", 0)
+            inputs[name_mod] = input_mod
             inputs[f"{name_mod}_dates"] = dates_mod
 
         return inputs

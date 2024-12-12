@@ -29,7 +29,7 @@ def test_mae(datasets_geopile, mask, model_map, model_size, multimodal):
         "mask": mask,
         "multimodal": multimodal,
         "model": "mae",
-        "unpool": False,
+        "unpool_dim": None,
         "num_levels": 1,
         "type_head": "attentive",
         "loss_fn": torch.square,
@@ -61,7 +61,7 @@ def test_mae_loss(
         "mask": mask,
         "multimodal": "mod",
         "model": "mae",
-        "unpool": False,
+        "unpool_dim": None,
         "num_levels": 1,
         "type_head": "attentive",
         "loss_fn": loss_fn,
@@ -73,10 +73,10 @@ def test_mae_loss(
 
 
 @pytest.mark.parametrize(
-    "model_size, unpool, type_head, fac_abs_enc, fac_date_enc",
+    "model_size, unpool_dim, type_head, fac_abs_enc, fac_date_enc",
     itertools.product(
         ("tiny",),
-        (True, False),
+        (128, None),
         ("attentive", "linear"),
         (1.0, 0.0),
         (1.0, 0.0),
@@ -87,7 +87,7 @@ def test_mae_arch(
     mask,
     model_map,
     model_size,
-    unpool,
+    unpool_dim,
     type_head,
     fac_abs_enc,
     fac_date_enc,
@@ -97,7 +97,7 @@ def test_mae_arch(
         "mask": mask,
         "multimodal": "mod",
         "model": "mae",
-        "unpool": unpool,
+        "unpool_dim": unpool_dim,
         "num_levels": 1,
         "type_head": type_head,
         "loss_fn": torch.square,

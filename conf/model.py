@@ -12,7 +12,7 @@ class ModelConfig:  # noqa: D101
     model_size: str = "tiny"
     type_head: str = "linear"
     loss: str = "l2_norm"
-    unpool: bool = False
+    unpool_dim: int | None = None
     swin_version: int = 1
     v2_attn: bool = True
     num_levels: int = 3

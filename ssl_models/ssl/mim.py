@@ -34,7 +34,7 @@ class BaseMIM(nn.Module, ABC):
         datasets: DatasetsConfig,
         multimodal: Literal["msgfm", "shared", "mod", "group"],
         model: Literal["mae", "mixmae"],
-        unpool: bool,
+        unpool_dim: int | None,
         num_levels: Literal[1, 3, 4],
         embed_dim: int,
         decoder_dim: int,
@@ -72,13 +72,13 @@ class BaseMIM(nn.Module, ABC):
                 bands,
                 embed_dim,
                 patch_size,
-                unpool,
+                unpool_dim,
             )
             self.embed_to_rec[name_mod] = Pixelify(
                 decoder_dim,
                 bands,
                 patch_size * self.stride,
-                unpool,
+                unpool_dim,
             )
 
         # Fix the position encodings to sine & cosine functions
@@ -189,6 +189,7 @@ class BaseMIM(nn.Module, ABC):
                 self.heads[name_target] = PixelifyHead(
                     type_head,
                     embed_dim * self.stride,
+                    unpool_dim,
                     target.num_classes,
                     target_image_size // ref_grid_size,
                 )
@@ -534,23 +535,23 @@ class BaseMIM(nn.Module, ABC):
             if len(inds) == 0:
                 continue
 
-            logits_selected = torch.index_select(
-                logits,
-                dim=0,
-                index=inds,
-            )
-            targets_selected = torch.index_select(
-                targets,
-                dim=0,
-                index=inds,
-            )
+            # logits_selected = torch.index_select(
+            #     logits,
+            #     dim=0,
+            #     index=inds,
+            # )
+            # targets_selected = torch.index_select(
+            #     targets,
+            #     dim=0,
+            #     index=inds,
+            # )
             loss_pred += self.loss_pred[name_target](
-                logits_selected,
-                targets_selected,
+                logits,
+                targets,
             )
             self.metrics[f"{name_target}_{stage}"].update(
-                logits_selected,
-                targets_selected,
+                logits,
+                targets,
             )
         return loss_pred
 
