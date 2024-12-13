@@ -14,7 +14,6 @@ from ssl_models.dataset.treesatai_ts import TreeSatAITSDataset
 @dataclass
 class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "TreeSatAI-TS"
-    weight: float = 1.0
     crop_meters: float = 60.0
     ref_input: str | None = None
 
@@ -22,52 +21,59 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["aerial", "s2", "s1_asc", "s1_des"],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["treesat_mlc"],
+        default_factory=lambda: ["treesat_mlc", "treesat_mlc_thresh"],
     )  # selected target modalities
 
     aerial: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=256,
-            patch_size=PatchSizeConfig(mae=16, mixmae=4),
+            image_size=300,
+            patch_size=PatchSizeConfig(mae=20, mixmae=5),
             bands=4,
             norm_fac=255.0,
         ),
     )
     s2: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=32,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            image_size=6,
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=10,
-            num_dates=4,
+            num_dates=16,
             mask_threshold=0.0,
             norm_fac=5000.0,
         ),
     )
     s1_asc: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=32,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            image_size=6,
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=2,
-            num_dates=1,
+            num_dates=4,
             norm_fac=0.25,
+            name_group="sen1",
         ),
     )
     s1_des: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=32,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            image_size=6,
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=2,
-            num_dates=1,
+            num_dates=4,
             norm_fac=0.25,
+            name_group="sen1",
         ),
     )
 
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = TreeSatAITSDataset
-        self.ground_meters = 60.0
+        self.total_meters = 60.0
 
         self.treesat_mlc = TargetConfig(
+            type_target="multilabel_classif",
+            num_classes=15,
+            missing_val=-1,
+        )
+        self.treesat_mlc_thresh = TargetConfig(
             type_target="multilabel_classif",
             num_classes=15,
             missing_val=-1,

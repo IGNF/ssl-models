@@ -8,7 +8,8 @@ from torch import Tensor
 from torch.nn import functional as F  # noqa: N812
 
 from conf.datasets import DatasetsConfig
-from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
+from conf.mask import MaskConfig
+from ssl_models.ssl.mae import MAE, mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.ssl.mixmae import (
     mixmae_base,
     mixmae_huge,
@@ -25,29 +26,23 @@ NDIM_RASTER = 5  # (batch, dates, channels, height, width)
 class SSLModule(LightningModule):
     """SSL module."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         # shared args
         datasets: DatasetsConfig,
+        mask: MaskConfig,
+        multimodal: Literal["msgfm", "shared", "mod", "group"],
         model: Literal["mae", "mixmae"],
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
-        unpool: bool = False,
-        # mae args
-        mask_ratio: float = 0.75,
+        unpool_dim: int | None = None,
         # mixmae args
-        nb_mix_images: int = 4,
         num_levels: Literal[3, 4] = 3,
         swin_version: Literal[1, 2] = 1,
         v2_attn: bool = True,
         swin_abs_enc: bool = False,
         use_date_enc: bool = True,
-        shuffle_mods: bool = False,
-        mask_indep: bool = True,
-        mask_shared: bool = True,
-        encoder: Literal["shared", "mod", "multimodal"] = "shared",
-        decoder: Literal["shared", "mod", "multimodal"] = "shared",
     ) -> None:
         super().__init__()
 
@@ -104,10 +99,10 @@ class SSLModule(LightningModule):
         if model_size in model_map:
             model_args = {
                 "datasets": datasets,
+                "mask": mask,
+                "multimodal": multimodal,
                 "model": model,
-                "mask_ratio": mask_ratio,
-                "nb_mix_images": nb_mix_images,
-                "unpool": unpool,
+                "unpool_dim": unpool_dim,
                 "num_levels": num_levels,
                 "swin_version": swin_version,
                 "v2_attn": v2_attn,
@@ -116,11 +111,6 @@ class SSLModule(LightningModule):
                 "norm_pix_loss": norm_pix_loss,
                 "fac_abs_enc": fac_abs_enc,
                 "fac_date_enc": fac_date_enc,
-                "shuffle_mods": shuffle_mods,
-                "mask_indep": mask_indep,
-                "mask_shared": mask_shared,
-                "encoder": encoder,
-                "decoder": decoder,
             }
             self.model = model_map[model_size](**model_args)
         else:
@@ -138,15 +128,56 @@ class SSLModule(LightningModule):
             # use sqrt scaling rule with Adam
             self.trainer.base_lr * self.trainer.train_dataloader.batch_size**0.5
         )
+        match self.trainer.lw_decay:
+            case None:
+                grouped_params = self.model.parameters()
+                max_lr = lr
+            case _:
+                if not isinstance(self.model, MAE):
+                    msg = "Layer-wise decay only implemented for MAE."
+                    raise NotImplementedError(msg)
+
+                encoder = next(iter(self.model.encoder.values()))
+                num_layers = len(encoder.layers)
+
+                grouped_params = []
+                grouped_params.append(
+                    {
+                        "params": self.model.patch_embed.parameters(),
+                        "lr": lr * self.trainer.lw_decay ** (num_layers + 1),
+                        "name": "layer_0_embed",
+                    },
+                )
+                for idx in range(num_layers):
+                    grouped_params.append(
+                        {
+                            "params": [
+                                param
+                                for encoder in self.model.encoder.values()
+                                for param in encoder.layers[idx].parameters()
+                            ],
+                            "lr": lr * self.trainer.lw_decay ** (num_layers - idx),
+                            "name": f"layer_{idx+1}",
+                        },
+                    )
+                grouped_params.append(
+                    {
+                        "params": self.model.heads.parameters(),
+                        "lr": lr,
+                        "name": f"layer_{num_layers+1}_head",
+                    },
+                )
+                max_lr = [param["lr"] for param in grouped_params]
+
         optimizer = torch.optim.AdamW(
-            self.model.parameters(),
+            grouped_params,
             lr=lr,
             weight_decay=self.trainer.wd,
             betas=(self.trainer.b1, self.trainer.b2),
         )
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,
-            max_lr=lr,
+            max_lr=max_lr,
             total_steps=total_steps,
             pct_start=0.2,
             cycle_momentum=False,
@@ -211,7 +242,7 @@ class SSLModule(LightningModule):
             batch[name_mod] = F.interpolate(
                 batch[name_mod].flatten(0, 1),
                 size=(mod.image_size,) * 2,
-                mode="bilinear",
+                mode="nearest",
             ).unflatten(0, (-1, mod.num_dates))
             batch[f"{name_mod}_dates"] = (
                 F.interpolate(
@@ -249,6 +280,13 @@ class SSLModule(LightningModule):
     ) -> dict[str, torch.Tensor]:
         return self.shared_step(batch, stage="val")
 
+    def test_step(
+        self,
+        batch: dict[str, torch.Tensor],
+        batch_idx: int,  # noqa: ARG002
+    ) -> dict[str, torch.Tensor]:
+        return self.shared_step(batch, stage="test")
+
     def on_epoch_end(self, stage: Literal["train", "val", "test"]) -> None:
         """Log epoch metrics for training/validation."""
         match self.trainer.ssl_phase:
@@ -279,6 +317,9 @@ class SSLModule(LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         self.on_epoch_end(stage="val")
+
+    def on_test_epoch_end(self) -> None:
+        self.on_epoch_end(stage="test")
 
     def log_metric(
         self,

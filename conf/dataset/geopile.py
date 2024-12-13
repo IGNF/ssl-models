@@ -14,7 +14,6 @@ from ssl_models.dataset.geopile import GeoPileDataset
 @dataclass
 class GeoPileConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "GeoPileV0"
-    weight: float = 0.0
     crop_meters: float = 256.0
     ref_input: str | None = None
 
@@ -37,7 +36,7 @@ class GeoPileConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = GeoPileDataset
-        self.ground_meters = 256.0
+        self.total_meters = 256.0
 
         self.mlrsnet = TargetConfig(
             type_target="classif",

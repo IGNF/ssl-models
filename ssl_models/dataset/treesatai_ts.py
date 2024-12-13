@@ -1,6 +1,7 @@
 """TreeSatAI-TS dataset."""
 
 from pathlib import Path
+from typing import Literal
 
 import h5py
 import numpy as np
@@ -16,15 +17,21 @@ class TreeSatAITSDataset(GenericDataset):
 
     def __init__(
         self,
-        root_dir: Path,
-        csv_path: Path,
-        use_transform: bool,
         dataset: DatasetConfig,
-        *args,  # noqa: ARG002, ANN002
+        root_dir: Path,
+        stage: Literal["train", "val", "test"],
+        use_transform: bool,
+        random_dates: bool,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
-        super().__init__(use_transform=use_transform, dataset=dataset)
+        super().__init__(
+            dataset=dataset,
+            stage=stage,
+            use_transform=use_transform,
+            random_dates=random_dates,
+        )
 
+        csv_path = root_dir / f"{stage}.csv"
         csv_data = pd.read_csv(csv_path, parse_dates=["aerial_date"])
         target_cols = [
             col
@@ -39,6 +46,7 @@ class TreeSatAITSDataset(GenericDataset):
         aerial_names = csv_data["aerial_name"].tolist()
         sen_names = csv_data["sen_name"].tolist()
 
+        self.mlc_thresh = 0.07
         self.root_dir = root_dir
 
         self.aerial_names = aerial_names
@@ -81,6 +89,8 @@ class TreeSatAITSDataset(GenericDataset):
 
         inputs["treesat_mlc"] = (target > 0).astype(int)
         inputs["treesat_mlc_dates"] = aerial_date
+        inputs["treesat_mlc_thresh"] = (target > self.mlc_thresh).astype(int)
+        inputs["treesat_mlc_thresh_dates"] = aerial_date
         inputs["ref_date"] = aerial_date
 
         return self.transform_rasters(inputs)

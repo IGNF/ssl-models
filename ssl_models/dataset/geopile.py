@@ -16,14 +16,22 @@ class GeoPileDataset(GenericDataset):
 
     def __init__(
         self,
-        root_dir: Path,
-        csv_path: Path,
-        use_transform: bool,
         dataset: DatasetConfig,
+        root_dir: Path,
+        stage: Literal["train", "val", "test"],
+        use_transform: bool,
+        random_dates: bool,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
+        **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
-        super().__init__(use_transform=use_transform, dataset=dataset)
+        super().__init__(
+            dataset=dataset,
+            stage=stage,
+            use_transform=use_transform,
+            random_dates=random_dates,
+        )
 
+        csv_path = root_dir / f"{stage}.csv"
         name_targets = dataset.filter_targets
         col_targets = [
             f"class_index_{name_target.replace('_', '-')}"

@@ -1,9 +1,11 @@
 """Utils module."""
 
 import itertools
+from typing import Literal
 
 import numpy as np
 import torch
+from sympy.ntheory import factorint
 from torch import Tensor
 
 from ssl_models import RNG
@@ -40,37 +42,81 @@ def shuffle_enc_to_dec(x: dict[str, Tensor]) -> dict[str, Tensor]:
     return x_dec
 
 
-def flatten_dates(
-    tensor_dict: dict[str, Tensor],
-    dim: int,
+def group_mods(
+    x: dict[str, Tensor],
+    multimodal: Literal["msgfm", "shared", "mod", "group"],
+    groups: list[tuple],
 ) -> dict[str, Tensor]:
-    """Flatten date dimension in tensor dict."""
-    for name_mod in tensor_dict:
-        tensor_dict[name_mod] = tensor_dict[name_mod].flatten(dim, dim + 1)
-    return tensor_dict
+    """Group modality sequences."""
+    match multimodal:
+        case "msgfm" | "shared":
+            dim = 0
+            groups = None
+        case "mod":
+            dim = 1
+            groups = None
+        case "group":
+            dim = 1
+
+    x = {name_mod: x_mod.flatten(dim, dim + 1) for name_mod, x_mod in x.items()}
+
+    if groups is not None:
+        x_group = {}
+        for name_mod, name_group in groups:
+            if name_group not in x_group:
+                x_group[name_group] = []
+            x_group[name_group].append(x[name_mod])
+        return {
+            name_group: torch.cat(x_group[name_group], dim=1) for name_group in x_group
+        }
+
+    return x
 
 
-def unflatten_dates(
-    tensor_dict: dict[str, Tensor],
-    dim: int,
+def ungroup_mods(
+    x_group: dict[str, Tensor],
+    multimodal: Literal["msgfm", "shared", "mod", "group"],
+    groups: list[tuple],
     num_dates: dict[str, int],
+    grid_size: dict[str, int],
 ) -> dict[str, Tensor]:
-    """Unflatten date dimension in tensor dict."""
-    for name_mod in tensor_dict:
+    """Ungroup modality sequences."""
+    match multimodal:
+        case "msgfm" | "shared":
+            dim = 0
+            groups = None
+        case "mod":
+            dim = 1
+            groups = None
+        case "group":
+            dim = 1
+
+    if groups is not None:
+        group_to_mods = {}
+        for name_mod, name_group in groups:
+            if name_group not in group_to_mods:
+                group_to_mods[name_group] = []
+            group_to_mods[name_group].append(name_mod)
+
+        x = {}
+        for name_group in x_group:
+            name_mods = group_to_mods[name_group]
+            splits = [
+                num_dates[name_mod] * grid_size[name_mod] ** 2 for name_mod in name_mods
+            ]
+            x_mods = torch.split(x_group[name_group], splits, dim=1)
+            for name_mod, x_mod in zip(name_mods, x_mods):
+                x[name_mod] = x_mod
+    else:
+        x = x_group
+
+    for name_mod in x:
         if dim == 0:
-            tensor_dict[name_mod] = tensor_dict[name_mod].unflatten(
-                0,
-                (-1, num_dates[name_mod]),
-            )
+            x[name_mod] = x[name_mod].unflatten(0, (-1, num_dates[name_mod]))
         elif dim == 1:
-            tensor_dict[name_mod] = tensor_dict[name_mod].unflatten(
-                1,
-                (num_dates[name_mod], -1),
-            )
-        else:
-            msg = f"Invalid dimension {dim} to unflatten"
-            raise ValueError(msg)
-    return tensor_dict
+            x[name_mod] = x[name_mod].unflatten(1, (num_dates[name_mod], -1))
+
+    return x
 
 
 def reshape_encoding(encoding: Tensor, grid_size: int) -> Tensor:
@@ -98,6 +144,7 @@ def encode_dates(
     date_dim: int,
     fac_date_enc: float,
     grid_size: int,
+    len_bands: int,
 ) -> Tensor:
     """Encode day of year, hour of day, and difference to reference date."""
     dates = dates.reshape(dates.shape + (1,) * (5 - dates.ndim))
@@ -129,7 +176,11 @@ def encode_dates(
     diff, date_encoding = torch.split(date_encoding, [1, 4], dim=-1)
     pad_zeros = torch.zeros_like(diff).expand(-1, -1, -1, dim - date_dim)
     pad_diff = diff.expand(-1, -1, -1, date_dim - 4)
-    return torch.cat([pad_zeros, pad_diff, date_encoding], dim=-1)
+    date_encoding = torch.cat([pad_zeros, pad_diff, date_encoding], dim=-1)
+
+    if len_bands == 1:
+        return date_encoding
+    return torch.tile(date_encoding, (1, len_bands, 1, 1))
 
 
 def posemb_sincos_2d(
@@ -157,16 +208,10 @@ def posemb_sincos_2d(
     return pos_encoding.to(dtype)
 
 
-def downsampling_from_patch_size(unpool: bool, patch_size: int) -> int:
-    """Infer number of unpooling downsamplings associated with a given patch size."""
-    if unpool:
-        num_downsampling = round(np.log2(patch_size))
-        if 2**num_downsampling != patch_size:
-            msg = (
-                f"Invalid patch size {patch_size}."
-                " Expected power of 2 when using unpooling."
-            )
-            raise ValueError(msg)
-    else:
-        num_downsampling = None
-    return num_downsampling
+def downsamplings_from_patch_size(unpool_dim: int | None, patch_size: int) -> list[int]:
+    """Infer downsamplings associated with a given patch size."""
+    downsamplings = []
+    if unpool_dim:
+        for prime, power in factorint(patch_size).items():
+            downsamplings += [prime] * power
+    return downsamplings

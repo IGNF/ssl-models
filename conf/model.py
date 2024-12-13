@@ -7,23 +7,17 @@ from hydra_zen import store
 
 @dataclass
 class ModelConfig:  # noqa: D101
+    multimodal: str = "mod"
     model: str = "mae"
     model_size: str = "tiny"
-    mask_ratio: float = 0.75
-    type_head: str = "linear"
+    type_head: str = "attentive"
     loss: str = "l2_norm"
-    unpool: bool = False
+    unpool_dim: int | None = None
     swin_version: int = 1
     v2_attn: bool = True
     num_levels: int = 3
-    nb_mix_images: int = 4
     swin_abs_enc: bool = False
-    use_date_enc: bool = False
-    shuffle_mods: bool = False
-    mask_indep: bool = True
-    mask_shared: bool = True
-    encoder: str = "shared"
-    decoder: str = "shared"
+    use_date_enc: bool = True
 
 
 model_store = store(group="model")

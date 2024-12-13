@@ -14,9 +14,8 @@ from ssl_models.dataset.flair import FLAIRDataset
 @dataclass
 class FLAIRConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "FLAIR-INC_TOY"
-    weight: float = 1.0
     crop_meters: float = 256 * 0.2
-    ref_input: str | None = "aerial"
+    ref_input: str | None = "aerial"  # defines grid for raster targets
 
     filter_inputs: list[str] = field(
         default_factory=lambda: [
@@ -25,7 +24,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             "spot",
             "s2",
             "s1_asc",
-            "s1_desc",
+            "s1_des",
         ],
     )  # selected input modalities
     filter_targets: list[str] = field(
@@ -78,8 +77,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             norm_fac=20.0,
         ),
     )
-
-    s1_desc: InputRasterConfig = field(
+    s1_des: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
@@ -92,7 +90,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = FLAIRDataset
-        self.ground_meters = 102.4
+        self.total_meters = 102.4
 
         self.flair_cosia = TargetRasterConfig(
             type_target="segment",
@@ -117,6 +115,6 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
                 "spot": 1.6,
                 "s2": 10.24,
                 "s1_asc": 10.24,
-                "s1_desc": 10.24,
+                "s1_des": 10.24,
             },
         )

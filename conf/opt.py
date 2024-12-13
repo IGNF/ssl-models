@@ -34,6 +34,7 @@ probe_store(OptProbeConfig, name="default_probe")
 @dataclass
 class OptFinetuneConfig:  # noqa: D101
     base_lr: float = 1e-5
+    lw_decay: float | None = None
     b1: float = 0.9
     b2: float = 0.99
     wd: float = 0.01
