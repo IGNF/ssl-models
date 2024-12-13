@@ -38,7 +38,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
             bands=10,
-            num_dates=8,
+            num_dates=16,
             norm_fac=10000.0,
         ),
     )
@@ -47,8 +47,9 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
             bands=3,
-            num_dates=1,
+            num_dates=4,
             norm_fac=20.0,
+            name_group="sen1",
         ),
     )
     s1_des: InputRasterConfig = field(
@@ -56,8 +57,9 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
             bands=3,
-            num_dates=1,
+            num_dates=4,
             norm_fac=20.0,
+            name_group="sen1",
         ),
     )
 

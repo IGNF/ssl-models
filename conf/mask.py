@@ -9,7 +9,7 @@ from hydra_zen import store
 class MaskConfig:  # noqa: D101
     mask_ratio: float = 0.75
     nb_mix_images: int = 4
-    mask_scale: bool = True
+    mask_scale: bool = False
     mask_mod: float | None = None
     mask_bands: float | None = None
     mask_dates: float | None = None

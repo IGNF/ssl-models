@@ -182,7 +182,7 @@ class MixMAE(BaseMIM):
             raise ValueError(msg)
 
         # sample mask
-        noise = torch.randn((B_enc, L_out), device=x.device)  # [B L_out]
+        noise = torch.rand((B_enc, L_out), device=x.device)  # [B L_out]
         random_indices = torch.argsort(noise, dim=-1)  # [B L_out]
 
         mask = torch.arange(self.nb_mix_images, dtype=x.dtype, device=x.device)

@@ -202,7 +202,7 @@ class MAE(BaseMIM):
         B, L, _ = x.shape  # noqa: N806
 
         # sample masked tokens
-        noise = torch.randn((B, L), device=x.device)  # [B L]
+        noise = torch.rand((B, L), device=x.device)  # [B L]
         noise *= 1 - mask_rec.reshape((B, L)).float()
         random_indices = torch.argsort(noise, dim=-1)  # [B L]
         reverse_indices = torch.argsort(random_indices, dim=-1)

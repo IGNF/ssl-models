@@ -180,7 +180,7 @@ def encode_dates(
 
     if len_bands == 1:
         return date_encoding
-    return torch.repeat_interleave(date_encoding, len_bands, dim=1)
+    return torch.tile(date_encoding, (1, len_bands, 1, 1))
 
 
 def posemb_sincos_2d(

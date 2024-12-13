@@ -35,9 +35,9 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     s2: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=6,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=10,
-            num_dates=4,
+            num_dates=16,
             mask_threshold=0.0,
             norm_fac=5000.0,
         ),
@@ -45,9 +45,9 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     s1_asc: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=6,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=2,
-            num_dates=1,
+            num_dates=4,
             norm_fac=0.25,
             name_group="sen1",
         ),
@@ -55,9 +55,9 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     s1_des: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=6,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=2,
-            num_dates=1,
+            num_dates=4,
             norm_fac=0.25,
             name_group="sen1",
         ),

@@ -10,7 +10,7 @@ class ModelConfig:  # noqa: D101
     multimodal: str = "mod"
     model: str = "mae"
     model_size: str = "tiny"
-    type_head: str = "linear"
+    type_head: str = "attentive"
     loss: str = "l2_norm"
     unpool_dim: int | None = None
     swin_version: int = 1

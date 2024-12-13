@@ -253,7 +253,7 @@ class BaseMIM(nn.Module, ABC):
             D = x_enc[name_mod].shape[1]  # noqa: N806
             G = self.len_bands[name_mod]  # noqa: N806
             L_out = x_enc[name_mod].shape[2] // self.stride**2  # noqa: N806
-            mask_token[name_mod] = self.mask_token[name_mod].half()
+            mask_token[name_mod] = self.mask_token[name_mod].to(x_enc[name_mod].dtype)
             mask_token[name_mod] = (
                 mask_token[name_mod].expand((B, -1, D // G, L_out, -1)).flatten(1, 2)
             )
