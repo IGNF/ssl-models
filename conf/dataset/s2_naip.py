@@ -98,6 +98,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = S2NAIPDataset
+        self.balance_pretrain = False
         self.total_meters = 512 * 1.25
 
         self.osm_seg = TargetRasterConfig(

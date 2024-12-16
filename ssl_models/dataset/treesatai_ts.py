@@ -5,11 +5,10 @@ from typing import Literal
 
 import h5py
 import numpy as np
-import pandas as pd
 
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
-from ssl_models.dataset.utils import dates_numpy, products_datetimes
+from ssl_models.dataset.utils import dates_numpy, products_datetimes, read_csv
 
 
 class TreeSatAITSDataset(GenericDataset):
@@ -32,24 +31,18 @@ class TreeSatAITSDataset(GenericDataset):
             random_dates=random_dates,
         )
 
-        csv_path = root_dir / f"{stage}.csv"
-        csv_data = pd.read_csv(csv_path, parse_dates=["aerial_date"])
+        csv_data = read_csv(
+            root_dir=root_dir,
+            stage=stage,
+            ssl_phase=ssl_phase,
+            balance_pretrain=dataset.balance_pretrain,
+            parse_dates=["aerial_date"],
+        )
         target_cols = [
             col
             for col in csv_data.columns
             if col not in ("aerial_name", "aerial_date", "sen_name")
         ]
-        match ssl_phase:
-            case "pretrain":
-                target_argmax = csv_data[target_cols].argmax(axis=1)
-                target_vals, target_counts = np.unique(target_argmax, return_counts=True)
-                target_facs = np.clip( target_counts * target_counts.max() / target_counts, 1, 10).astype(int)
-                target_fac = {target_val: max(round(target_counts.max() / target_count), 10) for target_val, target_count in zip(target_vals, target_counts)}
-                csv_data["fac"] = csv_data["argmax"].apply(lambda target_argmax: [1] * target_fac[target_argmax])
-                csv_data = csv_data.explode("fac")[["aerial_name", "aerial_date", "sen_name"] + target_cols]
-            case "probe" | "finetune":
-                pass
-
 
         aerial_dates = [
             dates_numpy([aerial_date])

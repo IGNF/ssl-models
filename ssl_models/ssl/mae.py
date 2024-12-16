@@ -89,7 +89,7 @@ class MAE(BaseMIM):
                 name_models = list(num_dates_mod.keys())
                 for name_mod, _ in datasets.dataset.groups:
                     mod = datasets.dataset.inputs[name_mod]
-                    scale_fac = num_dates_mod[name_mod] if mask.mask_scale else 1.0
+                    scale_fac = num_dates_mod[name_mod] ** mask.mask_scale
                     self.mask_ratio[name_mod] = 1 - (1 - mask.mask_ratio) / scale_fac
                     self.mask_mod[name_mod] = None
                     self.mask_bands[name_mod] = (
@@ -102,7 +102,7 @@ class MAE(BaseMIM):
                 name_models = list(num_dates_group.keys())
                 for name_mod, name_group in datasets.dataset.groups:
                     mod = datasets.dataset.inputs[name_mod]
-                    scale_fac = num_dates_group[name_group] if mask.mask_scale else 1.0
+                    scale_fac = num_dates_group[name_group] ** mask.mask_scale
                     self.mask_ratio[name_group] = 1 - (1 - mask.mask_ratio) / scale_fac
                     self.mask_mod[name_mod] = (
                         mask.mask_mod

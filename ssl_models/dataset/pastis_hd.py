@@ -5,11 +5,10 @@ from typing import Literal
 
 import geopandas as gpd
 import numpy as np
-import pandas as pd
 
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
-from ssl_models.dataset.utils import dict_datetimes, strs_datetimes
+from ssl_models.dataset.utils import dict_datetimes, read_csv, strs_datetimes
 
 
 class PASTISHDDataset(GenericDataset):
@@ -22,6 +21,7 @@ class PASTISHDDataset(GenericDataset):
         stage: Literal["train", "val", "test"],
         use_transform: bool,
         random_dates: bool,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         num_repeats: int = 10,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
@@ -32,8 +32,13 @@ class PASTISHDDataset(GenericDataset):
             random_dates=random_dates,
         )
 
-        csv_path = root_dir / f"{stage}.csv"
-        image_ids = pd.read_csv(csv_path)["image"]
+        csv_data = read_csv(
+            root_dir=root_dir,
+            stage=stage,
+            ssl_phase=ssl_phase,
+            balance_pretrain=dataset.balance_pretrain,
+        )
+        image_ids = csv_data["image"]
 
         meta_path = root_dir / "metadata.geojson"
         meta_data = gpd.read_file(meta_path).set_index("id")

@@ -44,6 +44,7 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = HiUCDDataset
+        self.balance_pretrain = False
         self.total_meters = 512 * 0.1
 
         self.hi_ucd = TargetRasterConfig(

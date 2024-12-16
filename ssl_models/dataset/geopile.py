@@ -75,11 +75,9 @@ class GeoPileDataset(GenericDataset):
 
         for name_target, target in self.targets.items():
             inputs[name_target] = np.array(target[idx])
-            inputs[f"{name_target}_dates"] = np.array(
-                np.datetime64("2019-07-01").astype(np.int64),
-                ndmin=1,
-            )
-        inputs["ref_date"] = inputs["rgb_dates"]
+            inputs[f"{name_target}_dates"] = strs_datetimes(["2019-07-01"])
+
+        inputs["ref_date"] = strs_datetimes(["2019-07-01"])
 
         return self.transform_rasters(inputs)
 

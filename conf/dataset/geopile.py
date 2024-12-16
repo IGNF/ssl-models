@@ -36,6 +36,7 @@ class GeoPileConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = GeoPileDataset
+        self.balance_pretrain = False
         self.total_meters = 256.0
 
         self.mlrsnet = TargetConfig(
