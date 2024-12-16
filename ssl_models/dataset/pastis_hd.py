@@ -34,9 +34,11 @@ class PASTISHDDataset(GenericDataset):
 
         csv_path = root_dir / f"{stage}.csv"
         image_ids = pd.read_csv(csv_path)["image"]
-        meta_data = gpd.read_file(root_dir / "metadata.geojson").set_index("id")
 
-        self.root_dir = Path(root_dir)
+        meta_path = root_dir / "metadata.geojson"
+        meta_data = gpd.read_file(meta_path).set_index("id")
+
+        self.root_dir = root_dir
         self.image_ids = image_ids
         self.num_repeats = num_repeats
 

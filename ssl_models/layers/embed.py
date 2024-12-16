@@ -84,10 +84,7 @@ class PatchifyBands(nn.Module):
                 ],
             )
             self.norms = nn.ModuleList(
-                [
-                    nn.GroupNorm(1, channels_out)
-                    for idx, (_, channels_out) in enumerate(channels)
-                ],
+                [nn.GroupNorm(1, channels_out) for (_, channels_out) in channels],
             )
             self.max_pool = nn.ModuleList(
                 [
@@ -176,10 +173,10 @@ class Pixelify(nn.Module):
         mask: Tensor,
         inds: list[list[Tensor]],
     ) -> tuple[Tensor, Tensor]:
-        x = rearrange(x, "b (d g) l c -> g b d l c", g=len(self.num_bands))
+        x = rearrange(x, "b (g d) l c -> g b d l c", g=len(self.num_bands))
         mask = repeat(
             mask,
-            "b (d g) (h w) c -> g b d c (h p1) (w p2)",
+            "b (g d) (h w) c -> g b d c (h p1) (w p2)",
             g=len(self.num_bands),
             p1=self.patch_size,
             p2=self.patch_size,
@@ -249,10 +246,7 @@ class PixelifyBands(nn.Module):
                 ],
             )
             self.norms = nn.ModuleList(
-                [
-                    nn.GroupNorm(1, channels_out)
-                    for idx, (_, channels_out) in enumerate(channels)
-                ],
+                [nn.GroupNorm(1, channels_out) for (_, channels_out) in channels],
             )
             self.fc = nn.Conv2d(
                 self.unpool_dim // 2 ** len(self.downsamplings),

@@ -1,5 +1,6 @@
 """Head layers."""
 
+from abc import ABC
 from functools import partial
 from typing import Literal
 
@@ -10,7 +11,7 @@ from torch import Tensor, nn
 from ssl_models.layers.embed import PixelifyBands
 
 
-class Head(nn.Module):
+class Head(nn.Module, ABC):
     """Abstract head class."""
 
     def maybe_detach_features(
@@ -104,7 +105,7 @@ class PixelifyHead(PixelifyBands, Head):
         patch_size: int,
         heads: int = 8,
     ) -> None:
-        super().__init__(  # method from the inherited class listed first
+        super().__init__(  # method used is from the first listed inherited class
             embed_dim=dim,
             out_chans=out_chans,
             patch_size=patch_size,
@@ -125,7 +126,7 @@ class PixelifyHead(PixelifyBands, Head):
         out = rearrange(out, "b d l c -> (b l) d c")
         out = self.reduce(out)
         out = rearrange(out, "(b l) c -> b 1 l c", l=x.shape[2])
-        return super().forward(  # method from the inherited class listed first
+        return super().forward(  # method used is from the first listed inherited class
             out,
             inds=[],
         )

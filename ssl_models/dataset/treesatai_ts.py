@@ -22,6 +22,7 @@ class TreeSatAITSDataset(GenericDataset):
         stage: Literal["train", "val", "test"],
         use_transform: bool,
         random_dates: bool,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -38,6 +39,17 @@ class TreeSatAITSDataset(GenericDataset):
             for col in csv_data.columns
             if col not in ("aerial_name", "aerial_date", "sen_name")
         ]
+        match ssl_phase:
+            case "pretrain":
+                target_argmax = csv_data[target_cols].argmax(axis=1)
+                target_vals, target_counts = np.unique(target_argmax, return_counts=True)
+                target_facs = np.clip( target_counts * target_counts.max() / target_counts, 1, 10).astype(int)
+                target_fac = {target_val: max(round(target_counts.max() / target_count), 10) for target_val, target_count in zip(target_vals, target_counts)}
+                csv_data["fac"] = csv_data["argmax"].apply(lambda target_argmax: [1] * target_fac[target_argmax])
+                csv_data = csv_data.explode("fac")[["aerial_name", "aerial_date", "sen_name"] + target_cols]
+            case "probe" | "finetune":
+                pass
+
 
         aerial_dates = [
             dates_numpy([aerial_date])
