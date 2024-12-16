@@ -6,11 +6,10 @@ from typing import Literal
 
 import geopandas as gpd
 import numpy as np
-import pandas as pd
 
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
-from ssl_models.dataset.utils import dict_datetimes, strs_datetimes
+from ssl_models.dataset.utils import dict_datetimes, read_csv, strs_datetimes
 
 
 class FLAIRDataset(GenericDataset):
@@ -23,6 +22,7 @@ class FLAIRDataset(GenericDataset):
         stage: Literal["train", "val", "test"],
         use_transform: bool,
         random_dates: bool,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -32,8 +32,12 @@ class FLAIRDataset(GenericDataset):
             random_dates=random_dates,
         )
 
-        csv_path = root_dir / f"{stage}.csv"
-        csv_data = pd.read_csv(csv_path)
+        csv_data = read_csv(
+            root_dir=root_dir,
+            stage=stage,
+            ssl_phase=ssl_phase,
+            balance_pretrain=dataset.balance_pretrain,
+        )
 
         self.root_dir = root_dir
         self.patch_ids = csv_data["patch_id"].tolist()

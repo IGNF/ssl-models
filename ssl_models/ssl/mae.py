@@ -21,8 +21,8 @@ class MAE(BaseMIM):
         mask: MaskConfig,
         multimodal: Literal["msgfm", "shared", "mod", "group"],
         model: Literal["mae"],
-        unpool_dim: int | None,
         num_levels: Literal[1],
+        unpool_dim: int | None,
         embed_dim: int,
         depth: int,
         heads: int,
@@ -44,8 +44,8 @@ class MAE(BaseMIM):
             datasets=datasets,
             multimodal=multimodal,
             model=model,
-            unpool_dim=unpool_dim,
             num_levels=num_levels,
+            unpool_dim=unpool_dim,
             embed_dim=embed_dim,
             decoder_dim=decoder_dim,
             type_head=type_head,
@@ -71,20 +71,12 @@ class MAE(BaseMIM):
             num_dates_mod[name_mod] += num_dates
             num_dates_group[name_group] += num_dates
 
-        self.mask_ratio = {}
-        self.mask_mod, self.mask_bands, self.mask_dates = {}, {}, {}
-        for name_mod, name_group in datasets.dataset.groups:
-            mod = datasets.dataset.inputs[name_mod]
-            self.mask_mod[name_mod] = (
-                mask.mask_mod
-                if num_dates_mod[name_mod] != num_dates_group[name_group]
-                else None
-            )
-            self.mask_bands[name_mod] = (
-                mask.mask_bands if self.len_bands[name_mod] > 1 else None
-            )
-            self.mask_dates[name_mod] = mask.mask_dates if mod.num_dates > 1 else None
-
+        self.mask_ratio, self.mask_mod, self.mask_bands, self.mask_dates = (
+            {},
+            {},
+            {},
+            {},
+        )
         match multimodal:
             case "msgfm" | "shared":
                 name_models = ["shared"]
@@ -95,15 +87,34 @@ class MAE(BaseMIM):
                     self.mask_dates[name_mod] = None
             case "mod":
                 name_models = list(num_dates_mod.keys())
-                for name_mod, num_dates in num_dates_mod.items():
-                    scale_fac = num_dates if mask.mask_scale else 1.0
+                for name_mod, _ in datasets.dataset.groups:
+                    mod = datasets.dataset.inputs[name_mod]
+                    scale_fac = num_dates_mod[name_mod] ** mask.mask_scale
                     self.mask_ratio[name_mod] = 1 - (1 - mask.mask_ratio) / scale_fac
                     self.mask_mod[name_mod] = None
+                    self.mask_bands[name_mod] = (
+                        mask.mask_bands if self.len_bands[name_mod] > 1 else None
+                    )
+                    self.mask_dates[name_mod] = (
+                        mask.mask_dates if mod.num_dates > 1 else None
+                    )
             case "group":
                 name_models = list(num_dates_group.keys())
-                for name_group, num_dates in num_dates_group.items():
-                    scale_fac = num_dates if mask.mask_scale else 1.0
+                for name_mod, name_group in datasets.dataset.groups:
+                    mod = datasets.dataset.inputs[name_mod]
+                    scale_fac = num_dates_group[name_group] ** mask.mask_scale
                     self.mask_ratio[name_group] = 1 - (1 - mask.mask_ratio) / scale_fac
+                    self.mask_mod[name_mod] = (
+                        mask.mask_mod
+                        if num_dates_mod[name_mod] != num_dates_group[name_group]
+                        else None
+                    )
+                    self.mask_bands[name_mod] = (
+                        mask.mask_bands if self.len_bands[name_mod] > 1 else None
+                    )
+                    self.mask_dates[name_mod] = (
+                        mask.mask_dates if mod.num_dates > 1 else None
+                    )
             case _:
                 msg = f"Invalid multimodal mode {multimodal}."
                 raise ValueError(msg)

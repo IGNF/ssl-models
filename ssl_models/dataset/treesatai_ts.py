@@ -5,11 +5,10 @@ from typing import Literal
 
 import h5py
 import numpy as np
-import pandas as pd
 
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
-from ssl_models.dataset.utils import dates_numpy, products_datetimes
+from ssl_models.dataset.utils import dates_numpy, products_datetimes, read_csv
 
 
 class TreeSatAITSDataset(GenericDataset):
@@ -22,6 +21,7 @@ class TreeSatAITSDataset(GenericDataset):
         stage: Literal["train", "val", "test"],
         use_transform: bool,
         random_dates: bool,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -31,8 +31,13 @@ class TreeSatAITSDataset(GenericDataset):
             random_dates=random_dates,
         )
 
-        csv_path = root_dir / f"{stage}.csv"
-        csv_data = pd.read_csv(csv_path, parse_dates=["aerial_date"])
+        csv_data = read_csv(
+            root_dir=root_dir,
+            stage=stage,
+            ssl_phase=ssl_phase,
+            balance_pretrain=dataset.balance_pretrain,
+            parse_dates=["aerial_date"],
+        )
         target_cols = [
             col
             for col in csv_data.columns

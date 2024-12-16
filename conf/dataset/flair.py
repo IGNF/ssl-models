@@ -13,7 +13,8 @@ from ssl_models.dataset.flair import FLAIRDataset
 
 @dataclass
 class FLAIRConfig(DatasetConfig):  # noqa: D101
-    rel_dir: str = "FLAIR-INC_TOY"
+    rel_dir: str = "FLAIR-INC"
+    balance_pretrain: bool = False
     crop_meters: float = 256 * 0.2
     ref_input: str | None = "aerial"  # defines grid for raster targets
 
@@ -45,9 +46,9 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     dem: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=256,
-            patch_size=PatchSizeConfig(mae=16, mixmae=8),
+            patch_size=PatchSizeConfig(mae=32, mixmae=8),
             bands=2,
-            norm_fac=1.0,
+            norm_fac=1000.0,
         ),
     )
     spot: InputRasterConfig = field(
@@ -55,35 +56,37 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
             bands=4,
-            norm_fac=255.0,
+            norm_fac=2000.0,
         ),
     )
     s2: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=16,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            image_size=5,
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=10,
-            num_dates=4,
+            num_dates=16,
             mask_threshold=0.0,
-            norm_fac=10000.0,
+            norm_fac=5000.0,
         ),
     )
     s1_asc: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=16,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            image_size=5,
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=2,
-            num_dates=4,
-            norm_fac=20.0,
+            num_dates=2,
+            norm_fac=1.0,
+            name_group="sen1",
         ),
     )
     s1_des: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=16,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            image_size=5,
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=2,
-            num_dates=4,
-            norm_fac=20.0,
+            num_dates=2,
+            norm_fac=1.0,
+            name_group="sen1",
         ),
     )
 

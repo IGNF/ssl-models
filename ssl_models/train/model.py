@@ -37,12 +37,12 @@ class SSLModule(LightningModule):
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         unpool_dim: int | None = None,
+        use_date_enc: bool = True,
         # mixmae args
         num_levels: Literal[3, 4] = 3,
         swin_version: Literal[1, 2] = 1,
         v2_attn: bool = True,
         swin_abs_enc: bool = False,
-        use_date_enc: bool = True,
     ) -> None:
         super().__init__()
 
@@ -66,7 +66,7 @@ class SSLModule(LightningModule):
         match model:
             case "mae":
                 num_levels = 1
-                fac_abs_enc = 1.0  # abs pos encodings are necessary
+                fac_abs_enc = 1.0  # abs pos encodings are necessary for MAE
                 fac_date_enc = 1.0 if use_date_enc else 0.0
 
                 model_map = {

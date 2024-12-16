@@ -51,7 +51,7 @@ class ImageLogger(Callback):
         self.log_inputs = log_inputs
 
     @staticmethod
-    def to_numpy(x: Tensor) -> Tensor:
+    def to_numpy(x: Tensor) -> np.ndarray:
         """Move to CPU and convert to numpy."""
         x_npy = x.detach().cpu().numpy().astype(np.float32)
         return (

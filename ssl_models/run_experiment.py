@@ -51,8 +51,9 @@ def run_experiment(
             "opt_pretrain": vars(opt_pretrain),
             "opt_probe": vars(opt_probe),
             "opt_finetune": vars(opt_finetune),
-            "data": vars(data),
             "datasets": vars(datasets),
+            "data": vars(data),
+            "mask": vars(mask),
             "model": vars(model),
             "trainer": vars(trainer_pretrain),
         }

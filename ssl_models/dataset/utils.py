@@ -1,8 +1,11 @@
 """Utils module."""
 
 from datetime import datetime
+from pathlib import Path
+from typing import Literal
 
 import numpy as np
+import pandas as pd
 
 
 def dates_numpy(dates: list[datetime]) -> np.ndarray:
@@ -61,3 +64,23 @@ def dict_datetimes(datetime_dict: dict, start: int = 0) -> np.ndarray:
         for idx in range(start, len(datetime_dict) + start)
     ]
     return dates_numpy(datetimes)
+
+
+def read_csv(
+    root_dir: Path,
+    stage: Literal["train", "val", "test"],
+    ssl_phase: Literal["pretrain", "probe", "finetune"],
+    balance_pretrain: bool,
+    **kwargs,  # noqa: ANN003
+) -> Path:
+    """Read dataset csv based on SSL phase and choice of balancing."""
+    match ssl_phase:
+        case "pretrain":
+            csv_path = (
+                root_dir / f"{stage}_balanced.csv"
+                if balance_pretrain
+                else root_dir / f"{stage}.csv"
+            )
+        case "probe" | "finetune":
+            csv_path = root_dir / f"{stage}.csv"
+    return pd.read_csv(csv_path, **kwargs)

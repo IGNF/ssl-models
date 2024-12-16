@@ -34,8 +34,8 @@ class BaseMIM(nn.Module, ABC):
         datasets: DatasetsConfig,
         multimodal: Literal["msgfm", "shared", "mod", "group"],
         model: Literal["mae", "mixmae"],
-        unpool_dim: int | None,
         num_levels: Literal[1, 3, 4],
+        unpool_dim: int | None,
         embed_dim: int,
         decoder_dim: int,
         type_head: Literal["linear", "attentive"] = "linear",
@@ -316,7 +316,12 @@ class BaseMIM(nn.Module, ABC):
         x: dict[str, Tensor],
         mask: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
-    ) -> tuple[dict[str, Tensor], dict[str, Tensor | None], dict[str, Tensor | None]]:
+    ) -> tuple[
+        dict[str, Tensor],
+        dict[str, Tensor | None],
+        dict[str, Tensor | None],
+        dict[str, Tensor | None],
+    ]:
         """Mask multimodal."""
         if ssl_phase == "pretrain":
             mask_rec = self.mask_struct(x)
@@ -390,7 +395,7 @@ class BaseMIM(nn.Module, ABC):
         self,
         pixels_rec: dict[str, Tensor],
         mask_rec: dict[str, Tensor],
-        target: dict[str, Tensor],
+        batch: dict[str, Tensor],
     ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
         """Visu of reconstructed images, shared for all MIM modules."""
         pixels_masked = {}
@@ -398,7 +403,7 @@ class BaseMIM(nn.Module, ABC):
             pixels_masked[name_mod] = torch.where(
                 mask_rec[name_mod],
                 0,
-                target[name_mod],
+                batch[name_mod],
             )
             pixels_masked[name_mod] = torch.where(
                 torch.all(mask_rec[name_mod], dim=2, keepdim=True),
@@ -408,7 +413,7 @@ class BaseMIM(nn.Module, ABC):
             pixels_rec[name_mod] = torch.where(
                 mask_rec[name_mod],
                 pixels_rec[name_mod],
-                target[name_mod],
+                batch[name_mod],
             )
         return pixels_masked, pixels_rec
 
@@ -495,12 +500,12 @@ class BaseMIM(nn.Module, ABC):
                     d=D,
                 )
             x_ref = torch.cat(
-                [x_ref[name_mod] for (name_mod, _) in self.dataset.groups],
+                [x_ref[name_mod] for name_mod in x_ref],
                 dim=1,
             )
 
         x_enc = torch.cat(
-            [x_enc[name_mod].flatten(1, 2) for (name_mod, _) in self.dataset.groups],
+            [x_enc[name_mod].flatten(1, 2) for name_mod in x_enc],
             dim=1,
         )
 

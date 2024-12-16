@@ -120,7 +120,7 @@ def ungroup_mods(
 
 
 def reshape_encoding(encoding: Tensor, grid_size: int) -> Tensor:
-    """Reshape encoding for a modality, based on grid factor."""
+    """Reshape encoding for a modality, based on grid size."""
     encoding = encoding.reshape((1,) * (5 - encoding.ndim) + encoding.shape)
     encoding = encoding.expand(
         (
@@ -180,7 +180,9 @@ def encode_dates(
 
     if len_bands == 1:
         return date_encoding
-    return torch.tile(date_encoding, (1, len_bands, 1, 1))
+    date_encoding = date_encoding.unflatten(1, (1, -1))
+    date_encoding = date_encoding.expand(-1, len_bands, -1, -1, -1)
+    return date_encoding.flatten(1, 2)
 
 
 def posemb_sincos_2d(
