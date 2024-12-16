@@ -212,7 +212,7 @@ class BaseMIM(nn.Module, ABC):
                         num_classes=target.num_classes,
                     )
                 case "change_detect":
-                    self.loss_pred[name_target] = F.binary_cross_entropy
+                    self.loss_pred[name_target] = F.binary_cross_entropy_with_logits
                     metric_partial = partial(
                         MonoLabelMetric,
                         type_target=target.type_target,
