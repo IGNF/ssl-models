@@ -1,14 +1,14 @@
 """PASTIS-HD dataset module."""
 
 from pathlib import Path
+from typing import Literal
 
 import geopandas as gpd
 import numpy as np
-import pandas as pd
 
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
-from ssl_models.dataset.utils import dict_datetimes, strs_datetimes
+from ssl_models.dataset.utils import dict_datetimes, read_csv, strs_datetimes
 
 
 class PASTISHDDataset(GenericDataset):
@@ -16,20 +16,36 @@ class PASTISHDDataset(GenericDataset):
 
     def __init__(
         self,
-        root_dir: str | Path,
-        csv_path: str | Path,
-        use_transform: bool,
         dataset: DatasetConfig,
-        *args,  # noqa: ARG002, ANN002
+        root_dir: Path,
+        stage: Literal["train", "val", "test"],
+        use_transform: bool,
+        random_dates: bool,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        num_repeats: int = 10,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
-        super().__init__(use_transform=use_transform, dataset=dataset)
+        super().__init__(
+            dataset=dataset,
+            stage=stage,
+            use_transform=use_transform,
+            random_dates=random_dates,
+        )
 
-        image_ids = pd.read_csv(csv_path)["image"]
-        meta_data = gpd.read_file(root_dir / "metadata.geojson").set_index("id")
+        csv_data = read_csv(
+            root_dir=root_dir,
+            stage=stage,
+            ssl_phase=ssl_phase,
+            balance_pretrain=dataset.balance_pretrain,
+        )
+        image_ids = csv_data["image"]
 
-        self.root_dir = Path(root_dir)
+        meta_path = root_dir / "metadata.geojson"
+        meta_data = gpd.read_file(meta_path).set_index("id")
+
+        self.root_dir = root_dir
         self.image_ids = image_ids
+        self.num_repeats = num_repeats
 
         self.s2_dates = [
             dict_datetimes(meta_data.loc[str(image_id), "dates-S2"])
@@ -47,6 +63,8 @@ class PASTISHDDataset(GenericDataset):
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
+        idx = idx % len(self.image_ids)
+
         image_id = self.image_ids[idx]
         spot_path = (
             self.root_dir
@@ -74,10 +92,15 @@ class PASTISHDDataset(GenericDataset):
 
         inputs = self.preprocess_rasters(meta)
 
+        inputs["pastis_mlc"] = np.array(
+            [((inputs["pastis_seg"] == idx) > 0).any() for idx in range(1, 19)],
+        ).astype(int)
+        inputs["pastis_mlc_dates"] = spot_date
+
         inputs["ref_date"] = spot_date
 
         return self.transform_rasters(inputs)
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return len(self.image_ids)
+        return len(self.image_ids) * self.num_repeats

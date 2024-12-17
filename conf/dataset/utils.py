@@ -24,8 +24,8 @@ class PatchSizeConfig:
 class RasterConfig:
     """Generic raster modality config."""
 
-    bands: list[int] | int = MISSING
-    mask_threshold: float = 100.0
+    bands: int | list[list[int]] = MISSING
+    mask_threshold: float = 0.0
     num_dates: int = 1
     norm_fac: float | None = None
 
@@ -36,6 +36,7 @@ class InputConfig:
 
     image_size: int = MISSING
     patch_size: PatchSizeConfig = MISSING
+    name_group: str | None = None
 
 
 @dataclass
@@ -65,9 +66,6 @@ class InputRasterConfig(RasterConfig, InputConfig):
 class TargetRasterConfig(RasterConfig, TargetConfig):
     """Target raster modality config."""
 
-    num_dates: int = 1
-    colormap: list[list[int]] = MISSING
-
 
 @dataclass
 class DatasetConfig:
@@ -79,19 +77,27 @@ class DatasetConfig:
                 msg = f"Invalid modality {name_mod} specified in resolution."
                 raise ValueError(msg)
 
-            ground_pixels = self.ground_meters / float(resolution_meters)
-            crop_pixels = self.crop_meters / float(resolution_meters)
+            total_size = self.total_meters / float(resolution_meters)
+            crop_size = self.crop_meters / float(resolution_meters)
             is_filtered = name_mod in self.filter_inputs + self.filter_targets
-            if not ground_pixels.is_integer() and is_filtered:
+            if not total_size.is_integer() and is_filtered:
                 msg = f"Modality {name_mod}'s resolution does not divide image extent."
                 raise ValueError(msg)
 
-            if not crop_pixels.is_integer() and is_filtered:
+            if not crop_size.is_integer() and is_filtered:
                 msg = f"Modality {name_mod}'s resolution does not divide crop extent."
                 raise ValueError(msg)
 
             mod = getattr(self, name_mod)
             mod.resolution_meters = float(resolution_meters)
+
+    def _set_groups(self) -> list[tuple]:
+        groups = []
+        for name_mod, mod in self.inputs.items():
+            name_group = mod.name_group if mod.name_group is not None else name_mod
+            groups.append((name_mod, name_group))
+
+        return groups
 
     def __post_init__(self, resolutions_meters: dict[str, int]) -> None:
         """Check validity of modalities and further define non configurable attrs."""
@@ -117,16 +123,4 @@ class DatasetConfig:
             if isinstance(mod, RasterConfig)
         }
 
-        if self.ref_input is not None:
-            if self.ref_input not in self.filter_inputs:
-                msg = (
-                    f"Invalid reference input {self.ref_input}."
-                    f"Expected one of {self.filter_inputs}"
-                )
-                raise ValueError(msg)
-            if self.inputs[self.ref_input].num_dates != 1:
-                msg = (
-                    f"Invalid number of dates for reference input {self.ref_input}."
-                    f"Expected single date."
-                )
-                raise ValueError(msg)
+        self.groups = self._set_groups()

@@ -2,8 +2,9 @@
 
 import warnings
 from abc import ABC
-from math import lcm
+from math import gcd
 from pathlib import Path
+from typing import Literal
 
 import h5py
 import numpy as np
@@ -22,12 +23,23 @@ class GenericDataset(Dataset, ABC):
 
     def __init__(
         self,
-        use_transform: bool,
         dataset: DatasetConfig,
+        stage: Literal["train", "val", "test"],
+        use_transform: bool,
+        random_dates: bool,
     ) -> None:
         self.rng = np.random.default_rng(seed=42)
         self.use_transform = use_transform
         self.dataset = dataset
+        self.random_dates = random_dates and stage == "train"
+
+    @staticmethod
+    def unflatten(x: np.ndarray, axis: int, reshape_axis: tuple) -> np.ndarray:
+        """Unflatten specific axes in numpy array."""
+        if axis == -1:
+            axis = x.ndim - 1
+        shape = (*x.shape[:axis], *reshape_axis, *x.shape[axis + 1 :])
+        return x.reshape(shape)
 
     def preprocess_rasters(
         self,
@@ -41,47 +53,43 @@ class GenericDataset(Dataset, ABC):
             msg = "A modality is missing in meta data."
             raise ValueError(msg)
 
-        res, sizes_date = {}, {}
+        sizes, sizes_date = {}, {}
         for name_mod, mod in self.dataset.rasters.items():
-            res[name_mod] = int(mod.resolution_meters * 100)
+            sizes[name_mod] = round(self.dataset.total_meters / mod.resolution_meters)
             sizes_date[name_mod] = len(meta[f"{name_mod}_dates"])
 
-        lcm_ = lcm(*res.values()) / 100
-
-        if self.dataset.crop_meters % lcm_ != 0:
+        size_gcd = gcd(*sizes.values())
+        crop_gcd = self.dataset.crop_meters / self.dataset.total_meters * size_gcd
+        if not crop_gcd.is_integer():
             msg = (
                 f"Crop meters does not correspond to an integer number of pixels."
-                f"Consider using {lcm_}"
+                f"Use a multiple of {self.dataset.total_meters / size_gcd}."
             )
             raise ValueError(msg)
 
-        start_min_meter = (
-            self.rng.integers(
-                low=0,
-                high=(self.dataset.ground_meters - self.dataset.crop_meters) // lcm_,
-                size=2,
-            )
-            * 10
+        crop_gcd = round(crop_gcd)
+        start_gcd = self.rng.integers(
+            low=0,
+            high=size_gcd - crop_gcd + 1,
+            size=2,
         )
-
         start, end = {}, {}
-        for name_mod, mod in res.items():
-            nb_pixels = int(self.dataset.crop_meters * 100 / res[name_mod])
-
-            start_mod = start_min_meter / (mod / 100)
-            start_mod = start_mod.astype(int)
+        for name_mod, mod in self.dataset.rasters.items():
+            start_mod = start_gcd * (sizes[name_mod] // size_gcd)
             start_mod += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
             start_mod_date = self.rng.integers(
                 low=0,
-                high=sizes_date[name_mod] % self.dataset.rasters[name_mod].num_dates
-                + 1,
+                high=sizes_date[name_mod] % mod.num_dates + 1,
             )
             start[name_mod] = (*start_mod, start_mod_date)
-            end_mod = start_mod + nb_pixels
-            end_mod_date = start_mod_date + self.dataset.rasters[name_mod].num_dates * (
-                sizes_date[name_mod] // self.dataset.rasters[name_mod].num_dates
+
+            end_mod = (start_gcd + crop_gcd) * (sizes[name_mod] // size_gcd)
+            end_mod_date = start_mod_date + mod.num_dates * (
+                sizes_date[name_mod] // mod.num_dates
             )
             end[name_mod] = (*end_mod, end_mod_date)
+
+        # read raster slices
         inputs = {}
         for name_mod, mod in self.dataset.rasters.items():
             input_mod, dates_mod = self.preprocess_raster(
@@ -108,10 +116,10 @@ class GenericDataset(Dataset, ABC):
         h5_mask: str | None,
         start: tuple[int],
         end: tuple[int],
-        bands: int | list[int],
-        num_dates: int = 1,
-        mask_threshold: float = 100.0,  # threshold on percentage cover
-        norm_fac: float | None = None,
+        bands: int | list[list[int]],
+        num_dates: int,
+        mask_threshold: float,  # threshold on mask percentage cover
+        norm_fac: float | None,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> tuple[np.ndarray, np.ndarray]:
         """Read raster modality."""
@@ -120,13 +128,17 @@ class GenericDataset(Dataset, ABC):
             slice(start[1], end[1]),
             slice(start[2], end[2]),
         )
+        bands = (
+            range(bands)
+            if isinstance(bands, int)
+            else [idx for band in bands for idx in band]
+        )
         use_mask = (mask_threshold / 100.0) < 1.0
         mask_mod = None  # by default, no mask is used
 
         match path_mod.suffix:
             case ".tif" | ".png" | ".jpg" | ".jpeg":
                 with rasterio.open(path_mod) as src:
-                    bands = range(bands) if isinstance(bands, int) else bands
                     window = Window(
                         start[1],
                         start[0],
@@ -134,33 +146,22 @@ class GenericDataset(Dataset, ABC):
                         end[0] - start[0],
                     )
                     input_mod = src.read(window=window)
-                    input_mod = input_mod.reshape(
-                        (len(dates_mod), -1, *input_mod.shape[1:]),
-                    )
+                    input_mod = self.unflatten(input_mod, 0, (len(dates_mod), -1))
                     input_mod = input_mod[:, bands]
                 if use_mask and mask is not None:
-                    bands = len(dates_mod) * 2
-                    bands = range(1, bands + 1)
                     with rasterio.open(mask) as src:
-                        mask_mod = src.read(bands, window=window)
-                        mask_mod = mask_mod.reshape(
-                            (len(dates_mod), -1, *mask_mod.shape[1:]),
-                        )
-                    mask_mod = mask_mod.reshape(
-                        (len(dates_mod), *mask_mod.shape[1:]),
-                    )
+                        mask_mod = src.read(window=window)
+                        mask_mod = self.unflatten(mask_mod, 0, (len(dates_mod), -1))
             case ".npy":
                 npy_file = np.load(path_mod, mmap_mode="r")
                 if npy_file.ndim < 4:  # noqa: PLR2004
                     npy_file = np.expand_dims(npy_file, axis=0)
-                bands = slice(0, bands) if isinstance(bands, int) else bands
                 input_mod = npy_file[:, :, slices[0], slices[1]][:, bands]
                 if use_mask and mask is not None:
                     mask_file = np.load(mask, mmap_mode="r")
                     mask_mod = mask_file[:, slices[0], slices[1]]
             case ".h5":
                 with h5py.File(path_mod, "r") as h5_file:
-                    bands = slice(0, bands) if isinstance(bands, int) else bands
                     input_mod = h5_file[h5_name][:, :, slices[0], slices[1]][:, bands]
                     if use_mask and h5_mask is not None:
                         mask_mod = h5_file[h5_mask][:, :, slices[0], slices[1]]
@@ -174,17 +175,24 @@ class GenericDataset(Dataset, ABC):
 
         if len(dates_mod) != num_dates:
             input_mod = input_mod[slices[2]]
-            input_mod = input_mod.reshape((num_dates, -1, *input_mod.shape[1:]))
-            dates_mod = dates_mod[slices[2]]
-            dates_mod = dates_mod.reshape((num_dates, -1, dates_mod.shape[1], 1, 1))
+            input_mod = self.unflatten(input_mod, 0, (num_dates, -1))
+            dates_mod = dates_mod[slices[2], :, None, None]
+            dates_mod = self.unflatten(dates_mod, 0, (num_dates, -1))
             if mask_mod is not None:
                 mask_mod = mask_mod[slices[2]]
-                mask_mod = mask_mod.reshape((num_dates, -1, *mask_mod.shape[1:]))
-                mask_mod = (mask_mod > mask_threshold).any(axis=2, keepdims=True)
+                mask_mod = self.unflatten(mask_mod, 0, (num_dates, -1))
+                mask_mod = (mask_mod > mask_threshold).any(
+                    axis=(2, 3, 4),
+                    keepdims=True,
+                )
                 mask_mod = mask_mod & ~mask_mod.all(axis=1, keepdims=True)
                 input_mod = np.where(mask_mod, np.nan, input_mod)
 
-            pan_mod = input_mod.sum(axis=2, keepdims=True)
+            pan_mod = input_mod.mean(axis=(2, 3, 4), keepdims=True)
+            if self.random_dates:
+                pan_mod = 0 * pan_mod  # keep NaNs
+                pan_mod += self.rng.random(pan_mod.shape).astype(pan_mod.dtype)
+
             mid_finite = np.isfinite(pan_mod).sum(axis=1, keepdims=True)
             mid_finite = np.floor_divide(mid_finite, 2)
             median_inds = np.argsort(pan_mod, axis=1)

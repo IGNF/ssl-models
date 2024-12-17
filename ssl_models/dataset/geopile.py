@@ -16,14 +16,22 @@ class GeoPileDataset(GenericDataset):
 
     def __init__(
         self,
-        root_dir: Path,
-        csv_path: Path,
-        use_transform: bool,
         dataset: DatasetConfig,
+        root_dir: Path,
+        stage: Literal["train", "val", "test"],
+        use_transform: bool,
+        random_dates: bool,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
+        **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
-        super().__init__(use_transform=use_transform, dataset=dataset)
+        super().__init__(
+            dataset=dataset,
+            stage=stage,
+            use_transform=use_transform,
+            random_dates=random_dates,
+        )
 
+        csv_path = root_dir / f"{stage}.csv"
         name_targets = dataset.filter_targets
         col_targets = [
             f"class_index_{name_target.replace('_', '-')}"
@@ -67,11 +75,9 @@ class GeoPileDataset(GenericDataset):
 
         for name_target, target in self.targets.items():
             inputs[name_target] = np.array(target[idx])
-            inputs[f"{name_target}_dates"] = np.array(
-                np.datetime64("2019-07-01").astype(np.int64),
-                ndmin=1,
-            )
-        inputs["ref_date"] = inputs["rgb_dates"]
+            inputs[f"{name_target}_dates"] = strs_datetimes(["2019-07-01"])
+
+        inputs["ref_date"] = strs_datetimes(["2019-07-01"])
 
         return self.transform_rasters(inputs)
 

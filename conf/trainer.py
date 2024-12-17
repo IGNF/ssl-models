@@ -10,7 +10,7 @@ class TrainerConfig:  # noqa: D101
     accelerator: str = "auto"
     devices: str = "auto"
     strategy: str = "ddp_find_unused_parameters_true"
-    precision: str = "bf16-mixed"
+    precision: str = "16-mixed"
 
 
 trainer_store = store(group="trainer")

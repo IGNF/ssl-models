@@ -1,14 +1,14 @@
 """TreeSatAI-TS dataset."""
 
 from pathlib import Path
+from typing import Literal
 
 import h5py
 import numpy as np
-import pandas as pd
 
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
-from ssl_models.dataset.utils import dates_numpy, products_datetimes
+from ssl_models.dataset.utils import dates_numpy, products_datetimes, read_csv
 
 
 class TreeSatAITSDataset(GenericDataset):
@@ -16,16 +16,28 @@ class TreeSatAITSDataset(GenericDataset):
 
     def __init__(
         self,
-        root_dir: Path,
-        csv_path: Path,
-        use_transform: bool,
         dataset: DatasetConfig,
-        *args,  # noqa: ARG002, ANN002
+        root_dir: Path,
+        stage: Literal["train", "val", "test"],
+        use_transform: bool,
+        random_dates: bool,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
-        super().__init__(use_transform=use_transform, dataset=dataset)
+        super().__init__(
+            dataset=dataset,
+            stage=stage,
+            use_transform=use_transform,
+            random_dates=random_dates,
+        )
 
-        csv_data = pd.read_csv(csv_path, parse_dates=["aerial_date"])
+        csv_data = read_csv(
+            root_dir=root_dir,
+            stage=stage,
+            ssl_phase=ssl_phase,
+            balance_pretrain=dataset.balance_pretrain,
+            parse_dates=["aerial_date"],
+        )
         target_cols = [
             col
             for col in csv_data.columns
@@ -39,6 +51,7 @@ class TreeSatAITSDataset(GenericDataset):
         aerial_names = csv_data["aerial_name"].tolist()
         sen_names = csv_data["sen_name"].tolist()
 
+        self.mlc_thresh = 0.07
         self.root_dir = root_dir
 
         self.aerial_names = aerial_names
@@ -81,6 +94,8 @@ class TreeSatAITSDataset(GenericDataset):
 
         inputs["treesat_mlc"] = (target > 0).astype(int)
         inputs["treesat_mlc_dates"] = aerial_date
+        inputs["treesat_mlc_thresh"] = (target > self.mlc_thresh).astype(int)
+        inputs["treesat_mlc_thresh_dates"] = aerial_date
         inputs["ref_date"] = aerial_date
 
         return self.transform_rasters(inputs)

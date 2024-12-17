@@ -3,7 +3,7 @@
 from typing import Literal
 
 import pytorch_lightning as pl
-from pytorch_lightning import Callback
+from pytorch_lightning import Callback, LightningDataModule, LightningModule
 from pytorch_lightning.callbacks import (
     LearningRateMonitor,
     ModelCheckpoint,
@@ -39,6 +39,7 @@ class SSLTrainer(pl.Trainer):
         self.logged_images_per_epoch = run.logged_images_per_epoch
 
         self.base_lr = opt.base_lr
+        self.lw_decay = opt.lw_decay if isinstance(opt, OptFinetuneConfig) else None
         self.wd = opt.wd
         self.b1 = opt.b1
         self.b2 = opt.b2
@@ -81,5 +82,28 @@ class SSLTrainer(pl.Trainer):
                 save_weights_only=True,
             ),
         )
+        callbacks.append(
+            ModelCheckpoint(
+                monitor=(
+                    "pretrain_loss_rec/val"
+                    if self.ssl_phase == "pretrain"
+                    else f"{self.ssl_phase}_loss_pred/val"
+                ),
+                save_top_k=1,
+                filename=self.ssl_phase + "-best",
+                save_weights_only=True,
+            ),
+        )
         callbacks.append(ImageLogger(self.log_inputs))
         return callbacks
+
+    def fit_and_test(
+        self,
+        model: LightningModule,
+        datamodule: LightningDataModule,
+    ) -> None:
+        self.fit(model=model, datamodule=datamodule)
+
+        ckpt_path = self.checkpoint_callback.best_model_path
+        if ckpt_path:
+            self.test(model=model, datamodule=datamodule, ckpt_path=ckpt_path)

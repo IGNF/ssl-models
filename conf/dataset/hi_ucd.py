@@ -14,15 +14,18 @@ from ssl_models.dataset.hi_ucd import HiUCDDataset
 @dataclass
 class HiUCDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "Hi-UCD"
-    weight: float = 1.0
     crop_meters: float = 512 * 0.1
-    ref_input: str | None = "image_2"
+    ref_input: str | None = "image_2"  # defines grid for raster targets
 
     filter_inputs: list[str] = field(
         default_factory=lambda: ["image_1", "image_2"],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["hi_ucd"],
+        default_factory=lambda: [
+            "hi_ucd_change_detect",
+            "hi_ucd_seg_1",
+            "hi_ucd_seg_2",
+        ],
     )  # selected target modalities
 
     image_1: InputRasterConfig = field(
@@ -45,14 +48,33 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = HiUCDDataset
-        self.ground_meters = 512 * 0.1
+        self.balance_pretrain = False
+        self.total_meters = 512 * 0.1
 
-        self.hi_ucd = TargetRasterConfig(
+        self.hi_ucd_change_detect = TargetRasterConfig(
             type_target="change_detect",
-            num_classes=None,
+            num_classes=1,
             missing_val=-1,
-            bands=[3],
+            bands=[[-1]],
+        )
+        self.hi_ucd_seg_1 = TargetRasterConfig(
+            type_target="segment",
+            num_classes=9,
+            missing_val=-1,
+            bands=[[0]],
+        )
+        self.hi_ucd_seg_2 = TargetRasterConfig(
+            type_target="segment",
+            num_classes=9,
+            missing_val=-1,
+            bands=[[1]],
         )
         super().__post_init__(
-            resolutions_meters={"hi_ucd": 0.1, "image_1": 0.1, "image_2": 0.1},
+            resolutions_meters={
+                "hi_ucd_change_detect": 0.1,
+                "hi_ucd_seg_1": 0.1,
+                "hi_ucd_seg_2": 0.1,
+                "image_1": 0.1,
+                "image_2": 0.1,
+            },
         )

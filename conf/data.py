@@ -8,6 +8,7 @@ from hydra_zen import store
 @dataclass
 class DataConfig:  # noqa: D101
     use_transform: bool = True
+    random_dates: bool = True
     batch_size: int = 64
     num_workers: int = 12
 

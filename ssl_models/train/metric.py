@@ -15,8 +15,6 @@ from torchmetrics.functional.classification.precision_recall_curve import (
 )
 from torchmetrics.utilities.data import dim_zero_cat
 
-SMOOTH = 0.000001
-
 
 class MonoLabelMetric(Metric):
     """Store confusion matrix."""
@@ -147,7 +145,7 @@ class MultiLabelMetric(Metric):
         false_neg = self.cm[:, 1, 0]  # FN
         label_weights = (true_pos + false_neg) / (true_pos + false_neg).float().sum()
 
-        per_label_f1 = (2 * true_pos) / (2 * true_pos + false_pos + false_neg + SMOOTH)
+        per_label_f1 = (2 * true_pos) / (2 * true_pos + false_pos + false_neg)
         per_label_ap = _multilabel_average_precision_compute(
             (dim_zero_cat(self.preds), dim_zero_cat(self.target)),
             self.num_labels,
@@ -156,8 +154,8 @@ class MultiLabelMetric(Metric):
             ignore_index=None,
         )
         return {
-            "average_f1": per_label_f1.mean(),  # macro F1
+            "average_f1": per_label_f1.nanmean(),  # macro F1
             "average_ap": per_label_ap.nanmean(),  # macro mAP
-            "weighted_f1": (per_label_f1 * label_weights).sum(),
+            "weighted_f1": (per_label_f1 * label_weights).nansum(),
             "weighted_ap": (per_label_ap * label_weights).nansum(),
         }
