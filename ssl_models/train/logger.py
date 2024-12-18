@@ -9,7 +9,6 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from torch import Tensor
 from torch.nn.functional import one_hot
-from torchvision.transforms.functional import InterpolationMode, resize
 from torchvision.utils import draw_segmentation_masks
 
 BANDS_RGB = 3
@@ -65,13 +64,9 @@ class ImageLogger(Callback):
         )
 
     @staticmethod
-    def should_log(trainer: Trainer, outputs: dict) -> bool:
+    def should_log(trainer: Trainer) -> bool:
         """Check whether images should be logged."""
-        return (
-            trainer.global_rank == 0
-            # and outputs["rec"] is not None
-            # and outputs["masked"] is not None
-        )
+        return trainer.global_rank == 0
 
     def log_pretrain_images(
         self,
@@ -108,35 +103,49 @@ class ImageLogger(Callback):
         log_index: str,
         epoch: int,
     ) -> None:
-        ref_input = outputs["pred"].pop("ref_input")[0]
+        ref_input = outputs["pred"].pop("ref_input")
+        targets = outputs["pred"].pop("targets")
         for name_target, pred in outputs["pred"].items():
+            if "change_detect" in name_target:
+                image = batch["image_1"][0, 0][:3]
+                trainer.tb_logger.add_image(
+                    f"{trainer.ssl_phase}_{name_target}_{log_index}_input-1",
+                    ImageLogger.to_numpy(image),
+                    epoch,
+                )
+
+                title_input = f"{trainer.ssl_phase}_{name_target}_{log_index}_input-2"
+            else:
+                title_input = f"{trainer.ssl_phase}_{name_target}_{log_index}_input"
+
+            colormap = targets[name_target].colormap
+
             # input mask
             image = batch[ref_input][0, 0][:3]
-            mask = one_hot(batch[name_target][0, 0].type(torch.int64))
-            mask = mask.squeeze().permute(2, 0, 1).type(torch.bool)
-            mask = resize(
-                mask,
-                image.shape[1:],
-                interpolation=InterpolationMode.NEAREST,
-            )
+            mask = one_hot(
+                batch[name_target][0, 0].type(torch.int64) + 1,
+            )  # +1 to not have -1
+
+            mask = mask.squeeze(dim=0).permute(2, 0, 1).type(torch.bool)
             mask_overlay = draw_segmentation_masks(
                 image,
                 masks=mask,
-                alpha=0.2,
+                alpha=0.4,
+                colors=colormap,
             )
             trainer.tb_logger.add_image(
-                f"{trainer.ssl_phase}_{name_target}_{log_index}_input",
+                title_input,
                 ImageLogger.to_numpy(mask_overlay),
                 epoch,
             )
             # pred mask
             image = batch[ref_input][0, 0][:3]
             mask = pred[0, 0].type(torch.bool)
-            mask = resize(mask, image.shape[1:])
             mask_overlay = draw_segmentation_masks(
                 image,
                 masks=mask,
-                alpha=0.5,
+                alpha=0.4,
+                colors=colormap,
             )
             trainer.tb_logger.add_image(
                 f"{trainer.ssl_phase}_{name_target}_{log_index}_pred",
@@ -185,7 +194,7 @@ class ImageLogger(Callback):
         dataloader_idx: int = 0,  # noqa: ARG002
     ) -> None:
         """Log train images."""
-        if ImageLogger.should_log(trainer, outputs):
+        if ImageLogger.should_log(trainer):
             self.on_batch_end(
                 trainer,
                 outputs,
@@ -204,7 +213,7 @@ class ImageLogger(Callback):
         dataloader_idx: int = 0,  # noqa: ARG002
     ) -> None:
         """Log validation images."""
-        if ImageLogger.should_log(trainer, outputs):
+        if ImageLogger.should_log(trainer):
             self.on_batch_end(
                 trainer,
                 outputs,

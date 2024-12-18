@@ -512,9 +512,9 @@ class BaseMIM(nn.Module, ABC):
         loss_pred = 0
         pixels_pred = {}
         pixels_pred["ref_input"] = ref_input
+        pixels_pred["targets"] = self.dataset.targets
         for name_target, target in self.dataset.targets.items():
             targets = batch[name_target]
-
             match target.type_target:
                 case "segment":
                     logits = self.heads[name_target](x_ref, ssl_phase)
@@ -530,6 +530,13 @@ class BaseMIM(nn.Module, ABC):
                     targets = targets.long()
                 case "change_detect":
                     logits = self.heads[name_target](x_ref, ssl_phase)
+                    pixels_pred[name_target] = torch.argmax(
+                        torch.unsqueeze(
+                            logits,
+                            dim=1,
+                        ),
+                        dim=1,
+                    )
                     logits = rearrange(logits, "b 1 1 h w -> (b h w)")
                     targets = rearrange(targets, "b 1 1 h w -> (b h w)")
                     targets = targets.float()

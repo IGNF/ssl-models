@@ -56,18 +56,34 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
             num_classes=1,
             missing_val=-1,
             bands=[[-1]],
+            colormap=[(255, 255, 255), (0, 0, 0), (220, 0, 0)],
         )
+
+        seg_colormap = [
+            (255, 255, 255),
+            (0, 153, 255),
+            (202, 255, 122),
+            (230, 0, 0),
+            (230, 0, 255),
+            (255, 230, 0),
+            (255, 181, 197),
+            (0, 255, 230),
+            (175, 122, 255),
+            (26, 255, 0),
+        ]
         self.hi_ucd_seg_1 = TargetRasterConfig(
             type_target="segment",
             num_classes=9,
             missing_val=-1,
             bands=[[0]],
+            colormap=seg_colormap,
         )
         self.hi_ucd_seg_2 = TargetRasterConfig(
             type_target="segment",
             num_classes=9,
             missing_val=-1,
             bands=[[1]],
+            colormap=seg_colormap,
         )
         super().__post_init__(
             resolutions_meters={
