@@ -7,8 +7,9 @@ from pytorch_lightning import LightningModule
 from torch import Tensor
 from ssl_models.ssl.mae import MAE
 from conf.datasets import DatasetsConfig
+from abc import ABC, abstractmethod
 
-class BaseModule(LightningModule):
+class BaseModule(LightningModule, ABC):
     """Lightning module skeleton."""
 
     def __init__(
@@ -94,9 +95,10 @@ class BaseModule(LightningModule):
             },
         }
     
+    @abstractmethod
     def probe_or_finetune_step(self):
         """Probing/finetuning step."""
-        raise NotImplementedError
+        return
     
     def on_epoch_end(self, stage: Literal["train", "val", "test"]) -> None:
         """Log epoch metrics for training/validation."""
