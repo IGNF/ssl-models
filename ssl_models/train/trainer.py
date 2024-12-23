@@ -29,6 +29,7 @@ class SSLTrainer(pl.Trainer):
         devices: str | int,
         strategy: str,
         precision: str,
+        num_nodes: int,
     ) -> None:
         self.ssl_phase = ssl_phase
         self.exp_dir = run.exp_dir
@@ -54,6 +55,7 @@ class SSLTrainer(pl.Trainer):
             devices=devices,
             strategy=strategy,
             precision=precision,
+            num_nodes=num_nodes,
         )
 
     def configure_loggers(self) -> list[Logger]:
@@ -79,18 +81,6 @@ class SSLTrainer(pl.Trainer):
         callbacks.append(
             ModelCheckpoint(
                 filename=self.ssl_phase + "-{epoch}",
-                save_weights_only=True,
-            ),
-        )
-        callbacks.append(
-            ModelCheckpoint(
-                monitor=(
-                    "pretrain_loss_rec/val"
-                    if self.ssl_phase == "pretrain"
-                    else f"{self.ssl_phase}_loss_pred/val"
-                ),
-                save_top_k=1,
-                filename=self.ssl_phase + "-best",
                 save_weights_only=True,
             ),
         )

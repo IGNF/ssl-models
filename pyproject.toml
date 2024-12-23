@@ -27,6 +27,8 @@ clearml = "^1.15.1"
 python-dotenv = "^1.0.1"
 hydra-zen = "^0.13.0"
 h5py = "^3.12.1"
+pyogrio = "^0.10.0"
+pyarrow = "^18.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.1.1"

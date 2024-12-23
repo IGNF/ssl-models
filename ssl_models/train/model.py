@@ -32,6 +32,7 @@ class SSLModule(LightningModule):
         datasets: DatasetsConfig,
         mask: MaskConfig,
         multimodal: Literal["msgfm", "shared", "mod", "group"],
+        allmods_depth: int,
         model: Literal["mae", "mixmae"],
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
         type_head: Literal["linear", "attentive"] = "linear",
@@ -101,6 +102,7 @@ class SSLModule(LightningModule):
                 "datasets": datasets,
                 "mask": mask,
                 "multimodal": multimodal,
+                "allmods_depth": allmods_depth,
                 "model": model,
                 "unpool_dim": unpool_dim,
                 "num_levels": num_levels,
@@ -124,9 +126,12 @@ class SSLModule(LightningModule):
     def configure_optimizers(self) -> dict:
         """Configure optimizer."""
         total_steps = self.trainer.estimated_stepping_batches
+        total_batch_size = (
+            self.trainer.train_dataloader.batch_size * self.trainer.num_nodes
+        )
         lr = (
             # use sqrt scaling rule with Adam
-            self.trainer.base_lr * self.trainer.train_dataloader.batch_size**0.5
+            self.trainer.base_lr * total_batch_size**0.5
         )
         match self.trainer.lw_decay:
             case None:

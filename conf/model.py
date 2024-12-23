@@ -8,6 +8,7 @@ from hydra_zen import store
 @dataclass
 class ModelConfig:  # noqa: D101
     multimodal: str = "mod"
+    allmods_depth: int = 0
     model: str = "mae"
     model_size: str = "tiny"
     type_head: str = "attentive"

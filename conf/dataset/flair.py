@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, field
 
+from hydra_zen import MISSING
+
 from conf.dataset.utils import (
     DatasetConfig,
     InputRasterConfig,
@@ -14,6 +16,7 @@ from ssl_models.dataset.flair import FLAIRDataset
 @dataclass
 class FLAIRConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "FLAIR-INC"
+    csv_dir: str = MISSING
     balance_pretrain: bool = False
     crop_meters: float = 256 * 0.2
     ref_input: str | None = "aerial"  # defines grid for raster targets
@@ -29,10 +32,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
         ],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: [
-            "flair_cosia",
-            # "flair_lpis"
-        ],
+        default_factory=lambda: ["cosia"],
     )  # selected target modalities
 
     aerial: InputRasterConfig = field(
@@ -64,7 +64,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             image_size=5,
             patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=10,
-            num_dates=16,
+            num_dates=8,
             mask_threshold=0.0,
             norm_fac=5000.0,
         ),
@@ -95,24 +95,24 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
         self.dataset_class = FLAIRDataset
         self.total_meters = 102.4
 
-        self.flair_cosia = TargetRasterConfig(
+        self.cosia = TargetRasterConfig(
             type_target="segment",
             num_classes=19,
             missing_val=-1,
             bands=1,
         )
 
-        self.flair_lpis = TargetRasterConfig(
+        self.lpis = TargetRasterConfig(
             type_target="segment",
-            num_classes=45,
+            num_classes=74,
             missing_val=-1,
             bands=1,
         )
 
         super().__post_init__(
             resolutions_meters={
-                "flair_cosia": 0.2,
-                "flair_lpis": 0.2,
+                "cosia": 0.2,
+                "lpis": 0.2,
                 "aerial": 0.2,
                 "dem": 0.2,
                 "spot": 1.6,
