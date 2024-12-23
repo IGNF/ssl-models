@@ -20,6 +20,7 @@ class MAE(BaseMIM):
         datasets: DatasetsConfig,
         mask: MaskConfig,
         multimodal: Literal["msgfm", "shared", "mod", "group"],
+        allmods_depth: int,
         model: Literal["mae"],
         num_levels: Literal[1],
         unpool_dim: int | None,
@@ -123,7 +124,7 @@ class MAE(BaseMIM):
             {
                 name_mod: Transformer(
                     dim=embed_dim,
-                    depth=depth,
+                    depth=depth - allmods_depth,
                     heads=heads,
                     dim_head=dim_head,
                     mlp_dim=embed_dim * mlp_ratio,
@@ -131,6 +132,14 @@ class MAE(BaseMIM):
                 for name_mod in name_models
             },
         )
+        if allmods_depth:
+            self.encoder["all"] = Transformer(
+                dim=embed_dim,
+                depth=allmods_depth,
+                heads=heads,
+                dim_head=dim_head,
+                mlp_dim=embed_dim * mlp_ratio,
+            )
         self.enc_to_dec = nn.ModuleDict(
             {
                 name_mod: (

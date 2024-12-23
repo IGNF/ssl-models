@@ -84,6 +84,7 @@ class GenericDataset(Dataset, ABC):
             start[name_mod] = (*start_mod, start_mod_date)
 
             end_mod = (start_gcd + crop_gcd) * (sizes[name_mod] // size_gcd)
+            end_mod += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
             end_mod_date = start_mod_date + mod.num_dates * (
                 sizes_date[name_mod] // mod.num_dates
             )
@@ -104,6 +105,8 @@ class GenericDataset(Dataset, ABC):
             )
             inputs[name_mod] = input_mod
             inputs[f"{name_mod}_dates"] = dates_mod
+            if input_mod.shape[-2:] != (crop_gcd * (sizes[name_mod] // size_gcd),) * 2:
+                return None  # deal with shape mismatches in test set of FLAIR-INC
 
         return inputs
 
@@ -181,22 +184,20 @@ class GenericDataset(Dataset, ABC):
             if mask_mod is not None:
                 mask_mod = mask_mod[slices[2]]
                 mask_mod = self.unflatten(mask_mod, 0, (num_dates, -1))
-                mask_mod = (mask_mod > mask_threshold).any(
-                    axis=(2, 3, 4),
-                    keepdims=True,
+                mask_mod = (mask_mod > mask_threshold).any(axis=2, keepdims=True)
+                mask_mod = mask_mod & ~(
+                    mask_mod.any(axis=(3, 4), keepdims=True).all(axis=1, keepdims=True)
                 )
-                mask_mod = mask_mod & ~mask_mod.all(axis=1, keepdims=True)
                 input_mod = np.where(mask_mod, np.nan, input_mod)
 
-            pan_mod = input_mod.mean(axis=(2, 3, 4), keepdims=True)
+            diff_mod = input_mod - np.nanmedian(input_mod, axis=1, keepdims=True)
+            diff_mod = np.abs(diff_mod)
             if self.random_dates:
-                pan_mod = 0 * pan_mod  # keep NaNs
-                pan_mod += self.rng.random(pan_mod.shape).astype(pan_mod.dtype)
+                diff_mod = 0 * diff_mod  # keep NaNs
+                diff_mod += self.rng.random(diff_mod.shape).astype(diff_mod.dtype)
 
-            mid_finite = np.isfinite(pan_mod).sum(axis=1, keepdims=True)
-            mid_finite = np.floor_divide(mid_finite, 2)
-            median_inds = np.argsort(pan_mod, axis=1)
-            median_inds = np.take_along_axis(median_inds, mid_finite, axis=1)
+            diff_mod = np.mean(diff_mod, axis=(2, 3, 4), keepdims=True)
+            median_inds = np.nanargmin(diff_mod, axis=1, keepdims=True)
             input_mod = np.take_along_axis(input_mod, median_inds, axis=1).squeeze(1)
             dates_mod = np.take_along_axis(dates_mod, median_inds, axis=1).squeeze(1)
 

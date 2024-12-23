@@ -28,6 +28,7 @@ class MixMAE(BaseMIM):
         datasets: DatasetsConfig,
         mask: MaskConfig,
         multimodal: Literal["msgfm", "shared", "mod", "group"],
+        allmods_depth: int,
         model: Literal["mixmae"],
         num_levels: Literal[3, 4],
         unpool_dim: int | None,
@@ -77,6 +78,10 @@ class MixMAE(BaseMIM):
             case _:
                 msg = f"Invalid multimodal mode {multimodal}."
                 raise ValueError(msg)
+
+        if allmods_depth:
+            msg = "Simultaneous encoding of all mods not yet implemented with MixMAE."
+            raise NotImplementedError(msg)
 
         self.nb_mix_images = mask.nb_mix_images
         self.stride = 2 ** (num_levels - 1)

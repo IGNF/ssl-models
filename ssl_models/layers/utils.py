@@ -216,4 +216,4 @@ def downsamplings_from_patch_size(unpool_dim: int | None, patch_size: int) -> li
     if unpool_dim:
         for prime, power in factorint(patch_size).items():
             downsamplings += [prime] * power
-    return downsamplings
+    return downsamplings[::-1]

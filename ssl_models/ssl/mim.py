@@ -633,6 +633,17 @@ class BaseMIM(nn.Module, ABC):
         for name_group in x:
             model_group = model[name_group] if name_group in model else model["shared"]
             x[name_group] = model_group(x[name_group])
+
+        if "all" in model:
+            name_groups = list(x.keys())
+            split_groups = tuple(x[name_group].shape[1] for name_group in name_groups)
+
+            x_groups = torch.cat([x[name_group] for name_group in name_groups], dim=1)
+            x_groups = model["all"](x_groups)
+            x_groups = x_groups.split(split_groups, dim=1)
+            for name_group, x_group in zip(name_groups, x_groups):
+                x[name_group] = x_group
+
         return x
 
     @abstractmethod
