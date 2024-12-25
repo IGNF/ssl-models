@@ -61,6 +61,15 @@ class BaseMIM(nn.Module, ABC):
         self.len_bands = {
             name_mod: len(num_bands) for name_mod, num_bands in self.num_bands.items()
         }
+        self.norm_bands = {
+            name_mod: (
+                tuple(mod.norm_bands)
+                if mod.norm_bands is not None
+                else tuple(self.num_bands[name_mod])
+            )
+            for name_mod, mod in datasets.dataset.inputs.items()
+        }
+
         self.grid_size, self.out_grid_size = {}, {}
         self.patch_embed, self.embed_to_rec = nn.ModuleDict(), nn.ModuleDict()
         for name_mod, mod in self.dataset.inputs.items():
@@ -444,7 +453,7 @@ class BaseMIM(nn.Module, ABC):
                 target_groups = list(
                     torch.split(
                         target,
-                        self.num_bands[name_mod],
+                        self.norm_bands[name_mod],
                         dim=-1,
                     ),
                 )

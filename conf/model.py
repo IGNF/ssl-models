@@ -19,6 +19,7 @@ class ModelConfig:  # noqa: D101
     num_levels: int = 3
     swin_abs_enc: bool = False
     use_date_enc: bool = True
+    batch_repeats: int | None = None
 
 
 model_store = store(group="model")
