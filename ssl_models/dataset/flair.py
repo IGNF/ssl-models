@@ -10,7 +10,7 @@ import pandas as pd
 
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
-from ssl_models.dataset.utils import dict_datetimes, strs_datetimes
+from ssl_models.dataset.utils import dict_datetimes, read_csv, strs_datetimes
 
 
 class FLAIRDataset(GenericDataset):
@@ -33,15 +33,16 @@ class FLAIRDataset(GenericDataset):
             random_dates=random_dates,
         )
 
-        path_split = root_dir / "GLOBAL_ALL_MTD" / "GLOBAL_ALL_MTD_SPLIT.gpkg"
-        gdf_split = gpd.read_file(path_split, engine="pyogrio", use_arrow=True)
-        gdf_split = gdf_split.rename(
-            columns={"split_toy": "split", "split_flairinc": "split"},
+        csv_dir = Path(dataset.csv_dir) if dataset.csv_dir else root_dir
+        csv_data = read_csv(
+            csv_dir=csv_dir,
+            stage=stage,
+            ssl_phase=ssl_phase,
+            balance_pretrain=dataset.balance_pretrain,
         )
-        gdf_split = gdf_split.loc[gdf_split["split"] == stage.replace("val", "valid")]
 
         self.root_dir = root_dir
-        self.patch_ids = gdf_split["patch_id"].tolist()
+        self.patch_ids = csv_data["patch_id"].tolist()
 
         self.mod_mapping = {
             "aerial": "aerial_rgbi",

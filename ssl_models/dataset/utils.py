@@ -71,20 +71,22 @@ def dict_datetimes(datetime_dict: dict, start: int = 0) -> np.ndarray:
 
 
 def read_csv(
-    root_dir: Path,
+    csv_dir: Path,
     stage: Literal["train", "val", "test"],
     ssl_phase: Literal["pretrain", "probe", "finetune"],
-    balance_pretrain: bool,
+    balance_pretrain: bool = False,
+    fold: int | None = None,
     **kwargs,  # noqa: ANN003
 ) -> Path:
-    """Read dataset csv based on SSL phase and choice of balancing."""
+    """Read dataset csv."""
+    csv_name = [stage]
     match ssl_phase:
         case "pretrain":
-            csv_path = (
-                root_dir / f"{stage}_balanced.csv"
-                if balance_pretrain
-                else root_dir / f"{stage}.csv"
-            )
+            if balance_pretrain:
+                csv_name += ["balanced"]
         case "probe" | "finetune":
-            csv_path = root_dir / f"{stage}.csv"
+            if fold:
+                csv_name += [f"fold_{fold}"]
+    csv_name = "_".join(csv_name)
+    csv_path = csv_dir / f"{csv_name}.csv"
     return pd.read_csv(csv_path, **kwargs)
