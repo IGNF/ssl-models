@@ -27,8 +27,7 @@ class MixMAE(BaseMIM):
         self,
         datasets: DatasetsConfig,
         mask: MaskConfig,
-        multimodal: Literal["msgfm", "shared", "mod", "group"],
-        allmods_depth: int,
+        multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         model: Literal["mixmae"],
         num_levels: Literal[3, 4],
         unpool_dim: int | None,
@@ -70,18 +69,18 @@ class MixMAE(BaseMIM):
             fac_date_enc=fac_date_enc,
         )
         match multimodal:
-            case "msgfm" | "shared":
-                name_models = ["shared"]
+            case "msgfm" | "shared" | "monotemp":
+                name_models = (
+                    list(datasets.dataset.inputs.keys())
+                    if multimodal == "monotemp"
+                    else ["shared"]
+                )
             case "mod" | "group":
                 msg = "Multimodal/multitemporal SSL not yet implemented with MixMAE."
                 raise NotImplementedError(msg)
             case _:
                 msg = f"Invalid multimodal mode {multimodal}."
                 raise ValueError(msg)
-
-        if allmods_depth:
-            msg = "Simultaneous encoding of all mods not yet implemented with MixMAE."
-            raise NotImplementedError(msg)
 
         self.nb_mix_images = mask.nb_mix_images
         self.stride = 2 ** (num_levels - 1)

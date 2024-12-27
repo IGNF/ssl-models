@@ -19,7 +19,7 @@ class MAE(BaseMIM):
         self,
         datasets: DatasetsConfig,
         mask: MaskConfig,
-        multimodal: Literal["msgfm", "shared", "mod", "group"],
+        multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         allmods_depth: int,
         model: Literal["mae"],
         num_levels: Literal[1],
@@ -79,8 +79,12 @@ class MAE(BaseMIM):
             {},
         )
         match multimodal:
-            case "msgfm" | "shared":
-                name_models = ["shared"]
+            case "msgfm" | "shared" | "monotemp":
+                name_models = (
+                    list(num_dates_mod.keys())
+                    if multimodal == "monotemp"
+                    else ["shared"]
+                )
                 for name_mod in num_dates_mod:
                     self.mask_ratio[name_mod] = mask.mask_ratio
                     self.mask_mod[name_mod] = None
