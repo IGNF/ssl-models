@@ -15,6 +15,7 @@ class RunConfig:  # noqa: D101
     load_ckpt_path: str | None = None
     reproducible: bool = True
     seed: int = 42
+    monitor: str | None = None
     logged_images_per_epoch: int = 10
     log_inputs: list[str] = field(
         default_factory=lambda: [
