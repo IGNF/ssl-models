@@ -75,18 +75,28 @@ def read_csv(
     stage: Literal["train", "val", "test"],
     ssl_phase: Literal["pretrain", "probe", "finetune"],
     balance_pretrain: bool = False,
-    fold: int | None = None,
+    val_pretrain: bool = False,
+    filter_percent: int | None = None,
     **kwargs,  # noqa: ANN003
 ) -> Path:
     """Read dataset csv."""
-    csv_name = [stage]
+    csv_name = []
     match ssl_phase:
         case "pretrain":
             if balance_pretrain:
                 csv_name += ["balanced"]
         case "probe" | "finetune":
-            if fold:
-                csv_name += [f"fold_{fold}"]
-    csv_name = "_".join(csv_name)
-    csv_path = csv_dir / f"{csv_name}.csv"
-    return pd.read_csv(csv_path, **kwargs)
+            if filter_percent:
+                csv_name += [f"filtered_{filter_percent}"]
+
+    stages = (
+        ["train", "val"]
+        if stage == "train" and ssl_phase == "pretrain" and val_pretrain
+        else [stage]
+    )
+    return pd.concat(
+        [
+            pd.read_csv(csv_dir / f"{'_'.join([stage, *csv_name])}.csv", **kwargs)
+            for stage in stages
+        ],
+    )
