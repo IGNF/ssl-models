@@ -32,7 +32,7 @@ class BaseMIM(nn.Module, ABC):
     def __init__(  # noqa: C901
         self,
         datasets: DatasetsConfig,
-        multimodal: Literal["msgfm", "shared", "mod", "group"],
+        multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         model: Literal["mae", "mixmae"],
         num_levels: Literal[1, 3, 4],
         unpool_dim: int | None,

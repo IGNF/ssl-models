@@ -16,7 +16,7 @@ class RunConfig:  # noqa: D101
     reproducible: bool = True
     seed: int = 42
     monitor: str | None = None
-    logged_images_per_epoch: int = 10
+    logged_images_per_epoch: int = 5
     log_inputs: list[str] = field(
         default_factory=lambda: [
             "aerial",

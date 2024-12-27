@@ -31,7 +31,7 @@ class SSLModule(LightningModule):
         # shared args
         datasets: DatasetsConfig,
         mask: MaskConfig,
-        multimodal: Literal["msgfm", "shared", "mod", "group"],
+        multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         allmods_depth: int,
         model: Literal["mae", "mixmae"],
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
@@ -97,6 +97,13 @@ class SSLModule(LightningModule):
             case _:
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)
+
+        if allmods_depth and multimodal not in ("mod", "group"):
+            msg = (
+                "Simultaneous encoding of all mods"
+                f" not yet compatible with multimodal choice: {multimodal}."
+            )
+            raise NotImplementedError(msg)
 
         if model_size in model_map:
             model_args = {

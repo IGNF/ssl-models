@@ -39,7 +39,8 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            bands=10,
+            bands=[[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]],
+            norm_bands=[4, 6],
             num_dates=16,
             norm_fac=10000.0,
         ),
@@ -48,7 +49,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            bands=3,
+            bands=[[0, 1]],
             num_dates=4,
             norm_fac=20.0,
             name_group="sen1",
@@ -58,7 +59,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            bands=3,
+            bands=[[0, 1]],
             num_dates=4,
             norm_fac=20.0,
             name_group="sen1",

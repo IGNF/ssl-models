@@ -7,12 +7,12 @@ from hydra_zen import store
 
 @dataclass
 class ModelConfig:  # noqa: D101
-    multimodal: str = "mod"
-    allmods_depth: int = 0
+    multimodal: str = "group"
+    allmods_depth: int = 3
     model: str = "mae"
     model_size: str = "tiny"
     type_head: str = "attentive"
-    loss: str = "l2_norm"
+    loss: str = "l1_norm"
     unpool_dim: int | None = None
     swin_version: int = 1
     v2_attn: bool = True
