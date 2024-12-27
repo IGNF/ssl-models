@@ -40,6 +40,8 @@ class SSLTrainer(pl.Trainer):
         self.exp_name = run.exp_name
         self.exp_version = get_hydra_timestamp()
 
+        self.monitor = run.monitor
+        self.log_inputs = run.log_inputs
         self.logged_images_per_epoch = run.logged_images_per_epoch
 
         self.base_lr = opt.base_lr
@@ -84,6 +86,12 @@ class SSLTrainer(pl.Trainer):
         callbacks.append(
             ModelCheckpoint(
                 filename=self.ssl_phase + "-{epoch}",
+                monitor=(
+                    None
+                    if self.ssl_phase == "pretrain" or self.monitor is None
+                    else f"{self.ssl_phase}_{self.monitor}"
+                ),
+                mode="max",
                 save_weights_only=True,
             ),
         )
