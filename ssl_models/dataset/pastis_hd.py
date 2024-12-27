@@ -37,7 +37,7 @@ class PASTISHDDataset(GenericDataset):
             stage=stage,
             ssl_phase=ssl_phase,
             balance_pretrain=dataset.balance_pretrain,
-            fold=dataset.fold,
+            val_pretrain=dataset.val_pretrain,
         )
         image_ids = csv_data["image"]
 
