@@ -30,7 +30,7 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=300,
             patch_size=PatchSizeConfig(mae=20, mixmae=5),
-            bands=[[0, 1, 2, 3]],
+            bands=4,
             norm_bands=[1, 3],
             norm_fac=255.0,
         ),
@@ -39,7 +39,7 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=6,
             patch_size=PatchSizeConfig(mae=2, mixmae=1),
-            bands=[[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]],
+            bands=10,
             norm_bands=[4, 6],
             num_dates=16,
             mask_threshold=0.0,
