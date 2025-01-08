@@ -151,9 +151,22 @@ class SSLModule(LightningModule):
                     msg = "Layer-wise decay only implemented for MAE."
                     raise NotImplementedError(msg)
 
-                encoder = next(iter(self.model.encoder.values()))
-                num_layers = len(encoder.layers)
+                layer_parameters = {}
+                for name_mod, encoder in self.model.encoder.items():
+                    if name_mod == "all":
+                        continue
+                    for idx, layer in enumerate(encoder.layers):
+                        if idx not in layer_parameters:
+                            layer_parameters[idx] = []
+                        layer_parameters[idx].extend(layer.parameters())
 
+                if "all" in self.model.encoder:
+                    for layer in self.model.encoder["all"].layers:
+                        layer_parameters[len(layer_parameters)] = list(
+                            layer.parameters(),
+                        )
+
+                num_layers = len(layer_parameters)
                 grouped_params = []
                 grouped_params.append(
                     {
@@ -165,11 +178,7 @@ class SSLModule(LightningModule):
                 for idx in range(num_layers):
                     grouped_params.append(
                         {
-                            "params": [
-                                param
-                                for encoder in self.model.encoder.values()
-                                for param in encoder.layers[idx].parameters()
-                            ],
+                            "params": layer_parameters[idx],
                             "lr": lr * self.trainer.lw_decay ** (num_layers - idx),
                             "name": f"layer_{idx+1}",
                         },

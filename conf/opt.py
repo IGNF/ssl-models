@@ -12,6 +12,7 @@ class OptPretrainConfig:  # noqa: D101
     b2: float = 0.99
     wd: float = 0.01
     epochs: int = 20
+    batch_size: int = 32
 
 
 pretrain_store = store(group="opt_pretrain")
@@ -25,6 +26,7 @@ class OptProbeConfig:  # noqa: D101
     b2: float = 0.99
     wd: float = 0.01
     epochs: int = 10
+    batch_size: int = 32
 
 
 probe_store = store(group="opt_probe")
@@ -39,6 +41,7 @@ class OptFinetuneConfig:  # noqa: D101
     b2: float = 0.99
     wd: float = 0.01
     epochs: int = 20
+    batch_size: int = 32
 
 
 finetune_store = store(group="opt_finetune")

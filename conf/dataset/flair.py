@@ -43,7 +43,8 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=256,
             patch_size=PatchSizeConfig(mae=16, mixmae=4),
-            bands=4,
+            bands=[[3, 0, 1, 2]],
+            norm_bands=[1, 3],
             norm_fac=255.0,
         ),
     )
@@ -68,6 +69,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             image_size=5,
             patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=10,
+            norm_bands=[4, 6],
             num_dates=16,
             mask_threshold=0.0,
             norm_fac=5000.0,

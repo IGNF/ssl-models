@@ -33,18 +33,10 @@ def run_experiment(
     model_partial = partial(SSLModule, datasets=datasets, mask=mask, **vars(model))
     data_partial = partial(SSLDataModule, datasets=datasets, **vars(data))
 
-    if run.load_ckpt_path:
-        model = SSLModule.load_from_checkpoint(run.load_ckpt_path, datasets=datasets)
-    else:
-        model = model_partial()
-
-    data_pretrain = data_partial(ssl_phase="pretrain")
-    trainer_pretrain = trainer_partial(
-        ssl_phase="pretrain",
-        opt=opt_pretrain,
-    )
-
-    if run.use_clearml and trainer_pretrain.global_rank == 0:
+    if (
+        run.use_clearml
+        and trainer_partial(ssl_phase="pretrain", opt=opt_pretrain).global_rank == 0
+    ):
         LOGGER.info("Set up ClearML")
         config = {
             "run": vars(run),
@@ -55,7 +47,7 @@ def run_experiment(
             "data": vars(data),
             "mask": vars(mask),
             "model": vars(model),
-            "trainer": vars(trainer_pretrain),
+            "trainer": vars(trainer),
         }
         if run.clearml_offline_mode:
             Task.set_offline(offline_mode=True)
@@ -66,13 +58,23 @@ def run_experiment(
         )
         task.set_parameters_as_dict(config)
 
+    if run.load_ckpt_path:
+        model = SSLModule.load_from_checkpoint(run.load_ckpt_path, datasets=datasets)
+    else:
+        model = model_partial()
+
     if opt_pretrain.epochs > 0:
         LOGGER.info("Pretrain")
+        data_pretrain = data_partial(ssl_phase="pretrain", opt=opt_pretrain)
+        trainer_pretrain = trainer_partial(
+            ssl_phase="pretrain",
+            opt=opt_pretrain,
+        )
         trainer_pretrain.fit_and_test(model=model, datamodule=data_pretrain)
 
     if opt_probe.epochs > 0:
         LOGGER.info("Probe")
-        data_probe = data_partial(ssl_phase="probe")
+        data_probe = data_partial(ssl_phase="probe", opt=opt_probe)
         trainer_probe = trainer_partial(
             ssl_phase="probe",
             opt=opt_probe,
@@ -81,7 +83,7 @@ def run_experiment(
 
     if opt_finetune.epochs > 0:
         LOGGER.info("Finetune")
-        data_finetune = data_partial(ssl_phase="finetune")
+        data_finetune = data_partial(ssl_phase="finetune", opt=opt_finetune)
         trainer_finetune = trainer_partial(
             ssl_phase="finetune",
             opt=opt_finetune,
