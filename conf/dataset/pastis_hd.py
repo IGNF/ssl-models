@@ -17,8 +17,11 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "PASTIS-HD"
     balance_pretrain: bool = False
     val_pretrain: bool = False
-    crop_meters: float = 320
+
     ref_input: str | None = "s2"  # defines grid for raster targets
+    crop_meters: float = 320
+    repeats: int = 10
+    test_repeats: int = 20
 
     filter_inputs: list[str] = field(
         default_factory=lambda: ["spot", "s2", "s1_asc", "s1_des"],

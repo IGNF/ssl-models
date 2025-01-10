@@ -33,14 +33,17 @@ class HiUCDDataset(GenericDataset):
         csv_path = root_dir / f"{stage}.csv"
         csv_data = pd.read_csv(csv_path)
 
-        self.root_dir = root_dir
-
         self.image_1 = csv_data["image_1"].to_list()
         self.image_2 = csv_data["image_2"].to_list()
         self.targets = csv_data["target"].to_list()
 
+        self.root_dir = root_dir
+        self.repeats = dataset.repeats if stage != "test" else dataset.test_repeats
+
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
+        idx = idx % len(self.image_1)
+
         meta = {}
 
         meta["image_1_path"] = self.root_dir / self.image_1[idx]
@@ -69,4 +72,4 @@ class HiUCDDataset(GenericDataset):
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return len(self.targets)
+        return len(self.targets) * self.repeats

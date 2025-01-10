@@ -35,9 +35,12 @@ class S2NAIPDataset(GenericDataset):
 
         self.root_dir = root_dir
         self.image_ids = csv_data["name"].to_list()
+        self.repeats = dataset.repeats if stage != "test" else dataset.test_repeats
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
+        idx = idx % len(self.image_ids)
+
         image_id = self.image_ids[idx]
 
         meta = {}
@@ -94,4 +97,4 @@ class S2NAIPDataset(GenericDataset):
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return len(self.image_ids)
+        return len(self.image_ids) * self.repeats

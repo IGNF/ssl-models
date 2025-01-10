@@ -22,7 +22,6 @@ class PASTISHDDataset(GenericDataset):
         use_transform: bool,
         random_dates: bool,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
-        num_repeats: int = 10,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -46,7 +45,7 @@ class PASTISHDDataset(GenericDataset):
 
         self.root_dir = root_dir
         self.image_ids = image_ids
-        self.num_repeats = num_repeats
+        self.repeats = dataset.repeats if stage != "test" else dataset.test_repeats
 
         self.s2_dates = [
             dict_datetimes(meta_data.loc[str(image_id), "dates-S2"])
@@ -104,4 +103,4 @@ class PASTISHDDataset(GenericDataset):
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return len(self.image_ids) * self.num_repeats
+        return len(self.image_ids) * self.repeats

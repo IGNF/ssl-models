@@ -14,8 +14,11 @@ from ssl_models.dataset.s2_naip import S2NAIPDataset
 @dataclass
 class S2NAIPConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "s2-naip-urban"
-    crop_meters: float = 256 * 1.25
+
     ref_input: str | None = "naip"  # defines grid for raster targets
+    crop_meters: float = 256 * 1.25
+    repeats: int = 5
+    test_repeats: int = 10
 
     filter_inputs: list[str] = field(
         default_factory=lambda: [

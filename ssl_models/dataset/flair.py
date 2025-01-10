@@ -45,6 +45,7 @@ class FLAIRDataset(GenericDataset):
 
         self.root_dir = root_dir
         self.patch_ids = csv_data["patch_id"].tolist()
+        self.repeats = dataset.repeats if stage != "test" else dataset.test_repeats
 
         self.mod_mapping = {
             "aerial": "aerial_rgbi",
@@ -87,6 +88,8 @@ class FLAIRDataset(GenericDataset):
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
+        idx = idx % len(self.patch_ids)
+
         patch_id = self.patch_ids[idx]
         domain, area, pos = patch_id.split("_")
         zone_id = f"{domain}_{area}"
@@ -119,9 +122,6 @@ class FLAIRDataset(GenericDataset):
         aerial_dates = meta["aerial_dates"]
 
         inputs = self.preprocess_rasters(meta)
-        if inputs is None:
-            idx = self.rng.integers(0, len(self.patch_ids))
-            return self.__getitem__(idx)
 
         for name_mod, labels_ignore, label_missing in zip(
             ["cosia", "lpis"],
@@ -140,4 +140,4 @@ class FLAIRDataset(GenericDataset):
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return len(self.patch_ids)
+        return len(self.patch_ids) * self.repeats

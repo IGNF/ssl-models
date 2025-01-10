@@ -17,8 +17,11 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     csv_dir: str | None = None
     balance_pretrain: bool = False
     filter_percent: int | None = None
-    crop_meters: float = 256 * 0.2
+
     ref_input: str | None = "aerial"  # defines grid for raster targets
+    crop_meters: float = 256 * 0.2
+    repeats: int = 5
+    test_repeats: int = 10
 
     filter_inputs: list[str] = field(
         default_factory=lambda: [

@@ -16,8 +16,9 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "TreeSatAI-TS"
     balance_pretrain: bool = True
     val_pretrain: bool = False
-    crop_meters: float = 60.0
+
     ref_input: str | None = None
+    crop_meters: float = 60.0
 
     filter_inputs: list[str] = field(
         default_factory=lambda: ["aerial", "s2", "s1_asc", "s1_des"],
