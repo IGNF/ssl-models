@@ -9,6 +9,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from einops import rearrange
 from torch import Tensor, nn
+from torch.nn.functional import one_hot
 from torchmetrics import MeanMetric
 
 from conf.dataset.utils import RasterConfig
@@ -510,32 +511,41 @@ class BaseMIM(nn.Module, ABC):
         )
 
         loss_pred = 0
-        pixels_pred = {}
-        pixels_pred["ref_input"] = ref_input
-        pixels_pred["targets"] = self.dataset.targets
+        pixels_pred = {"pred_msk": {}, "input_msk": {}}
         for name_target, target in self.dataset.targets.items():
             targets = batch[name_target]
+            # input logger
+            mask_input = one_hot(
+                batch[name_target][0, 0].type(torch.int64) + 1,
+            )  # +1 to not have -1
+            mask_input = mask_input.squeeze(dim=0).permute(2, 0, 1).type(torch.bool)
+            pixels_pred["input_msk"][name_target] = mask_input
             match target.type_target:
                 case "segment":
                     logits = self.heads[name_target](x_ref, ssl_phase)
-                    pixels_pred[name_target] = torch.argmax(
-                        torch.unsqueeze(
-                            logits,
-                            dim=1,
-                        ),
-                        dim=1,
+                    # pred logger
+                    pixels_pred["pred_msk"][name_target] = (
+                        one_hot(
+                            torch.argmax(
+                                logits[0, 0],
+                                dim=0,
+                            ),
+                        )
+                        .type(torch.bool)
+                        .permute(2, 0, 1)
                     )
                     logits = rearrange(logits, "b 1 c h w -> (b h w) c")
                     targets = rearrange(targets, "b 1 1 h w -> (b h w)")
                     targets = targets.long()
                 case "change_detect":
                     logits = self.heads[name_target](x_ref, ssl_phase)
-                    pixels_pred[name_target] = torch.argmax(
-                        torch.unsqueeze(
-                            logits,
-                            dim=1,
-                        ),
-                        dim=1,
+                    # pred logger
+                    pixels_pred["pred_msk"][name_target] = (
+                        (
+                            torch.sigmoid(logits) > 0.5  # noqa: PLR2004
+                        )
+                        .long()[0, 0]
+                        .type(torch.bool)
                     )
                     logits = rearrange(logits, "b 1 1 h w -> (b h w)")
                     targets = rearrange(targets, "b 1 1 h w -> (b h w)")

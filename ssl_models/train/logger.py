@@ -3,12 +3,12 @@
 from typing import Literal
 
 import numpy as np
-import torch
+from matplotlib import cm
+from matplotlib.colors import to_hex
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from torch import Tensor
-from torch.nn.functional import one_hot
 from torchvision.utils import draw_segmentation_masks
 
 BANDS_RGB = 3
@@ -68,91 +68,6 @@ class ImageLogger(Callback):
         """Check whether images should be logged."""
         return trainer.global_rank == 0
 
-    def log_pretrain_images(
-        self,
-        trainer: Trainer,
-        outputs: Tensor,
-        batch: Tensor,
-        log_index: str,
-        epoch: int,
-    ) -> None:
-        for name_mod in outputs["masked"]:
-            if name_mod not in self.log_inputs:
-                continue
-            trainer.tb_logger.add_image(
-                f"{log_index}_{name_mod}_input",
-                ImageLogger.to_numpy(outputs["masked"][name_mod][0, 0]),
-                epoch,
-            )
-            trainer.tb_logger.add_image(
-                f"{log_index}_{name_mod}_pred",
-                ImageLogger.to_numpy(outputs["rec"][name_mod][0, 0]),
-                epoch,
-            )
-            trainer.tb_logger.add_image(
-                f"{log_index}_{name_mod}_target",
-                ImageLogger.to_numpy(batch[name_mod][0, 0]),
-                epoch,
-            )
-
-    def log_probe_or_finetune_images(
-        self,
-        trainer: Trainer,
-        outputs: Tensor,
-        batch: Tensor,
-        log_index: str,
-        epoch: int,
-    ) -> None:
-        ref_input = outputs["pred"].pop("ref_input")
-        targets = outputs["pred"].pop("targets")
-        for name_target, pred in outputs["pred"].items():
-            if "change_detect" in name_target:
-                image = batch["image_1"][0, 0][:3]
-                trainer.tb_logger.add_image(
-                    f"{trainer.ssl_phase}_{name_target}_{log_index}_input-1",
-                    ImageLogger.to_numpy(image),
-                    epoch,
-                )
-
-                title_input = f"{trainer.ssl_phase}_{name_target}_{log_index}_input-2"
-            else:
-                title_input = f"{trainer.ssl_phase}_{name_target}_{log_index}_input"
-
-            colormap = targets[name_target].colormap
-
-            # input mask
-            image = batch[ref_input][0, 0][:3]
-            mask = one_hot(
-                batch[name_target][0, 0].type(torch.int64) + 1,
-            )  # +1 to not have -1
-
-            mask = mask.squeeze(dim=0).permute(2, 0, 1).type(torch.bool)
-            mask_overlay = draw_segmentation_masks(
-                image,
-                masks=mask,
-                alpha=0.4,
-                colors=colormap,
-            )
-            trainer.tb_logger.add_image(
-                title_input,
-                ImageLogger.to_numpy(mask_overlay),
-                epoch,
-            )
-            # pred mask
-            image = batch[ref_input][0, 0][:3]
-            mask = pred[0, 0].type(torch.bool)
-            mask_overlay = draw_segmentation_masks(
-                image,
-                masks=mask,
-                alpha=0.4,
-                colors=colormap,
-            )
-            trainer.tb_logger.add_image(
-                f"{trainer.ssl_phase}_{name_target}_{log_index}_pred",
-                ImageLogger.to_numpy(mask_overlay),
-                epoch,
-            )
-
     def on_batch_end(
         self,
         trainer: Trainer,
@@ -174,15 +89,139 @@ class ImageLogger(Callback):
         )
         if batch_idx % log_every_n_batches:
             return
-
         epoch = trainer.current_epoch
         prefix_idx = batch_idx // log_every_n_batches
+
         if trainer.ssl_phase == "pretrain":
-            log_index = f"{trainer.ssl_phase}_{stage}/{prefix_idx}"
-            self.log_pretrain_images(trainer, outputs, batch, log_index, epoch)
+            iteration_key = {
+                k: outputs["masked"][k]
+                for k in outputs["masked"]
+                if k in self.log_inputs
+            }
+            input_key = 'outputs["masked"][name_it]'
+            pred_key = outputs["rec"]
+            target_key = batch
+            log_title = f"{trainer.ssl_phase}_{stage}/{prefix_idx}_{{name_mod}}_{{img}}"
+
+            def _create_img(
+                msk: Tensor,
+                inp: bool,
+                **kwargs,  # noqa: ANN003, ARG001
+            ) -> tuple[
+                Tensor,
+                str,
+            ]:
+                log_prefix = "input" if inp else "rec"
+                return (
+                    msk[0, 0][:BANDS_RGB],
+                    log_prefix,
+                )
+
         else:
-            log_index = f"{stage}/{prefix_idx}"
-            self.log_probe_or_finetune_images(trainer, outputs, batch, log_index, epoch)
+            iteration_key = outputs["pred"]["pred_msk"]
+            input_key = "batch[next((x for x in self.log_inputs if x in batch))]"
+            pred_key = outputs["pred"]["pred_msk"]
+            target_key = outputs["pred"]["input_msk"]
+            log_title = f"{trainer.ssl_phase}_{{task}}_{stage}/{prefix_idx}_{{img}}"
+
+            def _create_img(
+                name_it: str,
+                input_img: Tensor,
+                msk: Tensor,
+                colors: list[str],
+                inp: bool,
+                **kwargs,  # noqa: ANN003, ARG001
+            ) -> tuple[Tensor, str]:
+                input_img = input_img[0, 0][:BANDS_RGB]
+                if "change_detect" in name_it:
+                    input_img_name = "image_1" if inp else "image_2"
+                    input_img = batch[input_img_name][0, 0][:BANDS_RGB]
+                    log_prefix = input_img_name
+                    return (
+                        (
+                            draw_segmentation_masks(input_img, msk, 0.4, colors),
+                            log_prefix,
+                        )
+                        if not inp
+                        else (input_img, log_prefix)
+                    )
+                log_prefix = "input" if inp else "pred"
+                log_img = (
+                    input_img
+                    if inp
+                    else draw_segmentation_masks(input_img, msk, 0.4, colors)
+                )
+                return (log_img, log_prefix)
+
+        for name_it in iteration_key:
+            input_img = eval(input_key, locals())  # noqa: S307
+            pred = pred_key[name_it]
+            target = target_key[name_it]
+            num_classes_pred = pred.shape[0]
+            num_classes_target = target.shape[0]
+            colormap = list(
+                map(
+                    to_hex,
+                    cm.get_cmap(
+                        "plasma",
+                        max(num_classes_pred, num_classes_target),
+                    ).colors,
+                ),
+            )
+            # input
+            log_img, log_prefix = _create_img(
+                name_it=name_it,
+                input_img=input_img,
+                msk=input_img,
+                colors=None,
+                inp=True,
+            )
+            log_title_input = log_title.format(
+                task=name_it,
+                name_mod=name_it,
+                img=log_prefix,
+            )
+            trainer.tb_logger.add_image(
+                log_title_input,
+                ImageLogger.to_numpy(log_img),
+                epoch,
+            )
+            # pred
+            log_img, log_prefix = _create_img(
+                name_it=name_it,
+                input_img=input_img,
+                msk=pred,
+                colors=colormap[:num_classes_pred],
+                inp=False,
+            )
+            log_title_pred = log_title.format(
+                task=name_it,
+                name_mod=name_it,
+                img=log_prefix,
+            )
+            trainer.tb_logger.add_image(
+                log_title_pred,
+                ImageLogger.to_numpy(log_img),
+                epoch,
+            )
+            # target
+            log_img, _ = _create_img(
+                name_it=name_it,
+                input_img=input_img,
+                msk=target,
+                colors=colormap[:num_classes_target],
+                inp=False,
+            )
+            log_title_target = log_title.format(
+                task=name_it,
+                name_mod=name_it,
+                img="target",
+            )
+            trainer.tb_logger.add_image(
+                log_title_target,
+                ImageLogger.to_numpy(log_img),
+                epoch,
+            )
 
     def on_train_batch_end(
         self,

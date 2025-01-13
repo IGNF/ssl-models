@@ -17,13 +17,7 @@ class RunConfig:  # noqa: D101
     seed: int = 42
     logged_images_per_epoch: int = 10
     log_inputs: list[str] = field(
-        default_factory=lambda: [
-            "aerial",
-            "spot",
-            "naip",
-            "image_1",
-            "rgb",
-        ],
+        default_factory=lambda: ["aerial", "image_1", "image_2", "rgb", "spot", "naip"],
     )
     use_clearml: bool = True
     clearml_project_name: str = "ssl"

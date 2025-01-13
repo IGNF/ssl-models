@@ -66,8 +66,6 @@ class InputRasterConfig(RasterConfig, InputConfig):
 class TargetRasterConfig(RasterConfig, TargetConfig):
     """Target raster modality config."""
 
-    colormap: list[str] | None = MISSING
-
 
 @dataclass
 class DatasetConfig:
