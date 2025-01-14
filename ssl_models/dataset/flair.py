@@ -67,8 +67,9 @@ class FLAIRDataset(GenericDataset):
                 self.root_dir / "GLOBAL_ALL_MTD" / f"GLOBAL_{name_flair}_MTD_DATES.gpkg"
             )
             dates_mod = gpd.read_file(dates_path, engine="pyogrio", use_arrow=True)
-            dates_mod = dates_mod.set_index("patch_id")
-            self.dates_str[name_mod] = pd.DataFrame(dates_mod[["date"]])
+            self.dates_str[name_mod] = {
+                row["patch_id"]: row["date"] for _, row in dates_mod.iterrows()
+            }
 
         self.dates_dict = {}
         for name_mod in ("s2", "s1_asc", "s1_des"):
@@ -77,8 +78,10 @@ class FLAIRDataset(GenericDataset):
                 self.root_dir / "GLOBAL_ALL_MTD" / f"GLOBAL_{name_flair}_MTD_DATES.gpkg"
             )
             dates_mod = gpd.read_file(dates_path, engine="pyogrio", use_arrow=True)
-            dates_mod = dates_mod.set_index("zone_id")
-            self.dates_dict[name_mod] = pd.DataFrame(dates_mod[["acquisition_dates"]])
+            self.dates_dict[name_mod] = {
+                row["zone_id"]: row["acquisition_dates"]
+                for _, row in dates_mod.iterrows()
+            }
 
         self.cosia_ignore = (15, 16, 17, 18)
         self.cosia_missing = dataset.cosia.missing_val
@@ -106,20 +109,19 @@ class FLAIRDataset(GenericDataset):
 
         for name_mod in ("aerial", "aerial_rlt", "spot"):
             meta[f"{name_mod}_dates"] = strs_datetimes(
-                [self.dates_str[name_mod].loc[patch_id, "date"]],
+                [self.dates_str[name_mod][patch_id]],
                 fmt="%Y%m%d",
             )
 
         for name_mod in ("s2", "s1_asc", "s1_des"):
             meta[f"{name_mod}_dates"] = dict_datetimes(
-                json.loads(self.dates_dict[name_mod].loc[zone_id, "acquisition_dates"]),
+                json.loads(self.dates_dict[name_mod][zone_id]),
                 start=1,
             )
 
         meta["dem_dates"] = meta["aerial_dates"]
         meta["lpis_dates"] = meta["aerial_dates"]
         meta["cosia_dates"] = meta["aerial_dates"]
-        aerial_dates = meta["aerial_dates"]
 
         inputs = self.preprocess_rasters(meta)
 
@@ -134,7 +136,7 @@ class FLAIRDataset(GenericDataset):
 
         if "dem" in inputs:
             inputs["dem"][:, 0] = (inputs["dem"][:, 0] - inputs["dem"][:, 1]) * 30
-        inputs["ref_date"] = aerial_dates
+        inputs["ref_date"] = meta["aerial_dates"]
 
         return self.transform_rasters(inputs)
 

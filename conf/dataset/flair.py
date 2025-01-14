@@ -13,10 +13,10 @@ from ssl_models.dataset.flair import FLAIRDataset
 
 @dataclass
 class FLAIRConfig(DatasetConfig):  # noqa: D101
-    rel_dir: str = "FLAIR-INC"
-    csv_dir: str | None = None
+    rel_dir: str = "FLAIR-INC-FILTERED"
+    csv_dir: str | None = "/var/data/datasets/FLAIR-INC-FILTERED"
     balance_pretrain: bool = False
-    filter_percent: int | None = None
+    filter_percent: int | None = 20
 
     ref_input: str | None = "aerial"  # defines grid for raster targets
     crop_meters: float = 256 * 0.2
