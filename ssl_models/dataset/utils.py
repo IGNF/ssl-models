@@ -81,13 +81,10 @@ def read_csv(
 ) -> Path:
     """Read dataset csv."""
     csv_name = []
-    match ssl_phase:
-        case "pretrain":
-            if balance_pretrain:
-                csv_name += ["balanced"]
-        case "probe" | "finetune":
-            if filter_percent:
-                csv_name += [f"filtered_{filter_percent}"]
+    if balance_pretrain and ssl_phase == "pretrain":
+        csv_name += ["balanced"]
+    if filter_percent:
+        csv_name += [f"filtered_{filter_percent}"]
 
     stages = (
         ["train", "val"]
