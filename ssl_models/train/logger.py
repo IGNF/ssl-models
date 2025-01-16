@@ -3,6 +3,8 @@
 from typing import Literal
 
 import numpy as np
+import pandas as pd
+import seaborn as sn
 from matplotlib import cm
 from matplotlib.colors import to_hex
 from pytorch_lightning import Callback, LightningModule, Trainer
@@ -36,6 +38,10 @@ class TensorBoardLogger(TensorBoardLogger):
     def add_image(self, tag: str, image: Tensor, epoch: int) -> None:
         """Add image to tensorboard logger."""
         self._experiment.add_image(tag, image, epoch)
+
+    def add_confusion_matrix(self, tag: str, figure: Tensor, epoch: int) -> None:
+        """Add confusion matrix to tensorboard logger."""
+        self._experiment.add_figure(tag, figure, epoch)
 
     @rank_zero_only
     def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
@@ -260,3 +266,72 @@ class ImageLogger(Callback):
                 batch_idx,
                 stage="val",
             )
+
+
+class ConfusionMatrixLogger(Callback):
+    """Log confusion matrix."""
+
+    def __init__(self, **kwargs) -> None:  # noqa: ANN003
+        super().__init__(**kwargs)
+
+
+    def on_epoch_end(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,
+        metrics: dict[str, dict[str, Tensor]]
+    ) -> None:
+        for name_target, metrics_target in metrics.items():
+            if "confusion_matrix" in metrics_target:
+                cm = metrics_target["confusion_matrix"].cpu().numpy()
+                cm_df = pd.DataFrame(cm)
+                cm_figure = sn.heatmap(cm_df, annot=True).get_figure()
+                log_cm_title = f"confusion_matrix_{name_target}/confusion_matrix"
+                trainer.tb_logger.add_confusion_matrix(
+                    log_cm_title,
+                    cm_figure,
+                    pl_module.current_epoch
+                )
+                cm_norm_df = pd.DataFrame(
+                    np.divide(
+                        cm.astype(np.float32),
+                        np.sum(cm, axis=1)[:, np.newaxis],
+                        out=np.zeros_like(cm.astype(np.float32)),
+                        where=(np.sum(cm, axis=1)[:, np.newaxis] != 0)
+                    )
+                )
+                cm_norm_figure = sn.heatmap(cm_norm_df, annot=True).get_figure()
+                log_cm_norm_title = f"confusion_matrix_{name_target}/confusion_matrix_normalize"
+                trainer.tb_logger.add_confusion_matrix(
+                    log_cm_norm_title,
+                    cm_norm_figure,
+                    pl_module.current_epoch
+                )
+
+    def on_validation_epoch_end(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,
+    ) -> None:
+        if pl_module.metrics and trainer.ssl_phase == "finetune":
+            metrics_val = {
+                    k: pl_module.metrics[k]
+                    for k in pl_module.metrics
+                    if "val" in k
+            }
+            if metrics_val:
+                self.on_epoch_end(trainer, pl_module, metrics_val)
+
+    def on_test_epoch_end(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,
+    ) -> None:
+        if pl_module.metrics and trainer.ssl_phase == "finetune":
+            metrics_test = {
+                    k: pl_module.metrics[k]
+                    for k in pl_module.metrics
+                    if "test" in k
+            }
+            if metrics_test:
+                self.on_epoch_end(trainer, pl_module, metrics_test)

@@ -119,6 +119,7 @@ class SSLModule(LightningModule):
 
         self.dataset = datasets.dataset
         self.tb_logger = None
+        self.metrics = None
         self.save_hyperparameters(ignore=["datasets"])
 
     def configure_optimizers(self) -> dict:
@@ -303,9 +304,13 @@ class SSLModule(LightningModule):
                 )
                 self.model.metrics[f"loss_pred_{stage}"].reset()
 
+                self.metrics = {}
                 for name_target in self.dataset.targets:
                     metrics = self.model.metrics[f"{name_target}_{stage}"].compute()
+                    self.metrics[f"{name_target}_{stage}"] = metrics
                     for name_metric, value in metrics.items():
+                        if name_metric == "confusion_matrix":
+                            continue
                         self.log_metric(
                             name=f"{self.trainer.ssl_phase}_{name_target}/{name_metric}_{stage}",
                             value=value,
