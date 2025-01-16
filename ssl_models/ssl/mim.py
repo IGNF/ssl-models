@@ -521,6 +521,11 @@ class BaseMIM(nn.Module, ABC):
         loss_pred = 0
         for name_target, target in self.dataset.targets.items():
             targets = batch[name_target]
+            weight = (
+                torch.tensor(target.weight, dtype=torch.float, device=targets.device)
+                if target.weight
+                else None
+            )
 
             match target.type_target:
                 case "segment":
@@ -562,6 +567,7 @@ class BaseMIM(nn.Module, ABC):
             loss_pred += self.loss_pred[name_target](
                 logits_selected,
                 targets_selected,
+                weight,
             )
             self.metrics[f"{name_target}_{stage}"].update(
                 logits_selected,
@@ -579,15 +585,22 @@ class BaseMIM(nn.Module, ABC):
             model_group = model[name_group] if name_group in model else model["shared"]
             x[name_group] = model_group(x[name_group])
 
-        if "all" in model:
-            name_groups = list(x.keys())
-            split_groups = tuple(x[name_group].shape[1] for name_group in name_groups)
+        return x
 
-            x_groups = torch.cat([x[name_group] for name_group in name_groups], dim=1)
-            x_groups = model["all"](x_groups)
-            x_groups = x_groups.split(split_groups, dim=1)
-            for name_group, x_group in zip(name_groups, x_groups):
-                x[name_group] = x_group
+    def encode_or_decode_all(
+        self,
+        x: dict[str, Tensor],
+        model: nn.Module,
+    ) -> dict[str, Tensor]:
+        """Apply encoder or decoder on all modalities."""
+        name_groups = list(x.keys())
+        split_groups = tuple(x[name_group].shape[1] for name_group in name_groups)
+
+        x_groups = torch.cat([x[name_group] for name_group in name_groups], dim=1)
+        x_groups = model(x_groups)
+        x_groups = x_groups.split(split_groups, dim=1)
+        for name_group, x_group in zip(name_groups, x_groups):
+            x[name_group] = x_group
 
         return x
 
