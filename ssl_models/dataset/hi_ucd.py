@@ -20,14 +20,14 @@ class HiUCDDataset(GenericDataset):
         root_dir: Path,
         stage: Literal["train", "val", "test"],
         use_transform: bool,
-        random_dates: bool,
+        random_crop: bool,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
             dataset=dataset,
             stage=stage,
             use_transform=use_transform,
-            random_dates=random_dates,
+            random_crop=random_crop,
         )
 
         csv_path = root_dir / f"{stage}.csv"
@@ -38,11 +38,16 @@ class HiUCDDataset(GenericDataset):
         self.targets = csv_data["target"].to_list()
 
         self.root_dir = root_dir
-        self.repeats = dataset.repeats if stage != "test" else dataset.test_repeats
+        self.base_length = len(self.targets)
+        self.repeats = dataset.repeats
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
-        idx = idx % len(self.image_1)
+        idx, start_gcd = self.sample_gcd(
+            idx,
+            base_length=self.base_length,
+            repeats=self.repeats,
+        )
 
         meta = {}
 
@@ -72,4 +77,4 @@ class HiUCDDataset(GenericDataset):
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return len(self.targets) * self.repeats
+        return self.base_length * self.repeats**2

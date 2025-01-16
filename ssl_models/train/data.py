@@ -21,6 +21,7 @@ class SSLDataModule(LightningDataModule):
         num_workers: int,
         use_transform: bool,
         random_dates: bool,
+        random_crop: bool,
     ) -> None:
         super().__init__()
 
@@ -32,6 +33,7 @@ class SSLDataModule(LightningDataModule):
             ssl_phase=ssl_phase,
             use_transform=use_transform,
             random_dates=random_dates,
+            random_crop=random_crop,
         )
         self.train_loader = DataLoader(
             train_dataset,
@@ -48,6 +50,7 @@ class SSLDataModule(LightningDataModule):
             ssl_phase=ssl_phase,
             use_transform=use_transform,
             random_dates=random_dates,
+            random_crop=random_crop,
         )
         self.val_loader = DataLoader(
             val_dataset,
@@ -64,6 +67,7 @@ class SSLDataModule(LightningDataModule):
             ssl_phase=ssl_phase,
             use_transform=use_transform,
             random_dates=random_dates,
+            random_crop=random_crop,
         )
         self.test_loader = DataLoader(
             test_dataset,

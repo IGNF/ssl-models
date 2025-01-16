@@ -6,7 +6,6 @@ from typing import Literal
 
 import geopandas as gpd
 import numpy as np
-import pandas as pd
 
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
@@ -23,6 +22,7 @@ class FLAIRDataset(GenericDataset):
         stage: Literal["train", "val", "test"],
         use_transform: bool,
         random_dates: bool,
+        random_crop: bool,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
@@ -31,6 +31,7 @@ class FLAIRDataset(GenericDataset):
             stage=stage,
             use_transform=use_transform,
             random_dates=random_dates,
+            random_crop=random_crop,
         )
 
         csv_dir = Path(dataset.csv_dir) if dataset.csv_dir else root_dir
@@ -45,7 +46,8 @@ class FLAIRDataset(GenericDataset):
 
         self.root_dir = root_dir
         self.patch_ids = csv_data["patch_id"].tolist()
-        self.repeats = dataset.repeats if stage != "test" else dataset.test_repeats
+        self.base_length = len(self.patch_ids)
+        self.repeats = dataset.repeats
 
         self.mod_mapping = {
             "aerial": "aerial_rgbi",
@@ -91,7 +93,11 @@ class FLAIRDataset(GenericDataset):
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
-        idx = idx % len(self.patch_ids)
+        idx, start_gcd = self.sample_gcd(
+            idx,
+            base_length=self.base_length,
+            repeats=self.repeats,
+        )
 
         patch_id = self.patch_ids[idx]
         domain, area, pos = patch_id.split("_")
@@ -123,7 +129,7 @@ class FLAIRDataset(GenericDataset):
         meta["lpis_dates"] = meta["aerial_dates"]
         meta["cosia_dates"] = meta["aerial_dates"]
 
-        inputs = self.preprocess_rasters(meta)
+        inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
 
         for name_mod, labels_ignore, label_missing in zip(
             ["cosia", "lpis"],
@@ -142,4 +148,4 @@ class FLAIRDataset(GenericDataset):
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return len(self.patch_ids) * self.repeats
+        return self.base_length * self.repeats**2
