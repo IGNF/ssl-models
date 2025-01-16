@@ -17,8 +17,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
 
     ref_input: str | None = "naip"  # defines grid for raster targets
     crop_meters: float = 256 * 1.25
-    repeats: int = 5
-    test_repeats: int = 10
+    repeats: int = 2
 
     filter_inputs: list[str] = field(
         default_factory=lambda: [

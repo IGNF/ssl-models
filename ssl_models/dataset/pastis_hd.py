@@ -21,6 +21,7 @@ class PASTISHDDataset(GenericDataset):
         stage: Literal["train", "val", "test"],
         use_transform: bool,
         random_dates: bool,
+        random_crop: bool,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
@@ -29,6 +30,7 @@ class PASTISHDDataset(GenericDataset):
             stage=stage,
             use_transform=use_transform,
             random_dates=random_dates,
+            random_crop=random_crop,
         )
 
         csv_data = read_csv(
@@ -45,7 +47,8 @@ class PASTISHDDataset(GenericDataset):
 
         self.root_dir = root_dir
         self.image_ids = image_ids
-        self.repeats = dataset.repeats if stage != "test" else dataset.test_repeats
+        self.base_length = len(self.image_ids)
+        self.repeats = dataset.repeats
 
         self.s2_dates = [
             dict_datetimes(meta_data.loc[str(image_id), "dates-S2"])
@@ -63,7 +66,11 @@ class PASTISHDDataset(GenericDataset):
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
-        idx = idx % len(self.image_ids)
+        idx, start_gcd = self.sample_gcd(
+            idx,
+            base_length=self.base_length,
+            repeats=self.repeats,
+        )
 
         image_id = self.image_ids[idx]
         spot_path = (
@@ -103,4 +110,4 @@ class PASTISHDDataset(GenericDataset):
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return len(self.image_ids) * self.repeats
+        return self.base_length * self.repeats**2

@@ -20,8 +20,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
 
     ref_input: str | None = "aerial"  # defines grid for raster targets
     crop_meters: float = 256 * 0.2
-    repeats: int = 5
-    test_repeats: int = 10
+    repeats: int = 2
 
     filter_inputs: list[str] = field(
         default_factory=lambda: [
@@ -101,7 +100,8 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
 
         self.cosia = TargetRasterConfig(
             type_target="segment",
-            num_classes=19,
+            num_classes=15,
+            weight=[4, 22, 59,  3,  4,  5,  4, 12,  2,  3,  6,  6,  2, 4,  4],
             missing_val=-1,
             bands=1,
         )
