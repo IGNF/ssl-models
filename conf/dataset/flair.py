@@ -17,7 +17,12 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     balance_pretrain: bool = False
     crop_meters: float = 256 * 0.2
     ref_input: str | None = "aerial"  # defines grid for raster targets
-
+    log_inputs: list[str] = field(
+        default_factory=lambda: [
+            "aerial",
+            "spot",
+        ],
+    )  # logged input modalities
     filter_inputs: list[str] = field(
         default_factory=lambda: [
             "aerial",

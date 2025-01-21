@@ -38,11 +38,21 @@ class MonoLabelMetric(Metric):
             case "segment":
                 self.task = "multiclass"
                 self.num_classes = num_classes
-                self.metric_names = ["overall_accuracy", "average_f1", "average_iou", "confusion_matrix"]
+                self.metric_names = [
+                    "overall_accuracy",
+                    "average_f1",
+                    "average_iou",
+                    "confusion_matrix",
+                ]
             case "change_detect":
                 self.task = "binary"
                 self.num_classes = 2
-                self.metric_names = ["overall_accuracy", "average_f1", "average_iou", "confusion_matrix"]
+                self.metric_names = [
+                    "overall_accuracy",
+                    "average_f1",
+                    "average_iou",
+                    "confusion_matrix",
+                ]
 
         self.add_state(
             "cm",

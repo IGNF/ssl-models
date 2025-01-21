@@ -199,7 +199,7 @@ class SSLModule(LightningModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Pretraining step."""
-        loss_rec, masked, rec, _ = self.model(
+        loss_rec, log_inputs, log_preds, log_targets, _ = self.model(
             batch,
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
@@ -210,7 +210,12 @@ class SSLModule(LightningModule):
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
         )
-        return {"loss": loss_rec, "masked": masked, "rec": rec}
+        return {
+            "loss": loss_rec,
+            "log_inputs": log_inputs,
+            "log_preds": log_preds,
+            "log_targets": log_targets,
+        }
 
     def probe_or_finetune_step(
         self,
@@ -218,7 +223,7 @@ class SSLModule(LightningModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Probing/finetuning step."""
-        _, _, pixels_pred, loss_pred = self.model(
+        _, log_inputs, log_preds, log_targets, loss_pred = self.model(
             batch,
             stage=stage,
             ssl_phase=self.trainer.ssl_phase,
@@ -230,7 +235,12 @@ class SSLModule(LightningModule):
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
         )
-        return {"loss": loss_pred, "masked": None, "pred": pixels_pred}
+        return {
+            "loss": loss_pred,
+            "log_inputs": log_inputs,
+            "log_preds": log_preds,
+            "log_targets": log_targets,
+        }
 
     def shared_step(
         self,

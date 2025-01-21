@@ -16,7 +16,9 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "Hi-UCD"
     crop_meters: float = 512 * 0.1
     ref_input: str | None = "image_2"  # defines grid for raster targets
-
+    log_inputs: list[str] = field(
+        default_factory=lambda: ["image_1, image_2"],
+    )  # logged input modalities
     filter_inputs: list[str] = field(
         default_factory=lambda: ["image_1", "image_2"],
     )  # selected input modalities
