@@ -31,7 +31,7 @@ class S2NAIPDataset(GenericDataset):
         )
 
         csv_path = root_dir / f"{stage}.csv"
-        csv_data = pd.read_csv(csv_path, nrows=50)
+        csv_data = pd.read_csv(csv_path)
 
         self.root_dir = root_dir
         self.image_ids = csv_data["name"].to_list()
