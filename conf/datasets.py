@@ -3,6 +3,7 @@
 from hydra_zen import MISSING, builds, store
 
 from conf.dataset.flair import FLAIRConfig
+from conf.dataset.flair_inc import FLAIRIncConfig
 from conf.dataset.geopile import GeoPileConfig
 from conf.dataset.hi_ucd import HiUCDConfig
 from conf.dataset.pastis_hd import PASTISHDConfig
@@ -10,6 +11,7 @@ from conf.dataset.s2_naip import S2NAIPConfig
 from conf.dataset.treesatai_ts import TreeSatAITSConfig
 
 ALL_DATASETS = [
+    "flair_inc",
     "flair",
     "geopile",
     "hi_ucd",
@@ -71,6 +73,7 @@ dataset_build = builds(
     filter_pretrain=ALL_DATASETS,
     filter_finetune=ALL_DATASETS,
     geopile=GeoPileConfig(),
+    flair_inc=FLAIRIncConfig(),
     flair=FLAIRConfig(),
     pastis_hd=PASTISHDConfig(),
     treesatai_ts=TreeSatAITSConfig(),

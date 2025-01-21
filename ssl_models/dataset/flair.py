@@ -7,6 +7,7 @@ from typing import Literal
 import geopandas as gpd
 import numpy as np
 
+from conf.dataset.flair_inc import FLAIRIncConfig
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
 from ssl_models.dataset.utils import dict_datetimes, read_csv, strs_datetimes
@@ -39,20 +40,14 @@ class FLAIRDataset(GenericDataset):
             balance_pretrain=dataset.balance_pretrain,
         )
 
-        self.root_dir = root_dir
-        self.patch_ids = csv_data["patch_id"].tolist()
+        self.root_dir = root_dir.parent / FLAIRIncConfig.rel_dir
+        self.patch_ids = csv_data["image"].tolist()
 
         self.mod_mapping = {
             "aerial": "aerial_rgbi",
-            "aerial_rlt": "aerial-rlt_pan",
-            "dem": "dem_elev",
-            "spot": "spot_rgbi",
             "s2": "sentinel2_ts",
             "s2_mask": "sentinel2_msk-sc",
-            "s1_asc": "sentinel1-asc_ts",
-            "s1_des": "sentinel1-desc_ts",
-            "flair_cosia": "aerial_label-cosia",
-            "flair_lpis": "all_label-lpis",
+            "flair_cosia": "aerial_label_cosia",
         }
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
@@ -70,36 +65,24 @@ class FLAIRDataset(GenericDataset):
                 / f"{domain}_{name_flair}_{area}_{pos}.tif"
             )
 
-        for name_mod in ("s2", "s1_asc", "s1_des"):
-            name_flair = self.mod_mapping[name_mod].split("_")[0].upper()
-            mtd_path = (
-                self.root_dir
-                / f"{domain}_ALL_MTD"
-                / (f"{domain}_{name_flair}_MTD_DATES.gpkg")
-            )
-            mtd = gpd.read_file(mtd_path)
-            mtd = mtd.set_index("zone_id")
-            dates_dict = mtd.loc[f"{domain}_{area}", "acquisition_dates"]
-            dates_dict = json.loads(dates_dict)
-            meta[f"{name_mod}_dates"] = dict_datetimes(dates_dict, start=1)
+        s2_mtd = gpd.read_file(
+            self.root_dir / f"{domain}_ALL_MTD" / f"{domain}_SENTINEL2_MTD_DATES.gpkg",
+        )
+        s2_mtd = s2_mtd.set_index("zone_id")
+        dates_dict = s2_mtd.loc[f"{domain}_{area}", "acquisition_dates"]
+        dates_dict = json.loads(dates_dict)
+        meta["s2_dates"] = dict_datetimes(dates_dict, start=1)
 
-        for name_mod in ("aerial", "spot"):
-            name_flair = name_mod.upper()
-            mtd_path = (
-                self.root_dir
-                / f"{domain}_ALL_MTD"
-                / (f"{domain}_{name_flair}_MTD_DATES.gpkg")
-            )
-            mtd = gpd.read_file(mtd_path)
-            mtd = mtd.set_index("patch_id")
-            dates_strs = [mtd.loc[f"{domain}_{area}_{pos}", "date"]]
-            meta[f"{name_mod}_dates"] = strs_datetimes(dates_strs, format_="%Y%m%d")
+        aerial_mtd = gpd.read_file(
+            self.root_dir / f"{domain}_ALL_MTD" / f"{domain}_AERIAL_MTD_DATES.gpkg",
+        )
+        aerial_mtd = aerial_mtd.set_index("patch_id")
+        dates_strs = [aerial_mtd.loc[f"{domain}_{area}_{pos}", "date"]]
+        meta["aerial_dates"] = strs_datetimes(dates_strs, format_="%Y%m%d")
 
         aerial_date = meta["aerial_dates"]
-
         meta["dem_dates"] = aerial_date
-        meta["flair_lpis_dates"] = aerial_date
-        meta["flair_cosia_dates"] = aerial_date
+        meta["flair_inc_lpis_dates"] = aerial_date
 
         inputs = self.preprocess_rasters(meta)
 
