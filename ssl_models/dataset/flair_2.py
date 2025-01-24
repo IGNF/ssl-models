@@ -1,4 +1,4 @@
-"""FLAIR dataset module."""
+"""FLAIR 2 dataset module."""
 
 import json
 from pathlib import Path
@@ -13,8 +13,8 @@ from ssl_models.dataset.dataset import GenericDataset
 from ssl_models.dataset.utils import dict_datetimes, read_csv, strs_datetimes
 
 
-class FLAIRDataset(GenericDataset):
-    """FLAIR dataset."""
+class FLAIR2Dataset(GenericDataset):
+    """FLAIR 2 dataset."""
 
     def __init__(
         self,
@@ -41,13 +41,13 @@ class FLAIRDataset(GenericDataset):
         )
 
         self.root_dir = root_dir.parent / FLAIRIncConfig.rel_dir
-        self.patch_ids = csv_data["image"].tolist()
+        self.patch_ids = csv_data["patch_id"].tolist()
 
         self.mod_mapping = {
             "aerial": "aerial_rgbi",
             "s2": "sentinel2_ts",
             "s2_mask": "sentinel2_msk-sc",
-            "flair_cosia": "aerial_label_cosia",
+            "flair_2_cosia": "aerial_label-cosia",
         }
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
@@ -81,8 +81,7 @@ class FLAIRDataset(GenericDataset):
         meta["aerial_dates"] = strs_datetimes(dates_strs, format_="%Y%m%d")
 
         aerial_date = meta["aerial_dates"]
-        meta["dem_dates"] = aerial_date
-        meta["flair_inc_lpis_dates"] = aerial_date
+        meta["flair_2_cosia_dates"] = aerial_date
 
         inputs = self.preprocess_rasters(meta)
 
