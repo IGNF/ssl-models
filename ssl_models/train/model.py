@@ -119,6 +119,7 @@ class SSLModule(LightningModule):
 
         self.dataset = datasets.dataset
         self.tb_logger = None
+        self.metrics = None
         self.save_hyperparameters(ignore=["datasets"])
 
     def configure_optimizers(self) -> dict:
@@ -198,7 +199,7 @@ class SSLModule(LightningModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Pretraining step."""
-        loss_rec, masked, rec, _ = self.model(
+        loss_rec, log_inputs, log_preds, log_targets, _ = self.model(
             batch,
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
@@ -209,7 +210,12 @@ class SSLModule(LightningModule):
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
         )
-        return {"loss": loss_rec, "masked": masked, "rec": rec}
+        return {
+            "loss": loss_rec,
+            "log_inputs": log_inputs,
+            "log_preds": log_preds,
+            "log_targets": log_targets,
+        }
 
     def probe_or_finetune_step(
         self,
@@ -217,7 +223,7 @@ class SSLModule(LightningModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Probing/finetuning step."""
-        _, _, _, loss_pred = self.model(
+        _, log_inputs, log_preds, log_targets, loss_pred = self.model(
             batch,
             stage=stage,
             ssl_phase=self.trainer.ssl_phase,
@@ -229,7 +235,12 @@ class SSLModule(LightningModule):
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
         )
-        return {"loss": loss_pred, "masked": None, "rec": None}
+        return {
+            "loss": loss_pred,
+            "log_inputs": log_inputs,
+            "log_preds": log_preds,
+            "log_targets": log_targets,
+        }
 
     def shared_step(
         self,
@@ -303,9 +314,13 @@ class SSLModule(LightningModule):
                 )
                 self.model.metrics[f"loss_pred_{stage}"].reset()
 
+                self.metrics = {}
                 for name_target in self.dataset.targets:
                     metrics = self.model.metrics[f"{name_target}_{stage}"].compute()
+                    self.metrics[f"{name_target}_{stage}"] = metrics
                     for name_metric, value in metrics.items():
+                        if name_metric == "confusion_matrix":
+                            continue
                         self.log_metric(
                             name=f"{self.trainer.ssl_phase}_{name_target}/{name_metric}_{stage}",
                             value=value,

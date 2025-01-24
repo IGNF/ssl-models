@@ -4,11 +4,10 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-import pandas as pd
 
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
-from ssl_models.dataset.utils import naip_datetimes, products_datetimes
+from ssl_models.dataset.utils import naip_datetimes, products_datetimes, read_csv
 
 
 class S2NAIPDataset(GenericDataset):
@@ -21,6 +20,7 @@ class S2NAIPDataset(GenericDataset):
         stage: Literal["train", "val", "test"],
         use_transform: bool,
         random_dates: bool,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -30,8 +30,12 @@ class S2NAIPDataset(GenericDataset):
             random_dates=random_dates,
         )
 
-        csv_path = root_dir / f"{stage}.csv"
-        csv_data = pd.read_csv(csv_path)
+        csv_data = read_csv(
+            root_dir=root_dir,
+            stage=stage,
+            ssl_phase=ssl_phase,
+            balance_pretrain=dataset.balance_pretrain,
+        )
 
         self.root_dir = root_dir
         self.image_ids = csv_data["name"].to_list()
