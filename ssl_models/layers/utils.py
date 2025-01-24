@@ -109,7 +109,7 @@ def ungroup_mods(
                 x[name_mod] = x_mod
     else:
         x = x_group
-
+    
     for name_mod in x:
         if dim == 0:
             x[name_mod] = x[name_mod].unflatten(0, (-1, num_dates[name_mod]))

@@ -22,6 +22,16 @@ class ModelConfig:  # noqa: D101
     batch_repeats: int | None = None
     use_ema: bool = False
 
+@dataclass
+class BaselineConfig:  # noqa: D101
+    model: str = "dinov2" 
+    model_size: str = "large"
+    type_head: str = "linear"
+    loss: str = "l2_norm"
+    in_channels: str = "RGB"
+    weight_source: str = 'canopy'
+    weights_path: str = '/mnt/stores/store-DAI/equipiers/mvaccaro/foret/HighResCanopyHeight/compressed_SSLlarge.pth'
 
 model_store = store(group="model")
 model_store(ModelConfig, name="default_model")
+model_store(BaselineConfig, name="baseline_model")
