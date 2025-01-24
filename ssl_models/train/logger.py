@@ -1,7 +1,9 @@
 """Logger module."""
 
+from pathlib import Path
 from typing import Literal
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -35,10 +37,6 @@ class TensorBoardLogger(TensorBoardLogger):
     def add_image(self, tag: str, image: Tensor, epoch: int) -> None:
         """Add image to tensorboard logger."""
         self._experiment.add_image(tag, image, epoch)
-
-    def add_confusion_matrix(self, tag: str, figure: Tensor, epoch: int) -> None:
-        """Add confusion matrix to tensorboard logger."""
-        self._experiment.add_figure(tag, figure, epoch)
 
     @rank_zero_only
     def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
@@ -94,13 +92,24 @@ class ImageLogger(Callback):
         epoch = trainer.current_epoch
         prefix_idx = batch_idx // log_every_n_batches
 
-        for logs in ["log_inputs", "log_preds", "log_targets"]:
-            for log_title, log_img in outputs[logs].items():
-                trainer.tb_logger.add_image(
-                    log_title.replace("/", f"/{prefix_idx}"),
-                    ImageLogger.to_numpy(log_img),
-                    epoch,
-                )
+        for log_title, log_img in outputs["log_inputs"].items():
+            trainer.tb_logger.add_image(
+                log_title.replace("/", f"/{prefix_idx}"),
+                ImageLogger.to_numpy(log_img),
+                epoch,
+            )
+        for log_title, log_img in outputs["log_preds"].items():
+            trainer.tb_logger.add_image(
+                log_title.replace("/", f"/{prefix_idx}"),
+                ImageLogger.to_numpy(log_img),
+                epoch,
+            )
+        for log_title, log_img in outputs["log_targets"].items():
+            trainer.tb_logger.add_image(
+                log_title.replace("/", f"/{prefix_idx}"),
+                ImageLogger.to_numpy(log_img),
+                epoch,
+            )
 
     def on_train_batch_end(
         self,
@@ -150,20 +159,28 @@ class ConfusionMatrixLogger(Callback):
     def on_epoch_end(
         self,
         trainer: Trainer,
-        pl_module: LightningModule,
         metrics: dict[str, dict[str, Tensor]],
     ) -> None:
         for name_target, metrics_target in metrics.items():
             if "confusion_matrix" in metrics_target:
                 cm = metrics_target["confusion_matrix"].cpu().numpy()
                 cm_df = pd.DataFrame(cm)
-                cm_figure = sns.heatmap(cm_df, annot=True).get_figure()
-                log_cm_title = f"confusion_matrix_{name_target}/confusion_matrix"
-                trainer.tb_logger.add_confusion_matrix(
-                    log_cm_title,
-                    cm_figure,
-                    pl_module.current_epoch,
-                )
+
+                if cm.shape[0] <= 10:  # noqa: PLR2004
+                    figsize = (10, 7)
+                elif cm.shape[0] > 10 and cm.shape[0] <= 16:  # noqa: PLR2004
+                    figsize = (12, 9)
+                elif cm.shape[0] > 16 and cm.shape[0] <= 20:  # noqa: PLR2004
+                    figsize = (16, 11)
+                else:
+                    figsize = (21, 16)
+
+                fig, ax = plt.subplots(figsize=figsize)
+                sns.heatmap(cm_df, annot=True, fmt=".0f")
+                log_cm_title = f"{name_target} Confusion matrix"
+                plt.suptitle(log_cm_title)
+                fig.savefig(str(Path(trainer.tb_logger.log_dir)))
+
                 cm_norm_df = pd.DataFrame(
                     np.divide(
                         cm.astype(np.float32),
@@ -172,16 +189,13 @@ class ConfusionMatrixLogger(Callback):
                         where=(np.sum(cm, axis=1)[:, np.newaxis] != 0),
                     ),
                 )
-                cm_norm_figure = sns.heatmap(cm_norm_df, annot=True).get_figure()
-                log_cm_norm_title = (
-                    f"confusion_matrix_{name_target}/confusion_matrix_normalize"
-                )
-                trainer.tb_logger.add_confusion_matrix(
-                    log_cm_norm_title,
-                    cm_norm_figure,
-                    pl_module.current_epoch,
-                )
+                fig, ax = plt.subplots(figsize=figsize)
+                sns.heatmap(cm_norm_df, annot=True, fmt=".3f")
+                log_cm_title = f"{name_target} Confusion matrix normalized"
+                plt.suptitle(log_cm_title)
+                fig.savefig(str(Path(trainer.tb_logger.log_dir)))
 
+    @rank_zero_only
     def on_validation_epoch_end(
         self,
         trainer: Trainer,
@@ -192,8 +206,9 @@ class ConfusionMatrixLogger(Callback):
                 k: pl_module.metrics[k] for k in pl_module.metrics if "val" in k
             }
             if metrics_val:
-                self.on_epoch_end(trainer, pl_module, metrics_val)
+                self.on_epoch_end(trainer, metrics_val)
 
+    @rank_zero_only
     def on_test_epoch_end(
         self,
         trainer: Trainer,
@@ -204,4 +219,4 @@ class ConfusionMatrixLogger(Callback):
                 k: pl_module.metrics[k] for k in pl_module.metrics if "test" in k
             }
             if metrics_test:
-                self.on_epoch_end(trainer, pl_module, metrics_test)
+                self.on_epoch_end(trainer, metrics_test)

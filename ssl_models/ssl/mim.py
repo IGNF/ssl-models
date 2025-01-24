@@ -25,10 +25,11 @@ from ssl_models.layers.utils import (
 )
 from ssl_models.ssl.utils import (
     create_masked_image,
-    get_dc_mask_from_logits,
+    get_cd_mask_from_logits,
     get_pretrain_logs,
     get_segment_mask_from_logits,
     get_target_mask_from_batch,
+    should_log_probe_finetune,
 )
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
@@ -405,6 +406,8 @@ class BaseMIM(nn.Module, ABC):
         pixels_rec: dict[str, Tensor],
         mask_rec: dict[str, Tensor],
         batch: dict[str, Tensor],
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        stage: Literal["train", "val", "test"],
     ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
         """Visu of reconstructed images, shared for all MIM modules."""
         pixels_masked = {}
@@ -424,7 +427,14 @@ class BaseMIM(nn.Module, ABC):
                 pixels_rec[name_mod],
                 batch[name_mod],
             )
-        return pixels_masked, pixels_rec
+        return get_pretrain_logs(
+            batch,
+            pixels_masked,
+            pixels_rec,
+            ssl_phase,
+            stage,
+            self.dataset.log_inputs,
+        )
 
     def compute_loss_rec(
         self,
@@ -524,22 +534,29 @@ class BaseMIM(nn.Module, ABC):
         for name_target, target in self.dataset.targets.items():
             targets = batch[name_target]
             # image logger
-            input_img = batch[next(x for x in self.dataset.log_inputs if x in batch)][
-                0,
-                0,
-            ][:BANDS_RGB]
-            log_inputs[f"{ssl_phase}_{name_target}_{stage}/_input"] = input_img
-            target_msk = get_target_mask_from_batch(batch[name_target][0, 0])
+            if should_log_probe_finetune(target.type_target):
+                input_keys = (x for x in self.dataset.log_inputs if x in batch)
+                input_img = batch[next(input_keys)][
+                    0,
+                    0,
+                ][:BANDS_RGB]
+                log_inputs[f"{ssl_phase}_{name_target}_{stage}/_input"] = input_img
+                num_classes = target.num_classes
+                target_msk = get_target_mask_from_batch(
+                    batch[name_target][0, 0, 0],
+                    num_classes,
+                    target.missing_val,
+                )
             match target.type_target:
                 case "segment":
                     logits = self.heads[name_target](x_ref, ssl_phase)
                     # image_logger
-                    pred_msk = get_segment_mask_from_logits(logits[0, 0])
+                    pred_msk = get_segment_mask_from_logits(logits[0, 0], num_classes)
                     log_preds[f"{ssl_phase}_{name_target}_{stage}/_pred"] = (
                         create_masked_image(
                             input_img,
                             pred_msk,
-                            max(target_msk.shape[0], pred_msk.shape[0]),
+                            num_classes,
                         )
                     )
                     logits = rearrange(logits, "b 1 c h w -> (b h w) c")
@@ -551,8 +568,8 @@ class BaseMIM(nn.Module, ABC):
                     log_inputs[f"{ssl_phase}_{name_target}_{stage}/_image_1"] = (
                         log_inputs.pop(f"{ssl_phase}_{name_target}_{stage}/_input")
                     )
-                    input_img = batch["image_2"][0, 0][:BANDS_RGB]
-                    pred_msk = get_dc_mask_from_logits(logits)
+                    input_img = batch[next(input_keys)][0, 0][:BANDS_RGB]
+                    pred_msk = get_cd_mask_from_logits(logits)
                     log_preds[f"{ssl_phase}_{name_target}_{stage}/_image_2_pred"] = (
                         create_masked_image(
                             input_img,
@@ -570,14 +587,14 @@ class BaseMIM(nn.Module, ABC):
                     logits = self.heads[name_target](x_enc, ssl_phase)
                     targets = targets.long()
             # image_logger
-            log_targets[f"{ssl_phase}_{name_target}_{stage}/_target"] = (
-                create_masked_image(
-                    input_img,
-                    target_msk,
-                    max(target_msk.shape[0], pred_msk.shape[0]),
+            if should_log_probe_finetune(target.type_target):
+                log_targets[f"{ssl_phase}_{name_target}_{stage}/_target"] = (
+                    create_masked_image(
+                        input_img,
+                        target_msk,
+                        max(target_msk.shape[0], pred_msk.shape[0]),
+                    )
                 )
-            )
-
             if targets.ndim > 1:
                 inds = (targets != target.missing_val).all(dim=1)
             else:
@@ -680,18 +697,12 @@ class BaseMIM(nn.Module, ABC):
                 mask_rec,
                 batch,
             )
-            pixels_masked, pixels_rec = self.compute_pixels(
+            log_inputs, log_preds, log_targets = self.compute_pixels(
                 pixels_rec,
                 mask_rec,
                 batch,
-            )
-            log_inputs, log_preds, log_targets = get_pretrain_logs(
-                batch,
-                pixels_masked,
-                pixels_rec,
                 ssl_phase,
                 stage,
-                self.dataset.log_inputs,
             )
 
             self.metrics[f"loss_rec_{stage}"].update(loss_rec)

@@ -37,7 +37,7 @@ def get_pretrain_logs(
     return log_inputs, log_preds, log_targets
 
 
-def get_segment_mask_from_logits(logits: Tensor) -> Tensor:
+def get_segment_mask_from_logits(logits: Tensor, num_classes: int) -> Tensor:
     """Convert prediction logits to mask for segmentation task."""
     return (
         one_hot(
@@ -45,13 +45,14 @@ def get_segment_mask_from_logits(logits: Tensor) -> Tensor:
                 logits,
                 dim=0,
             ),
+            num_classes,
         )
         .type(torch.bool)
         .permute(2, 0, 1)
     )
 
 
-def get_dc_mask_from_logits(logits: Tensor) -> Tensor:
+def get_cd_mask_from_logits(logits: Tensor) -> Tensor:
     """Convert prediction logits to mask for change detection task."""
     return (
         (
@@ -62,12 +63,19 @@ def get_dc_mask_from_logits(logits: Tensor) -> Tensor:
     )
 
 
-def get_target_mask_from_batch(batch_target: Tensor) -> Tensor:
+def get_target_mask_from_batch(
+    batch_target: Tensor,
+    num_classes: int,
+    missing_val: int,
+) -> Tensor:
     """Convert batch target mask to one hot mask."""
+    batch_target = torch.where(batch_target == missing_val, num_classes, batch_target)
     target_msk = one_hot(
-        batch_target.type(torch.int64) + 1,
-    )  # +1 to not have -1
-    return target_msk.squeeze(dim=0).permute(2, 0, 1).type(torch.bool)
+        batch_target.type(torch.int64),
+        num_classes + 1,
+    )
+    target_msk = target_msk[:, :, :num_classes]
+    return target_msk.permute(2, 0, 1).type(torch.bool)
 
 
 def create_masked_image(img: Tensor, msk: Tensor, num_classes: int) -> Tensor:
@@ -79,3 +87,8 @@ def create_masked_image(img: Tensor, msk: Tensor, num_classes: int) -> Tensor:
         ),
     )
     return draw_segmentation_masks(img, msk, 0.4, colormap)
+
+
+def should_log_probe_finetune(type_target: str) -> bool:
+    """Check whether images should be logged."""
+    return type_target in ["segment", "change_detect"]
