@@ -1,8 +1,12 @@
 """Logger module."""
 
+from pathlib import Path
 from typing import Literal
 
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import seaborn as sns
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
@@ -46,9 +50,8 @@ class TensorBoardLogger(TensorBoardLogger):
 class ImageLogger(Callback):
     """Log masked images, predicted images, and target images."""
 
-    def __init__(self, log_inputs: list[str], **kwargs) -> None:  # noqa: ANN003
+    def __init__(self, **kwargs) -> None:  # noqa: ANN003
         super().__init__(**kwargs)
-        self.log_inputs = log_inputs
 
     @staticmethod
     def to_numpy(x: Tensor) -> np.ndarray:
@@ -61,19 +64,15 @@ class ImageLogger(Callback):
         )
 
     @staticmethod
-    def should_log(trainer: Trainer, outputs: dict) -> bool:
+    def should_log(trainer: Trainer) -> bool:
         """Check whether images should be logged."""
-        return (
-            trainer.global_rank == 0
-            and outputs["rec"] is not None
-            and outputs["masked"] is not None
-        )
+        return trainer.global_rank == 0
 
     def on_batch_end(
         self,
         trainer: Trainer,
         outputs: dict[str, dict],
-        batch: dict[str, Tensor],
+        batch: dict[str, Tensor],  # noqa: ARG002
         batch_idx: int,
         stage: Literal["train", "val", "test"],
     ) -> None:
@@ -90,25 +89,25 @@ class ImageLogger(Callback):
         )
         if batch_idx % log_every_n_batches:
             return
-
         epoch = trainer.current_epoch
         prefix_idx = batch_idx // log_every_n_batches
-        for name_mod in outputs["masked"]:
-            if name_mod not in self.log_inputs:
-                continue
+
+        for log_title, log_img in outputs["log_inputs"].items():
             trainer.tb_logger.add_image(
-                f"{stage}/{prefix_idx}_{name_mod}_input",
-                ImageLogger.to_numpy(outputs["masked"][name_mod][0, 0]),
+                log_title.replace("/", f"/{prefix_idx}"),
+                ImageLogger.to_numpy(log_img),
                 epoch,
             )
+        for log_title, log_img in outputs["log_preds"].items():
             trainer.tb_logger.add_image(
-                f"{stage}/{prefix_idx}_{name_mod}_pred",
-                ImageLogger.to_numpy(outputs["rec"][name_mod][0, 0]),
+                log_title.replace("/", f"/{prefix_idx}"),
+                ImageLogger.to_numpy(log_img),
                 epoch,
             )
+        for log_title, log_img in outputs["log_targets"].items():
             trainer.tb_logger.add_image(
-                f"{stage}/{prefix_idx}_{name_mod}_target",
-                ImageLogger.to_numpy(batch[name_mod][0, 0]),
+                log_title.replace("/", f"/{prefix_idx}"),
+                ImageLogger.to_numpy(log_img),
                 epoch,
             )
 
@@ -122,7 +121,7 @@ class ImageLogger(Callback):
         dataloader_idx: int = 0,  # noqa: ARG002
     ) -> None:
         """Log train images."""
-        if ImageLogger.should_log(trainer, outputs):
+        if ImageLogger.should_log(trainer):
             self.on_batch_end(
                 trainer,
                 outputs,
@@ -141,7 +140,7 @@ class ImageLogger(Callback):
         dataloader_idx: int = 0,  # noqa: ARG002
     ) -> None:
         """Log validation images."""
-        if ImageLogger.should_log(trainer, outputs):
+        if ImageLogger.should_log(trainer):
             self.on_batch_end(
                 trainer,
                 outputs,
@@ -149,3 +148,75 @@ class ImageLogger(Callback):
                 batch_idx,
                 stage="val",
             )
+
+
+class ConfusionMatrixLogger(Callback):
+    """Log confusion matrix."""
+
+    def __init__(self, **kwargs) -> None:  # noqa: ANN003
+        super().__init__(**kwargs)
+
+    def on_epoch_end(
+        self,
+        trainer: Trainer,
+        metrics: dict[str, dict[str, Tensor]],
+    ) -> None:
+        for name_target, metrics_target in metrics.items():
+            if "confusion_matrix" in metrics_target:
+                cm = metrics_target["confusion_matrix"].cpu().numpy()
+                cm_df = pd.DataFrame(cm)
+
+                if cm.shape[0] <= 10:  # noqa: PLR2004
+                    figsize = (10, 7)
+                elif cm.shape[0] > 10 and cm.shape[0] <= 16:  # noqa: PLR2004
+                    figsize = (12, 9)
+                elif cm.shape[0] > 16 and cm.shape[0] <= 20:  # noqa: PLR2004
+                    figsize = (16, 11)
+                else:
+                    figsize = (21, 16)
+
+                fig, ax = plt.subplots(figsize=figsize)
+                sns.heatmap(cm_df, annot=True, fmt=".0f")
+                log_cm_title = f"{name_target} Confusion matrix"
+                plt.suptitle(log_cm_title)
+                fig.savefig(str(Path(trainer.tb_logger.log_dir)))
+
+                cm_norm_df = pd.DataFrame(
+                    np.divide(
+                        cm.astype(np.float32),
+                        np.sum(cm, axis=1)[:, np.newaxis],
+                        out=np.zeros_like(cm.astype(np.float32)),
+                        where=(np.sum(cm, axis=1)[:, np.newaxis] != 0),
+                    ),
+                )
+                fig, ax = plt.subplots(figsize=figsize)
+                sns.heatmap(cm_norm_df, annot=True, fmt=".3f")
+                log_cm_title = f"{name_target} Confusion matrix normalized"
+                plt.suptitle(log_cm_title)
+                fig.savefig(str(Path(trainer.tb_logger.log_dir)))
+
+    @rank_zero_only
+    def on_validation_epoch_end(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,
+    ) -> None:
+        if pl_module.metrics and trainer.ssl_phase == "finetune":
+            metrics_val = {
+                k: pl_module.metrics[k] for k in pl_module.metrics if "val" in k
+            }
+            if metrics_val:
+                self.on_epoch_end(trainer, metrics_val)
+
+    @rank_zero_only
+    def on_test_epoch_end(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,
+    ) -> None:
+        if pl_module.metrics and trainer.ssl_phase == "finetune":
+            metrics_test = {
+                k: pl_module.metrics[k] for k in pl_module.metrics if "test" in k
+            }
+            if metrics_test:
+                self.on_epoch_end(trainer, metrics_test)

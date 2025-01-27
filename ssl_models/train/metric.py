@@ -34,15 +34,25 @@ class MonoLabelMetric(Metric):
             case "classif":
                 self.task = "multiclass"
                 self.num_classes = num_classes
-                self.metric_names = ["overall_accuracy"]
+                self.metric_names = ["overall_accuracy", "confusion_matrix"]
             case "segment":
                 self.task = "multiclass"
                 self.num_classes = num_classes
-                self.metric_names = ["overall_accuracy", "average_f1", "average_iou"]
+                self.metric_names = [
+                    "overall_accuracy",
+                    "average_f1",
+                    "average_iou",
+                    "confusion_matrix",
+                ]
             case "change_detect":
                 self.task = "binary"
                 self.num_classes = 2
-                self.metric_names = ["overall_accuracy", "average_f1", "average_iou"]
+                self.metric_names = [
+                    "overall_accuracy",
+                    "average_f1",
+                    "average_iou",
+                    "confusion_matrix",
+                ]
 
         self.add_state(
             "cm",
@@ -79,6 +89,7 @@ class MonoLabelMetric(Metric):
             "overall_accuracy": overall_acc,
             "average_f1": per_class_f1.nanmean(),
             "average_iou": per_class_iou.nanmean(),
+            "confusion_matrix": self.cm,
         }
         return {
             metric_name: metric_val
