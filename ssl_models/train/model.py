@@ -1,5 +1,6 @@
 """Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
 
+import copy
 from typing import Literal
 
 import torch
@@ -40,6 +41,7 @@ class SSLModule(LightningModule):
         unpool_dim: int | None = None,
         use_date_enc: bool = True,
         batch_repeats: int | None = None,
+        use_ema: bool = False,
         # mixmae args
         num_levels: Literal[3, 4] = 3,
         swin_version: Literal[1, 2] = 1,
@@ -127,6 +129,13 @@ class SSLModule(LightningModule):
             msg = f"Invalid model size {model_size}. Expected one of {model_map.keys()}"
             raise ValueError(msg)
 
+        if use_ema:
+            self.ema_model = copy.deepcopy(self.model).to("cpu")
+            for param in self.ema_model.parameters():
+                param.requires_grad = False
+        else:
+            self.ema_model = None
+
         self.dataset = datasets.dataset
         self.tb_logger = None
         self.batch_repeats = batch_repeats
@@ -136,7 +145,9 @@ class SSLModule(LightningModule):
         """Configure optimizer."""
         total_steps = self.trainer.estimated_stepping_batches
         total_batch_size = (
-            self.trainer.train_dataloader.batch_size * self.trainer.num_nodes
+            self.trainer.train_dataloader.batch_size
+            * self.trainer.accumulate_grad_batches
+            * self.trainer.num_nodes
         )
         lr = (
             # use sqrt scaling rule with Adam
@@ -205,6 +216,7 @@ class SSLModule(LightningModule):
             pct_start=0.2,
             cycle_momentum=False,
             div_factor=1000,
+            final_div_factor=self.trainer.final_factor / 1000.0,
         )
         return {
             "optimizer": optimizer,
@@ -221,7 +233,11 @@ class SSLModule(LightningModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Pretraining step."""
-        loss_rec, masked, rec, _ = self.model(
+        if stage == "train" or self.ema_model is None:
+            model = self.model
+        else:
+            model = self.ema_model
+        loss_rec, masked, rec, _ = model(
             batch,
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
@@ -240,7 +256,11 @@ class SSLModule(LightningModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Probing/finetuning step."""
-        _, _, _, loss_pred = self.model(
+        if stage == "train" or self.ema_model is None:
+            model = self.model
+        else:
+            model = self.ema_model
+        _, _, _, loss_pred = model(
             batch,
             stage=stage,
             ssl_phase=self.trainer.ssl_phase,
@@ -321,28 +341,36 @@ class SSLModule(LightningModule):
 
     def on_epoch_end(self, stage: Literal["train", "val", "test"]) -> None:
         """Log epoch metrics for training/validation."""
+        if stage == "train" or self.ema_model is None:
+            model = self.model
+        else:
+            model = self.ema_model
+
         match self.trainer.ssl_phase:
             case "pretrain":
                 self.log_metric(
                     name=f"{self.trainer.ssl_phase}_loss_rec/{stage}",
-                    value=self.model.metrics[f"loss_rec_{stage}"].compute(),
+                    value=model.metrics[f"loss_rec_{stage}"].compute(),
                 )
-                self.model.metrics[f"loss_rec_{stage}"].reset()
+                model.metrics[f"loss_rec_{stage}"].reset()
             case "probe" | "finetune":
                 self.log_metric(
                     name=f"{self.trainer.ssl_phase}_loss_pred/{stage}",
-                    value=self.model.metrics[f"loss_pred_{stage}"].compute(),
+                    value=model.metrics[f"loss_pred_{stage}"].compute(),
                 )
-                self.model.metrics[f"loss_pred_{stage}"].reset()
+                model.metrics[f"loss_pred_{stage}"].reset()
 
                 for name_target in self.dataset.targets:
-                    metrics = self.model.metrics[f"{name_target}_{stage}"].compute()
+                    metrics = model.metrics[f"{name_target}_{stage}"].compute()
                     for name_metric, value in metrics.items():
                         self.log_metric(
                             name=f"{self.trainer.ssl_phase}_{name_target}/{name_metric}_{stage}",
                             value=value,
                         )
-                    self.model.metrics[f"{name_target}_{stage}"].reset()
+                    model.metrics[f"{name_target}_{stage}"].reset()
+
+        if stage == "train" and self.ema_model is not None:
+            self.update_ema()
 
     def on_train_epoch_end(self) -> None:
         self.on_epoch_end(stage="train")
@@ -352,6 +380,15 @@ class SSLModule(LightningModule):
 
     def on_test_epoch_end(self) -> None:
         self.on_epoch_end(stage="test")
+
+    def update_ema(self) -> None:
+        """Update EMA model."""
+        momentum = 1 - 1 / (self.trainer.max_epochs * 0.2)
+        for param, param_ema in zip(
+            self.model.parameters(),
+            self.ema_model.parameters(),
+        ):
+            param_ema.data.mul_(momentum).add_((1.0 - momentum) * param.detach().data)
 
     def log_metric(
         self,

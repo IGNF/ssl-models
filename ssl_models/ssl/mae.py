@@ -128,7 +128,7 @@ class MAE(BaseMIM):
             {
                 name_mod: Transformer(
                     dim=embed_dim,
-                    depth=depth - allmods_depth[0],
+                    depth=depth - allmods_depth,
                     heads=heads,
                     dim_head=dim_head,
                     mlp_dim=embed_dim * mlp_ratio,
@@ -150,7 +150,7 @@ class MAE(BaseMIM):
             {
                 name_mod: Transformer(
                     dim=decoder_dim,
-                    depth=decoder_depth - allmods_depth[1],
+                    depth=decoder_depth,
                     heads=decoder_heads,
                     dim_head=decoder_dim_head,
                     mlp_dim=embed_dim * decoder_mlp_ratio,
@@ -158,27 +158,16 @@ class MAE(BaseMIM):
                 for name_mod in name_models
             },
         )
-        if allmods_depth[0]:
+        if allmods_depth:
             self.encoder_all = Transformer(
                 dim=embed_dim,
-                depth=allmods_depth[0],
+                depth=allmods_depth,
                 heads=heads,
                 dim_head=dim_head,
                 mlp_dim=embed_dim * mlp_ratio,
             )
         else:
             self.encoder_all = None
-
-        if allmods_depth[1]:
-            self.decoder_all = Transformer(
-                dim=decoder_dim,
-                depth=allmods_depth[1],
-                heads=decoder_heads,
-                dim_head=decoder_dim_head,
-                mlp_dim=embed_dim * decoder_mlp_ratio,
-            )
-        else:
-            self.decoder_all = None
 
     def mask_struct(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         """Structural masking of modalities, band groups, dates."""
@@ -306,8 +295,6 @@ class MAE(BaseMIM):
 
     def decode(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         """Apply MAE decoder."""
-        if self.decoder_all:
-            x = self.encode_or_decode_all(x, model=self.decoder_all)
         return self.encode_or_decode(x, model=self.decoder)
 
 
