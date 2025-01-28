@@ -46,6 +46,10 @@ class SSLTrainer(pl.Trainer):
 
         self.base_lr = opt.base_lr
         self.lw_decay = opt.lw_decay if isinstance(opt, OptFinetuneConfig) else None
+        self.final_factor = (
+            opt.final_factor if isinstance(opt, OptFinetuneConfig) else 1e7
+        )
+
         self.wd = opt.wd
         self.b1 = opt.b1
         self.b2 = opt.b2
@@ -61,6 +65,7 @@ class SSLTrainer(pl.Trainer):
             strategy=strategy,
             precision=precision,
             num_nodes=num_nodes,
+            accumulate_grad_batches=opt.accumulate_grad_batches,
         )
 
     def configure_loggers(self) -> list[Logger]:

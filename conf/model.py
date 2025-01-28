@@ -8,7 +8,7 @@ from hydra_zen import store
 @dataclass
 class ModelConfig:  # noqa: D101
     multimodal: str = "group"
-    allmods_depth: tuple[int] = (3, 3)  # nb of Transformer blocks with all mods
+    allmods_depth: int = 3  # nb of blocks with all mods
     model: str = "mae"
     model_size: str = "tiny"
     type_head: str = "attentive"
@@ -20,6 +20,7 @@ class ModelConfig:  # noqa: D101
     swin_abs_enc: bool = False
     use_date_enc: bool = True
     batch_repeats: int | None = None
+    use_ema: bool = False
 
 
 model_store = store(group="model")

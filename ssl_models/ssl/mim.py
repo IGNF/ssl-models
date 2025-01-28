@@ -542,12 +542,6 @@ class BaseMIM(nn.Module, ABC):
         log_targets = {}
         for name_target, target in self.dataset.targets.items():
             targets = batch[name_target]
-            weight = (
-                torch.tensor(target.weight, dtype=torch.float, device=targets.device)
-                if target.weight
-                else None
-            )
-
             match target.type_target:
                 case "segment":
                     logits = self.heads[name_target](x_ref, ssl_phase)
@@ -618,7 +612,6 @@ class BaseMIM(nn.Module, ABC):
             loss_pred += self.loss_pred[name_target](
                 logits_selected,
                 targets_selected,
-                weight,
             )
             self.metrics[f"{name_target}_{stage}"].update(
                 logits_selected,
