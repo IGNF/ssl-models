@@ -20,6 +20,7 @@ class HiUCDDataset(GenericDataset):
         stage: Literal["train", "val", "test"],
         use_transform: bool,
         random_crop: bool,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -30,10 +31,9 @@ class HiUCDDataset(GenericDataset):
         )
 
         csv_data = read_csv(
-            root_dir=root_dir,
+            csv_dir=root_dir,
             stage=stage,
             ssl_phase=ssl_phase,
-            balance_pretrain=dataset.balance_pretrain,
         )
 
         self.image_1 = csv_data["image_1"].to_list()

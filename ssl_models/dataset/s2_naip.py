@@ -20,6 +20,7 @@ class S2NAIPDataset(GenericDataset):
         stage: Literal["train", "val", "test"],
         use_transform: bool,
         random_dates: bool,
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         random_crop: bool,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
@@ -32,10 +33,9 @@ class S2NAIPDataset(GenericDataset):
         )
 
         csv_data = read_csv(
-            root_dir=root_dir,
+            csv_dir=root_dir,
             stage=stage,
             ssl_phase=ssl_phase,
-            balance_pretrain=dataset.balance_pretrain,
         )
 
         self.root_dir = root_dir

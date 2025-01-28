@@ -48,7 +48,6 @@ class TargetConfig:
     type_target: str = MISSING
     num_classes: int = MISSING
     missing_val: int = -1
-    weight: list[float] | None = None
 
     def __post_init__(self) -> None:
         """Check that attribute values are valid."""

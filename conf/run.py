@@ -17,15 +17,6 @@ class RunConfig:  # noqa: D101
     seed: int = 42
     monitor: str | None = None
     logged_images_per_epoch: int = 5
-    log_inputs: list[str] = field(
-        default_factory=lambda: [
-            "aerial",
-            "spot",
-            "naip",
-            "image_1",
-            "rgb",
-        ],
-    )
     use_clearml: bool = True
     clearml_project_name: str = "ssl"
     clearml_tags: list[str] = field(default_factory=lambda: ["multimodal", "hydra"])

@@ -542,6 +542,20 @@ class BaseMIM(nn.Module, ABC):
         log_targets = {}
         for name_target, target in self.dataset.targets.items():
             targets = batch[name_target]
+            # image logger
+            if should_log_probe_finetune(target.type_target):
+                input_keys = (x for x in self.dataset.log_inputs if x in batch)
+                input_img = batch[next(input_keys)][
+                    0,
+                    0,
+                ][:BANDS_RGB]
+                log_inputs[f"{ssl_phase}_{name_target}_{stage}/_input"] = input_img
+                num_classes = target.num_classes
+                target_msk = get_target_mask_from_batch(
+                    batch[name_target][0, 0, 0],
+                    num_classes,
+                    target.missing_val,
+                )
             match target.type_target:
                 case "segment":
                     logits = self.heads[name_target](x_ref, ssl_phase)

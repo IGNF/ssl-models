@@ -7,8 +7,6 @@ from hydra.core.hydra_config import HydraConfig
 from omegaconf import OmegaConf
 from pytorch_lightning import seed_everything
 
-from conf.datasets import ALL_DATASETS
-
 
 def pre_call_seed(cfg: OmegaConf) -> None:
     """Seed everything if run is reproducible."""

@@ -138,6 +138,7 @@ class SSLModule(LightningModule):
 
         self.dataset = datasets.dataset
         self.tb_logger = None
+        self.metrics = None
         self.batch_repeats = batch_repeats
         self.save_hyperparameters(ignore=["datasets"])
 
@@ -237,7 +238,7 @@ class SSLModule(LightningModule):
             model = self.model
         else:
             model = self.ema_model
-        loss_rec, masked, rec, _ = model(
+        loss_rec, log_inputs, log_preds, log_targets, _ = model(
             batch,
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
@@ -265,7 +266,7 @@ class SSLModule(LightningModule):
             model = self.model
         else:
             model = self.ema_model
-        _, _, _, loss_pred = model(
+        _, log_inputs, log_preds, log_targets, loss_pred = model(
             batch,
             stage=stage,
             ssl_phase=self.trainer.ssl_phase,
