@@ -39,8 +39,9 @@ class PASTISHDDataset(GenericDataset):
             ssl_phase=ssl_phase,
             balance_pretrain=dataset.balance_pretrain,
             val_pretrain=dataset.val_pretrain,
+            fold=dataset.fold,
         )
-        image_ids = csv_data["image"]
+        image_ids = csv_data["image"].tolist()
 
         meta_path = root_dir / "metadata.geojson"
         meta_data = gpd.read_file(meta_path).set_index("id")
@@ -97,7 +98,7 @@ class PASTISHDDataset(GenericDataset):
         )
         meta["pastis_seg_dates"] = spot_date
 
-        inputs = self.preprocess_rasters(meta)
+        inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
 
         inputs["pastis_mlc"] = np.array(
             [((inputs["pastis_seg"] == idx) > 0).any() for idx in range(1, 19)],

@@ -66,7 +66,7 @@ class HiUCDDataset(GenericDataset):
         meta["hi_ucd_seg_2_path"] = self.root_dir / self.targets[idx]
         meta["hi_ucd_seg_2_dates"] = strs_datetimes(["2019-07-01"])
 
-        inputs = self.preprocess_rasters(meta)
+        inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
         inputs["ref_date"] = strs_datetimes(["2019-07-01"])
 
         for target in ["hi_ucd_change_detect", "hi_ucd_seg_1", "hi_ucd_seg_2"]:

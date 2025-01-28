@@ -96,7 +96,7 @@ class S2NAIPDataset(GenericDataset):
         meta["osm_seg_path"] = self.root_dir / "openstreetmap" / f"{image_id}.geojson"
         meta["osm_seg_dates"] = meta["naip_dates"]
 
-        inputs = self.preprocess_rasters(meta)
+        inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
 
         inputs["ref_date"] = inputs["naip_dates"]
 
