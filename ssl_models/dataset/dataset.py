@@ -83,12 +83,8 @@ class GenericDataset(Dataset, ABC):
         if start_gcd is None:
             start_gcd = self.rng.integers(
                 low=0,
-                high=self.dataset.size_gcd,
+                high=self.dataset.size_gcd - self.dataset.crop_gcd + 1,
                 size=2,
-            )
-            start_gcd = np.minimum(
-                start_gcd,
-                self.dataset.size_gcd - self.dataset.crop_gcd,
             )
 
         start, end = {}, {}

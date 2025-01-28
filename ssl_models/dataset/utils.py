@@ -77,6 +77,7 @@ def read_csv(
     balance_pretrain: bool = False,
     val_pretrain: bool = False,
     filter_percent: int | None = None,
+    fold: int | None = None,
     **kwargs,  # noqa: ANN003
 ) -> Path:
     """Read dataset csv."""
@@ -85,6 +86,8 @@ def read_csv(
         csv_name += ["balanced"]
     if filter_percent:
         csv_name += [f"filtered_{filter_percent}"]
+    if fold:
+        csv_name += [f"fold_{fold}"]
 
     stages = (
         ["train", "val"]

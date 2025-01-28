@@ -17,6 +17,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "PASTIS-HD"
     balance_pretrain: bool = False
     val_pretrain: bool = False
+    fold: int | None = None
 
     ref_input: str | None = "s2"  # defines grid for raster targets
     crop_meters: float = 320

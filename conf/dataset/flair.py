@@ -13,13 +13,13 @@ from ssl_models.dataset.flair import FLAIRDataset
 
 @dataclass
 class FLAIRConfig(DatasetConfig):  # noqa: D101
-    rel_dir: str = "FLAIR-INC-FILTERED"
-    csv_dir: str | None = "/var/data/datasets/FLAIR-INC-FILTERED"
+    rel_dir: str = "FLAIR-INC"
+    csv_dir: str | None = None
     balance_pretrain: bool = False
-    filter_percent: int | None = 20
+    filter_percent: int | None = None
 
     ref_input: str | None = "aerial"  # defines grid for raster targets
-    crop_meters: float = 256 * 0.2
+    crop_meters: float = 51.2
     repeats: int = 2
 
     filter_inputs: list[str] = field(
@@ -101,7 +101,6 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
         self.cosia = TargetRasterConfig(
             type_target="segment",
             num_classes=15,
-            weight=[4, 22, 59,  3,  4,  5,  4, 12,  2,  3,  6,  6,  2, 4,  4],
             missing_val=-1,
             bands=1,
         )
