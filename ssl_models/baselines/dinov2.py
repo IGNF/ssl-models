@@ -56,7 +56,7 @@ class DinoSegmentor(Module, ABC):
         type_head: str
            Segmentation head to use. Either 'naive' or 'progressive' or 'upernet'. Default is 'naive'.
         weight_source: str
-           Either "imagenet" or "canopy". Default is "imagenet"
+           Either "random", "imagenet" or "canopy". Default is "imagenet"
         hidden_dim: int
            Used if "seg_head" is set to "progressive".
         kwargs:
@@ -77,11 +77,12 @@ class DinoSegmentor(Module, ABC):
         else:
             self.patch_size = 16
         
-        self.embed_dim_by_size =  {'small': 384, 'base': 768, 'large': 1024, 'huge': 1280}
+        self.embed_dim_by_size =  {'tiny': 192, 'small': 384, 'base': 768, 'large': 1024, 'huge': 1280}
         
         assert self.image_size % self.patch_size == 0, "Image size ({}) must be multiple of patch size ({})".format(self.image_size, self.patch_size)
         assert ((self.weight_source == 'imagenet' and backbone_size in ['small', 'base', 'large', 'huge']) \
-                or (self.weight_source == 'canopy' and backbone_size in ['large'])), 'Weight source {} is not compatible with backbone_size {}'.format(weight_source, backbone_size)
+                or (self.weight_source == 'canopy' and backbone_size in ['large']) \
+                or (self.weight_source == 'random' and backbone_size in ['tiny'])), 'Weight source {} is not compatible with backbone_size {}'.format(weight_source, backbone_size)
         assert (self.weights_path is not None or self.weight_source == 'imagenet'), 'A weight path should be given.'
         assert in_channels in ['RGB', 'RGBI', 'IRC'], 'in_channels should be RGB RGBI or IRC'
         
@@ -102,6 +103,8 @@ class DinoSegmentor(Module, ABC):
             self.dino = self.get_hub_backbone(backbone_size)
             self.dino.mask_token.requires_grad = False
             self.dim = self.adapt_to_channels_number(self.num_channels)
+        elif self.weight_source == 'random':
+            self.dino, self.dim = self.get_huggingface_backbone(backbone_size, self.num_channels)
         else:
             self.dino, self.dim = self.get_huggingface_backbone(backbone_size, self.num_channels)
             self.load_cano_weights(self.weights_path, self.num_channels)
@@ -259,6 +262,22 @@ class DinoSegmentor(Module, ABC):
             configuration = Dinov2Config(**config_dict)
             backbone = Dinov2Model(configuration)
             dim = 1024
+
+            return backbone, dim
+        elif backbone_size == 'tiny':
+            config_dict = {
+                'patch_size': 16,
+                'hidden_size': 192,
+                'num_channels': num_channels,
+                'num_attention_heads': 3,
+                'num_hidden_layers': 12,
+                'out_features':['stage12'],
+                'out_indices': [12],
+                'stage_names':['stem']+['stage{}'.format(i) for i in range(1,13)]
+            }
+            configuration = Dinov2Config(**config_dict)
+            backbone = Dinov2Model(configuration)
+            dim = 192
 
             return backbone, dim
         else:
