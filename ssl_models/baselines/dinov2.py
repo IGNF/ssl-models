@@ -90,7 +90,7 @@ class DinoSegmentor(Module, ABC):
         self.in_channels = in_channels
 
         if self.in_channels == 'RGB':
-            self.channels_to_use = {'aerial':[0,1,2], 'spot':[0,1,2], 's2':[3,2,1]}
+            self.channels_to_use = {'aerial':[0,1,2], 'spot':[0,1,2], 's2':[2,1,0]}
         elif self.in_channels == 'RGBI':
             self.channels_to_use = {'aerial':[0,1,2,3]}
         else: #IRC
