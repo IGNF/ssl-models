@@ -55,14 +55,13 @@ class BaselineModule(BaseModule):
 
         match model:
             case "dinov2":
-                unpool_dim = 1
+                unpool_dim = None
 
                 if len(datasets.filter_finetune)>1:
                     raise NotImplementedError("Too many datasets given.")
                 
                 ds_name = datasets.filter_finetune[0]
                 ds = getattr(datasets, ds_name)
-                
                 ref_ds = getattr(ds, ds.ref_input)
                 image_size = ref_ds.image_size
 

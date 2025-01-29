@@ -20,7 +20,6 @@ requests = "^2.31.0"
 albumentations = "^1.4.3"
 lightning = "^2.2.2"
 tensorboard = "^2.16.2"
-odeon = {git = "https://github.com/IGNF/odeon"}
 segmentation-models-pytorch = "^0.3.3"
 omegaconf = "^2.3.0"
 clearml = "^1.15.1"
