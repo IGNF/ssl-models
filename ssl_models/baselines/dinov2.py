@@ -82,8 +82,8 @@ class DinoSegmentor(Module, ABC):
         assert self.image_size % self.patch_size == 0, "Image size ({}) must be multiple of patch size ({})".format(self.image_size, self.patch_size)
         assert ((self.weight_source == 'imagenet' and backbone_size in ['small', 'base', 'large', 'huge']) \
                 or (self.weight_source == 'canopy' and backbone_size in ['large'])), 'Weight source {} is not compatible with backbone_size {}'.format(weight_source, backbone_size)
-        assert ((self.weights_path is not None or self.weight_source == 'imagenet'), 'A weight path should be given.')
-        assert (in_channels in ['RGB', 'RGBI', 'IRC'], 'in_channels should be RGB RGBI or IRC')
+        assert (self.weights_path is not None or self.weight_source == 'imagenet'), 'A weight path should be given.'
+        assert in_channels in ['RGB', 'RGBI', 'IRC'], 'in_channels should be RGB RGBI or IRC'
         
         self.embed_dim = self.embed_dim_by_size[self.backbone_size]
         self.num_channels = len(in_channels)
@@ -114,8 +114,6 @@ class DinoSegmentor(Module, ABC):
         for name_mod, mod in self.dataset.inputs.items():
             self.grid_size[name_mod] = mod.image_size // self.patch_size
 
-            print(name_mod, mod.image_size, self.grid_size[name_mod])
-
         # heads
         self.heads = ModuleDict()
         for name_target, target in self.dataset.targets.items():
@@ -128,7 +126,6 @@ class DinoSegmentor(Module, ABC):
                 )
                 ref_grid_size = self.grid_size[self.dataset.ref_input]
                 if target_image_size % ref_grid_size:
-                    print(name_target, self.dataset.crop_meters, target.resolution_meters, target_image_size, ref_grid_size)
                     msg = (
                         f"Target image size {target_image_size} "
                         f"is not a multiple of ref input grid {ref_grid_size}"
@@ -455,7 +452,6 @@ class DinoSegmentor(Module, ABC):
 
             match target.type_target:
                 case "segment":
-                    print(self.heads[name_target])
                     logits = self.heads[name_target](x_ref, ssl_phase)
                     logits = rearrange(logits, "b 1 c h w -> (b h w) c")
                     targets = rearrange(targets, "b 1 1 h w -> (b h w)")
