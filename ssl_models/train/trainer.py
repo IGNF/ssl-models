@@ -14,11 +14,7 @@ from pytorch_lightning.loggers.logger import Logger
 from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
 from conf.run import RunConfig
 from ssl_models.hydra_utils import get_hydra_timestamp
-from ssl_models.train.logger import (
-    ConfusionMatrixLogger,
-    ImageLogger,
-    TensorBoardLogger,
-)
+from ssl_models.train.logger import ImageLogger, MetricsLogger, TensorBoardLogger
 
 
 class SSLTrainer(pl.Trainer):
@@ -100,7 +96,7 @@ class SSLTrainer(pl.Trainer):
             ),
         )
         callbacks.append(ImageLogger())
-        callbacks.append(ConfusionMatrixLogger())
+        callbacks.append(MetricsLogger())
         return callbacks
 
     def fit_and_test(

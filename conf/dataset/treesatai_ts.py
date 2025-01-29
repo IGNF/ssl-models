@@ -14,7 +14,7 @@ from ssl_models.dataset.treesatai_ts import TreeSatAITSDataset
 @dataclass
 class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "TreeSatAI-TS"
-    balance_pretrain: bool = False
+    balance_pretrain: bool = True
     val_pretrain: bool = False
     crop_meters: float = 60.0
 

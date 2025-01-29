@@ -180,7 +180,7 @@ class Pixelify(nn.Module):
         self,
         x: Tensor,
         mask: Tensor,
-        inds: list[list[Tensor]],
+        inds: list[list[Tensor]],  # noqa: ARG002
     ) -> tuple[Tensor, Tensor]:
         x = rearrange(x, "b (g d) l c -> g b d l c", g=len(self.num_bands))
         mask = repeat(
@@ -271,7 +271,7 @@ class PixelifyBands(nn.Module):
     def forward(
         self,
         x: Tensor,
-        inds: list[Tensor],
+        inds: list[Tensor],  # noqa: ARG002
     ) -> Tensor:
         _, D, L, _ = x.shape  # noqa: N806
         H = round(L**0.5)  # noqa: N806

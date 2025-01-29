@@ -5,7 +5,6 @@ from typing import Literal
 
 import torch
 from pytorch_lightning import LightningModule
-from torch import Tensor
 from torch.nn import functional as F  # noqa: N812
 
 from conf.datasets import DatasetsConfig
@@ -27,7 +26,7 @@ NDIM_RASTER = 5  # (batch, dates, channels, height, width)
 class SSLModule(LightningModule):
     """SSL module."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         # shared args
         datasets: DatasetsConfig,
@@ -137,8 +136,6 @@ class SSLModule(LightningModule):
             self.ema_model = None
 
         self.dataset = datasets.dataset
-        self.tb_logger = None
-        self.metrics = None
         self.batch_repeats = batch_repeats
         self.save_hyperparameters(ignore=["datasets"])
 
@@ -219,6 +216,7 @@ class SSLModule(LightningModule):
             div_factor=1000,
             final_div_factor=self.trainer.final_factor / 1000.0,
         )
+
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
@@ -243,12 +241,7 @@ class SSLModule(LightningModule):
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
         )
-        self.log_step(
-            name="loss_rec",
-            value=loss_rec,
-            ssl_phase=self.trainer.ssl_phase,
-            stage=stage,
-        )
+
         return {
             "loss": loss_rec,
             "log_inputs": log_inputs,
@@ -272,12 +265,6 @@ class SSLModule(LightningModule):
             ssl_phase=self.trainer.ssl_phase,
         )
 
-        self.log_step(
-            name="loss_pred",
-            value=loss_pred,
-            ssl_phase=self.trainer.ssl_phase,
-            stage=stage,
-        )
         return {
             "loss": loss_pred,
             "log_inputs": log_inputs,
@@ -350,50 +337,9 @@ class SSLModule(LightningModule):
     ) -> dict[str, torch.Tensor]:
         return self.shared_step(batch, stage="test")
 
-    def on_epoch_end(self, stage: Literal["train", "val", "test"]) -> None:
-        """Log epoch metrics for training/validation."""
-        if stage == "train" or self.ema_model is None:
-            model = self.model
-        else:
-            model = self.ema_model
-
-        match self.trainer.ssl_phase:
-            case "pretrain":
-                self.log_metric(
-                    name=f"{self.trainer.ssl_phase}_loss_rec/{stage}",
-                    value=model.metrics[f"loss_rec_{stage}"].compute(),
-                )
-                model.metrics[f"loss_rec_{stage}"].reset()
-            case "probe" | "finetune":
-                self.log_metric(
-                    name=f"{self.trainer.ssl_phase}_loss_pred/{stage}",
-                    value=model.metrics[f"loss_pred_{stage}"].compute(),
-                )
-                model.metrics[f"loss_pred_{stage}"].reset()
-
-                self.metrics = {}
-                for name_target in self.dataset.targets:
-                    metrics = model.metrics[f"{name_target}_{stage}"].compute()
-                    for name_metric, value in metrics.items():
-                        if name_metric == "confusion_matrix":
-                            continue
-                        self.log_metric(
-                            name=f"{self.trainer.ssl_phase}_{name_target}/{name_metric}_{stage}",
-                            value=value,
-                        )
-                    model.metrics[f"{name_target}_{stage}"].reset()
-
-        if stage == "train" and self.ema_model is not None:
-            self.update_ema()
-
     def on_train_epoch_end(self) -> None:
-        self.on_epoch_end(stage="train")
-
-    def on_validation_epoch_end(self) -> None:
-        self.on_epoch_end(stage="val")
-
-    def on_test_epoch_end(self) -> None:
-        self.on_epoch_end(stage="test")
+        if self.ema_model is not None:
+            self.update_ema()
 
     def update_ema(self) -> None:
         """Update EMA model."""
@@ -403,39 +349,3 @@ class SSLModule(LightningModule):
             self.ema_model.parameters(),
         ):
             param_ema.data.mul_(momentum).add_((1.0 - momentum) * param.detach().data)
-
-    def log_metric(
-        self,
-        name: str,
-        value: Tensor,
-    ) -> None:
-        """Log accuracy metric."""
-        super().log(
-            name=name,
-            value=value,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
-
-    def log_step(
-        self,
-        name: str,
-        value: Tensor,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
-        stage: Literal["train", "val", "test"],
-    ) -> None:
-        """Log metric."""
-        if stage != "train":
-            return
-        super().log(
-            name=f"{ssl_phase}_{name}/step_{stage}",
-            value=value,
-            on_step=True,
-            on_epoch=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )

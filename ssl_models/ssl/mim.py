@@ -83,19 +83,18 @@ class BaseMIM(nn.Module, ABC):
         self.grid_size, self.out_grid_size = {}, {}
         self.patch_embed, self.embed_to_rec = nn.ModuleDict(), nn.ModuleDict()
         for name_mod, mod in self.dataset.inputs.items():
-            bands = mod.bands
             patch_size = mod.patch_size.mae if model == "mae" else mod.patch_size.mixmae
             self.grid_size[name_mod] = mod.image_size // patch_size
             self.out_grid_size[name_mod] = mod.image_size // (patch_size * self.stride)
             self.patch_embed[name_mod] = Patchify(
-                bands,
+                mod.bands,
                 embed_dim,
                 patch_size,
                 unpool_dim,
             )
             self.embed_to_rec[name_mod] = Pixelify(
                 decoder_dim,
-                bands,
+                mod.bands,
                 patch_size * self.stride,
                 unpool_dim,
             )
