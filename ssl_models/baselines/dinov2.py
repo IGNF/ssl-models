@@ -90,11 +90,11 @@ class DinoSegmentor(Module, ABC):
         self.in_channels = in_channels
 
         if self.in_channels == 'RGB':
-            self.channels_to_use = [0,1,2]
+            self.channels_to_use = {'aerial':[0,1,2], 'spot':[0,1,2], 's2':[3,2,1]}
         elif self.in_channels == 'RGBI':
-            self.channels_to_use = [0,1,2,3]
+            self.channels_to_use = {'aerial':[0,1,2,3]}
         else: #IRC
-            self.channels_to_use = [3,0,1]
+            self.channels_to_use = {'aerial':[3,0,1]}
 
         self.input_image_size = (self.image_size // self.patch_size) * self.patch_size
         
@@ -230,7 +230,7 @@ class DinoSegmentor(Module, ABC):
         backbone_arch = backbone_archs[backbone_size]
         backbone_name = f"dinov2_{backbone_arch}"
 
-        return(torch.hub.load(repo_or_dir="facebookresearch/dinov2", model=backbone_name))
+        return(torch.hub.load(repo_or_dir="facebookresearch/dinov2", model=backbone_name, skip_validation=True))
     
     def get_huggingface_backbone(self, backbone_size, num_channels):
         """Allows to load the right huggingface dinov2 backbone, matching the backbone_size.
@@ -521,20 +521,20 @@ class DinoSegmentor(Module, ABC):
         tuple: DinoV2's outputs.
         """
         # Forward pass through the dinov2 encoder, get encoder's feature maps.
-        name_mod = self.dataset.ref_input
-
         input = self.group(batch)
-        input = input[name_mod][:, self.channels_to_use, :, :]
-        
-        if self.weight_source == 'imagenet':
-            x_enc = self.dino.forward_features(input)
-            x_enc = x_enc['x_norm_patchtokens']
-        else:
-            x_enc = self.dino(input)['last_hidden_state']
-            x_enc = x_enc[:, 1:]
-        
         x = {}
-        x[name_mod] = x_enc
+
+        for name_mod in self.dataset.inputs:
+            input_mod = input[name_mod][:, self.channels_to_use[name_mod], :, :]
+        
+            if self.weight_source == 'imagenet':
+                x_enc = self.dino.forward_features(input_mod)
+                x_enc = x_enc['x_norm_patchtokens']
+            else:
+                x_enc = self.dino(input_mod)['last_hidden_state']
+                x_enc = x_enc[:, 1:]
+        
+            x[name_mod] = x_enc
 
         loss_pred = self.compute_loss_pred(
             x,
