@@ -17,7 +17,6 @@ geopandas = "^0.14.3"
 rasterio = "^1.3.9"
 ipython = "^8.23.0"
 requests = "^2.31.0"
-albumentations = "^1.4.3"
 lightning = "^2.2.2"
 tensorboard = "^2.16.2"
 odeon = {git = "https://github.com/IGNF/odeon"}
@@ -30,6 +29,7 @@ h5py = "^3.12.1"
 seaborn = "^0.13.2"
 pyogrio = "^0.10.0"
 pyarrow = "^18.1.0"
+albumentations = "1.4.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.1.1"
