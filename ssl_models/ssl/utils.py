@@ -54,13 +54,7 @@ def get_segment_mask_from_logits(logits: Tensor, num_classes: int) -> Tensor:
 
 def get_cd_mask_from_logits(logits: Tensor) -> Tensor:
     """Convert prediction logits to mask for change detection task."""
-    return (
-        (
-            torch.sigmoid(logits) > 0.5  # noqa: PLR2004
-        )
-        .long()[0, 0]
-        .type(torch.bool)
-    )
+    return (torch.sigmoid(logits) > 0.5).long()[0, 0].type(torch.bool)  # noqa: PLR2004
 
 
 def get_target_mask_from_batch(

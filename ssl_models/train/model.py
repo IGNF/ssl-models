@@ -1,10 +1,10 @@
 """Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
 
+import copy
 from typing import Literal
 
 import torch
 from pytorch_lightning import LightningModule
-from torch import Tensor
 from torch.nn import functional as F  # noqa: N812
 
 from conf.datasets import DatasetsConfig
@@ -26,18 +26,21 @@ NDIM_RASTER = 5  # (batch, dates, channels, height, width)
 class SSLModule(LightningModule):
     """SSL module."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         # shared args
         datasets: DatasetsConfig,
         mask: MaskConfig,
-        multimodal: Literal["msgfm", "shared", "mod", "group"],
+        multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        allmods_depth: int,
         model: Literal["mae", "mixmae"],
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         unpool_dim: int | None = None,
         use_date_enc: bool = True,
+        batch_repeats: int | None = None,
+        use_ema: bool = False,
         # mixmae args
         num_levels: Literal[3, 4] = 3,
         swin_version: Literal[1, 2] = 1,
@@ -96,11 +99,19 @@ class SSLModule(LightningModule):
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)
 
+        if allmods_depth and multimodal not in ("mod", "group"):
+            msg = (
+                "Simultaneous encoding of all mods"
+                f" not yet compatible with multimodal choice: {multimodal}."
+            )
+            raise NotImplementedError(msg)
+
         if model_size in model_map:
             model_args = {
                 "datasets": datasets,
                 "mask": mask,
                 "multimodal": multimodal,
+                "allmods_depth": allmods_depth,
                 "model": model,
                 "unpool_dim": unpool_dim,
                 "num_levels": num_levels,
@@ -117,17 +128,28 @@ class SSLModule(LightningModule):
             msg = f"Invalid model size {model_size}. Expected one of {model_map.keys()}"
             raise ValueError(msg)
 
+        if use_ema:
+            self.ema_model = copy.deepcopy(self.model).to("cpu")
+            for param in self.ema_model.parameters():
+                param.requires_grad = False
+        else:
+            self.ema_model = None
+
         self.dataset = datasets.dataset
-        self.tb_logger = None
-        self.metrics = None
+        self.batch_repeats = batch_repeats
         self.save_hyperparameters(ignore=["datasets"])
 
     def configure_optimizers(self) -> dict:
         """Configure optimizer."""
         total_steps = self.trainer.estimated_stepping_batches
+        total_batch_size = (
+            self.trainer.train_dataloader.batch_size
+            * self.trainer.accumulate_grad_batches
+            * self.trainer.num_nodes
+        )
         lr = (
             # use sqrt scaling rule with Adam
-            self.trainer.base_lr * self.trainer.train_dataloader.batch_size**0.5
+            self.trainer.base_lr * total_batch_size**0.5
         )
         match self.trainer.lw_decay:
             case None:
@@ -138,9 +160,22 @@ class SSLModule(LightningModule):
                     msg = "Layer-wise decay only implemented for MAE."
                     raise NotImplementedError(msg)
 
-                encoder = next(iter(self.model.encoder.values()))
-                num_layers = len(encoder.layers)
+                layer_parameters = {}
+                for name_mod, encoder in self.model.encoder.items():
+                    if name_mod == "all":
+                        continue
+                    for idx, layer in enumerate(encoder.layers):
+                        if idx not in layer_parameters:
+                            layer_parameters[idx] = []
+                        layer_parameters[idx].extend(layer.parameters())
 
+                if "all" in self.model.encoder:
+                    for layer in self.model.encoder["all"].layers:
+                        layer_parameters[len(layer_parameters)] = list(
+                            layer.parameters(),
+                        )
+
+                num_layers = len(layer_parameters)
                 grouped_params = []
                 grouped_params.append(
                     {
@@ -152,11 +187,7 @@ class SSLModule(LightningModule):
                 for idx in range(num_layers):
                     grouped_params.append(
                         {
-                            "params": [
-                                param
-                                for encoder in self.model.encoder.values()
-                                for param in encoder.layers[idx].parameters()
-                            ],
+                            "params": layer_parameters[idx],
                             "lr": lr * self.trainer.lw_decay ** (num_layers - idx),
                             "name": f"layer_{idx+1}",
                         },
@@ -183,7 +214,9 @@ class SSLModule(LightningModule):
             pct_start=0.2,
             cycle_momentum=False,
             div_factor=1000,
+            final_div_factor=self.trainer.final_factor / 1000.0,
         )
+
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
@@ -199,17 +232,16 @@ class SSLModule(LightningModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Pretraining step."""
-        loss_rec, log_inputs, log_preds, log_targets, _ = self.model(
+        if stage == "train" or self.ema_model is None:
+            model = self.model
+        else:
+            model = self.ema_model
+        loss_rec, log_inputs, log_preds, log_targets, _ = model(
             batch,
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
         )
-        self.log_step(
-            name="loss_rec",
-            value=loss_rec,
-            ssl_phase=self.trainer.ssl_phase,
-            stage=stage,
-        )
+
         return {
             "loss": loss_rec,
             "log_inputs": log_inputs,
@@ -223,18 +255,16 @@ class SSLModule(LightningModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Probing/finetuning step."""
-        _, log_inputs, log_preds, log_targets, loss_pred = self.model(
+        if stage == "train" or self.ema_model is None:
+            model = self.model
+        else:
+            model = self.ema_model
+        _, log_inputs, log_preds, log_targets, loss_pred = model(
             batch,
             stage=stage,
             ssl_phase=self.trainer.ssl_phase,
         )
 
-        self.log_step(
-            name="loss_pred",
-            value=loss_pred,
-            ssl_phase=self.trainer.ssl_phase,
-            stage=stage,
-        )
         return {
             "loss": loss_pred,
             "log_inputs": log_inputs,
@@ -267,6 +297,15 @@ class SSLModule(LightningModule):
 
         match self.trainer.ssl_phase:
             case "pretrain":
+                if self.batch_repeats:
+                    batch = {
+                        name_mod: torch.repeat_interleave(
+                            batch[name_mod],
+                            self.batch_repeats,
+                            dim=0,
+                        )
+                        for name_mod in batch
+                    }
                 return self.pretrain_step(batch, stage)
             case "probe" | "finetune":
                 return self.probe_or_finetune_step(batch, stage)
@@ -298,76 +337,15 @@ class SSLModule(LightningModule):
     ) -> dict[str, torch.Tensor]:
         return self.shared_step(batch, stage="test")
 
-    def on_epoch_end(self, stage: Literal["train", "val", "test"]) -> None:
-        """Log epoch metrics for training/validation."""
-        match self.trainer.ssl_phase:
-            case "pretrain":
-                self.log_metric(
-                    name=f"{self.trainer.ssl_phase}_loss_rec/{stage}",
-                    value=self.model.metrics[f"loss_rec_{stage}"].compute(),
-                )
-                self.model.metrics[f"loss_rec_{stage}"].reset()
-            case "probe" | "finetune":
-                self.log_metric(
-                    name=f"{self.trainer.ssl_phase}_loss_pred/{stage}",
-                    value=self.model.metrics[f"loss_pred_{stage}"].compute(),
-                )
-                self.model.metrics[f"loss_pred_{stage}"].reset()
-
-                self.metrics = {}
-                for name_target in self.dataset.targets:
-                    metrics = self.model.metrics[f"{name_target}_{stage}"].compute()
-                    self.metrics[f"{name_target}_{stage}"] = metrics
-                    for name_metric, value in metrics.items():
-                        if name_metric == "confusion_matrix":
-                            continue
-                        self.log_metric(
-                            name=f"{self.trainer.ssl_phase}_{name_target}/{name_metric}_{stage}",
-                            value=value,
-                        )
-                    self.model.metrics[f"{name_target}_{stage}"].reset()
-
     def on_train_epoch_end(self) -> None:
-        self.on_epoch_end(stage="train")
+        if self.ema_model is not None:
+            self.update_ema()
 
-    def on_validation_epoch_end(self) -> None:
-        self.on_epoch_end(stage="val")
-
-    def on_test_epoch_end(self) -> None:
-        self.on_epoch_end(stage="test")
-
-    def log_metric(
-        self,
-        name: str,
-        value: Tensor,
-    ) -> None:
-        """Log accuracy metric."""
-        super().log(
-            name=name,
-            value=value,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
-
-    def log_step(
-        self,
-        name: str,
-        value: Tensor,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
-        stage: Literal["train", "val", "test"],
-    ) -> None:
-        """Log metric."""
-        if stage != "train":
-            return
-        super().log(
-            name=f"{ssl_phase}_{name}/step_{stage}",
-            value=value,
-            on_step=True,
-            on_epoch=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
+    def update_ema(self) -> None:
+        """Update EMA model."""
+        momentum = 1 - 1 / (self.trainer.max_epochs * 0.2)
+        for param, param_ema in zip(
+            self.model.parameters(),
+            self.ema_model.parameters(),
+        ):
+            param_ema.data.mul_(momentum).add_((1.0 - momentum) * param.detach().data)

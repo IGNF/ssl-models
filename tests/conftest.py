@@ -3,6 +3,7 @@ import pytest
 from conf.dataset.geopile import GeoPileConfig
 from conf.datasets import DatasetsConfig
 from conf.mask import MaskConfig
+from conf.opt import OptFinetuneConfig
 from tests import TEST_DATA_DIR
 
 
@@ -20,3 +21,8 @@ def datasets_geopile():
 @pytest.fixture()
 def mask():
     return MaskConfig()
+
+
+@pytest.fixture()
+def opt_finetune():
+    return OptFinetuneConfig()

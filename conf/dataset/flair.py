@@ -14,8 +14,13 @@ from ssl_models.dataset.flair import FLAIRDataset
 @dataclass
 class FLAIRConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "FLAIR-INC"
+    csv_dir: str | None = None
     balance_pretrain: bool = False
-    crop_meters: float = 256 * 0.2
+    val_pretrain: bool = False
+    filter_percent: int | None = None
+    repeats: int = 2
+    crop_meters: float = 51.2
+
     ref_input: str | None = "aerial"  # defines grid for raster targets
     log_inputs: list[str] = field(
         default_factory=lambda: [
@@ -23,6 +28,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             "spot",
         ],
     )  # logged input modalities
+
     filter_inputs: list[str] = field(
         default_factory=lambda: [
             "aerial",
@@ -34,17 +40,15 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
         ],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: [
-            "flair_cosia",
-            # "flair_lpis"
-        ],
+        default_factory=lambda: ["cosia"],
     )  # selected target modalities
 
     aerial: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=256,
             patch_size=PatchSizeConfig(mae=16, mixmae=4),
-            bands=4,
+            bands=[[3, 0, 1, 2]],
+            norm_bands=[1, 3],
             norm_fac=255.0,
         ),
     )
@@ -69,6 +73,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             image_size=5,
             patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=10,
+            norm_bands=[4, 6],
             num_dates=16,
             mask_threshold=0.0,
             norm_fac=5000.0,
@@ -79,7 +84,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             image_size=5,
             patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=2,
-            num_dates=2,
+            num_dates=4,
             norm_fac=1.0,
             name_group="sen1",
         ),
@@ -89,7 +94,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             image_size=5,
             patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=2,
-            num_dates=2,
+            num_dates=4,
             norm_fac=1.0,
             name_group="sen1",
         ),
@@ -100,24 +105,24 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
         self.dataset_class = FLAIRDataset
         self.total_meters = 102.4
 
-        self.flair_cosia = TargetRasterConfig(
+        self.cosia = TargetRasterConfig(
             type_target="segment",
-            num_classes=19,
+            num_classes=15,
             missing_val=-1,
             bands=1,
         )
 
-        self.flair_lpis = TargetRasterConfig(
+        self.lpis = TargetRasterConfig(
             type_target="segment",
-            num_classes=45,
+            num_classes=74,
             missing_val=-1,
             bands=1,
         )
 
         super().__post_init__(
             resolutions_meters={
-                "flair_cosia": 0.2,
-                "flair_lpis": 0.2,
+                "cosia": 0.2,
+                "lpis": 0.2,
                 "aerial": 0.2,
                 "dem": 0.2,
                 "spot": 1.6,

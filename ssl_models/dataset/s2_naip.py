@@ -21,6 +21,7 @@ class S2NAIPDataset(GenericDataset):
         use_transform: bool,
         random_dates: bool,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
+        random_crop: bool,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -28,20 +29,28 @@ class S2NAIPDataset(GenericDataset):
             stage=stage,
             use_transform=use_transform,
             random_dates=random_dates,
+            random_crop=random_crop,
         )
 
         csv_data = read_csv(
-            root_dir=root_dir,
+            csv_dir=root_dir,
             stage=stage,
             ssl_phase=ssl_phase,
-            balance_pretrain=dataset.balance_pretrain,
         )
 
         self.root_dir = root_dir
         self.image_ids = csv_data["name"].to_list()
+        self.base_length = len(self.image_ids)
+        self.repeats = dataset.repeats
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
+        idx, start_gcd = self.sample_gcd(
+            idx,
+            base_length=self.base_length,
+            repeats=self.repeats,
+        )
+
         image_id = self.image_ids[idx]
 
         meta = {}
@@ -90,7 +99,7 @@ class S2NAIPDataset(GenericDataset):
         meta["osm_seg_path"] = self.root_dir / "openstreetmap" / f"{image_id}.geojson"
         meta["osm_seg_dates"] = meta["naip_dates"]
 
-        inputs = self.preprocess_rasters(meta)
+        inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
 
         inputs["ref_date"] = inputs["naip_dates"]
 
@@ -98,4 +107,4 @@ class S2NAIPDataset(GenericDataset):
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return len(self.image_ids)
+        return self.base_length * self.repeats**2

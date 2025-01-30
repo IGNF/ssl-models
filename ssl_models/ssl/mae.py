@@ -19,7 +19,8 @@ class MAE(BaseMIM):
         self,
         datasets: DatasetsConfig,
         mask: MaskConfig,
-        multimodal: Literal["msgfm", "shared", "mod", "group"],
+        multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        allmods_depth: tuple[int],
         model: Literal["mae"],
         num_levels: Literal[1],
         unpool_dim: int | None,
@@ -78,8 +79,12 @@ class MAE(BaseMIM):
             {},
         )
         match multimodal:
-            case "msgfm" | "shared":
-                name_models = ["shared"]
+            case "msgfm" | "shared" | "monotemp":
+                name_models = (
+                    list(num_dates_mod.keys())
+                    if multimodal == "monotemp"
+                    else ["shared"]
+                )
                 for name_mod in num_dates_mod:
                     self.mask_ratio[name_mod] = mask.mask_ratio
                     self.mask_mod[name_mod] = None
@@ -123,7 +128,7 @@ class MAE(BaseMIM):
             {
                 name_mod: Transformer(
                     dim=embed_dim,
-                    depth=depth,
+                    depth=depth - allmods_depth,
                     heads=heads,
                     dim_head=dim_head,
                     mlp_dim=embed_dim * mlp_ratio,
@@ -153,6 +158,16 @@ class MAE(BaseMIM):
                 for name_mod in name_models
             },
         )
+        if allmods_depth:
+            self.encoder_all = Transformer(
+                dim=embed_dim,
+                depth=allmods_depth,
+                heads=heads,
+                dim_head=dim_head,
+                mlp_dim=embed_dim * mlp_ratio,
+            )
+        else:
+            self.encoder_all = None
 
     def mask_struct(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         """Structural masking of modalities, band groups, dates."""
@@ -269,7 +284,10 @@ class MAE(BaseMIM):
         mask_attn: dict[str, None],  # noqa: ARG002
     ) -> dict[str, Tensor]:
         """Apply MAE encoder."""
-        return self.encode_or_decode(x, model=self.encoder)
+        x = self.encode_or_decode(x, model=self.encoder)
+        if self.encoder_all:
+            x = self.encode_or_decode_all(x, model=self.encoder_all)
+        return x
 
     def encoder_to_decoder(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         """Apply MAE encoder-to-decoder."""

@@ -16,9 +16,13 @@ def dates_numpy(dates: list[datetime]) -> np.ndarray:
     )
 
 
-def strs_datetimes(date_strs: list[str], format_: str = "%Y-%m-%d") -> np.ndarray:
+def strs_datetimes(date_strs: list[str], fmt: str = "%Y-%m-%d") -> np.ndarray:
     """Convert list of strs to list of datetimes."""
-    datetimes = [datetime.strptime(date_str, format_) for date_str in date_strs]  # noqa: DTZ007
+    date_strs = [
+        date_str[:-2] + "01" if date_str[-2:] == "00" else date_str
+        for date_str in date_strs
+    ]
+    datetimes = [datetime.strptime(date_str, fmt) for date_str in date_strs]  # noqa: DTZ007
     return dates_numpy(datetimes)
 
 
@@ -67,20 +71,32 @@ def dict_datetimes(datetime_dict: dict, start: int = 0) -> np.ndarray:
 
 
 def read_csv(
-    root_dir: Path,
+    csv_dir: Path,
     stage: Literal["train", "val", "test"],
     ssl_phase: Literal["pretrain", "probe", "finetune"],
-    balance_pretrain: bool,
+    balance_pretrain: bool = False,
+    val_pretrain: bool = False,
+    filter_percent: int | None = None,
+    fold: int | None = None,
     **kwargs,  # noqa: ANN003
 ) -> Path:
-    """Read dataset csv based on SSL phase and choice of balancing."""
-    match ssl_phase:
-        case "pretrain":
-            csv_path = (
-                root_dir / f"{stage}_balanced.csv"
-                if balance_pretrain
-                else root_dir / f"{stage}.csv"
-            )
-        case "probe" | "finetune":
-            csv_path = root_dir / f"{stage}.csv"
-    return pd.read_csv(csv_path, **kwargs)
+    """Read dataset csv."""
+    csv_name = []
+    if balance_pretrain and ssl_phase == "pretrain":
+        csv_name += ["balanced"]
+    if filter_percent:
+        csv_name += [f"filtered_{filter_percent}"]
+    if fold:
+        csv_name += [f"fold_{fold}"]
+
+    stages = (
+        ["train", "val"]
+        if stage == "train" and ssl_phase == "pretrain" and val_pretrain
+        else [stage]
+    )
+    return pd.concat(
+        [
+            pd.read_csv(csv_dir / f"{'_'.join([stage, *csv_name])}.csv", **kwargs)
+            for stage in stages
+        ],
+    )

@@ -44,12 +44,12 @@ def shuffle_enc_to_dec(x: dict[str, Tensor]) -> dict[str, Tensor]:
 
 def group_mods(
     x: dict[str, Tensor],
-    multimodal: Literal["msgfm", "shared", "mod", "group"],
+    multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
     groups: list[tuple],
 ) -> dict[str, Tensor]:
     """Group modality sequences."""
     match multimodal:
-        case "msgfm" | "shared":
+        case "msgfm" | "shared" | "monotemp":
             dim = 0
             groups = None
         case "mod":
@@ -75,14 +75,14 @@ def group_mods(
 
 def ungroup_mods(
     x_group: dict[str, Tensor],
-    multimodal: Literal["msgfm", "shared", "mod", "group"],
+    multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
     groups: list[tuple],
     num_dates: dict[str, int],
     grid_size: dict[str, int],
 ) -> dict[str, Tensor]:
     """Ungroup modality sequences."""
     match multimodal:
-        case "msgfm" | "shared":
+        case "msgfm" | "shared" | "monotemp":
             dim = 0
             groups = None
         case "mod":
@@ -216,4 +216,4 @@ def downsamplings_from_patch_size(unpool_dim: int | None, patch_size: int) -> li
     if unpool_dim:
         for prime, power in factorint(patch_size).items():
             downsamplings += [prime] * power
-    return downsamplings
+    return downsamplings[::-1]

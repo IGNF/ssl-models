@@ -2,7 +2,6 @@
 
 import warnings
 from abc import ABC
-from math import gcd
 from pathlib import Path
 from typing import Literal
 
@@ -26,12 +25,14 @@ class GenericDataset(Dataset, ABC):
         dataset: DatasetConfig,
         stage: Literal["train", "val", "test"],
         use_transform: bool,
-        random_dates: bool,
+        random_dates: bool = False,
+        random_crop: bool = False,
     ) -> None:
         self.rng = np.random.default_rng(seed=42)
         self.use_transform = use_transform
         self.dataset = dataset
         self.random_dates = random_dates and stage == "train"
+        self.random_crop = random_crop and stage == "train"
 
     @staticmethod
     def unflatten(x: np.ndarray, axis: int, reshape_axis: tuple) -> np.ndarray:
@@ -41,9 +42,31 @@ class GenericDataset(Dataset, ABC):
         shape = (*x.shape[:axis], *reshape_axis, *x.shape[axis + 1 :])
         return x.reshape(shape)
 
+    def sample_gcd(
+        self,
+        idx: int,
+        base_length: int,
+        repeats: int,
+    ) -> tuple[int, np.ndarray]:
+        """Sample crop part in image based on index of repetition."""
+        if not self.random_crop:
+            idx_repeat = idx // base_length
+            idx_repeat = (idx_repeat // repeats, idx_repeat % repeats)
+            start_gcd = np.array(
+                (
+                    idx_repeat[0] * self.dataset.size_gcd // repeats,
+                    idx_repeat[1] * self.dataset.size_gcd // repeats,
+                ),
+            )
+        else:
+            start_gcd = None
+
+        return (idx % base_length), start_gcd
+
     def preprocess_rasters(
         self,
         meta: dict[str, Path | str | np.ndarray],
+        start_gcd: np.ndarray | None = None,
     ) -> dict[str, np.ndarray]:
         """Read raster inputs."""
         if any(
@@ -53,29 +76,22 @@ class GenericDataset(Dataset, ABC):
             msg = "A modality is missing in meta data."
             raise ValueError(msg)
 
-        sizes, sizes_date = {}, {}
-        for name_mod, mod in self.dataset.rasters.items():
-            sizes[name_mod] = round(self.dataset.total_meters / mod.resolution_meters)
-            sizes_date[name_mod] = len(meta[f"{name_mod}_dates"])
-
-        size_gcd = gcd(*sizes.values())
-        crop_gcd = self.dataset.crop_meters / self.dataset.total_meters * size_gcd
-        if not crop_gcd.is_integer():
-            msg = (
-                f"Crop meters does not correspond to an integer number of pixels."
-                f"Use a multiple of {self.dataset.total_meters / size_gcd}."
+        sizes_date = {
+            name_mod: len(meta[f"{name_mod}_dates"])
+            for name_mod in self.dataset.rasters
+        }
+        if start_gcd is None:
+            start_gcd = self.rng.integers(
+                low=0,
+                high=self.dataset.size_gcd - self.dataset.crop_gcd + 1,
+                size=2,
             )
-            raise ValueError(msg)
 
-        crop_gcd = round(crop_gcd)
-        start_gcd = self.rng.integers(
-            low=0,
-            high=size_gcd - crop_gcd + 1,
-            size=2,
-        )
         start, end = {}, {}
         for name_mod, mod in self.dataset.rasters.items():
-            start_mod = start_gcd * (sizes[name_mod] // size_gcd)
+            start_mod = start_gcd * (
+                self.dataset.sizes[name_mod] // self.dataset.size_gcd
+            )
             start_mod += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
             start_mod_date = self.rng.integers(
                 low=0,
@@ -83,7 +99,10 @@ class GenericDataset(Dataset, ABC):
             )
             start[name_mod] = (*start_mod, start_mod_date)
 
-            end_mod = (start_gcd + crop_gcd) * (sizes[name_mod] // size_gcd)
+            end_mod = (start_gcd + self.dataset.crop_gcd) * (
+                self.dataset.sizes[name_mod] // self.dataset.size_gcd
+            )
+            end_mod += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
             end_mod_date = start_mod_date + mod.num_dates * (
                 sizes_date[name_mod] // mod.num_dates
             )
@@ -181,22 +200,20 @@ class GenericDataset(Dataset, ABC):
             if mask_mod is not None:
                 mask_mod = mask_mod[slices[2]]
                 mask_mod = self.unflatten(mask_mod, 0, (num_dates, -1))
-                mask_mod = (mask_mod > mask_threshold).any(
-                    axis=(2, 3, 4),
-                    keepdims=True,
+                mask_mod = (mask_mod > mask_threshold).any(axis=2, keepdims=True)
+                mask_mod = mask_mod & ~(
+                    mask_mod.any(axis=(3, 4), keepdims=True).all(axis=1, keepdims=True)
                 )
-                mask_mod = mask_mod & ~mask_mod.all(axis=1, keepdims=True)
                 input_mod = np.where(mask_mod, np.nan, input_mod)
 
-            pan_mod = input_mod.mean(axis=(2, 3, 4), keepdims=True)
+            diff_mod = input_mod - np.nanmedian(input_mod, axis=1, keepdims=True)
+            diff_mod = np.abs(diff_mod)
             if self.random_dates:
-                pan_mod = 0 * pan_mod  # keep NaNs
-                pan_mod += self.rng.random(pan_mod.shape).astype(pan_mod.dtype)
+                diff_mod = 0 * diff_mod  # keep NaNs
+                diff_mod += self.rng.random(diff_mod.shape).astype(diff_mod.dtype)
 
-            mid_finite = np.isfinite(pan_mod).sum(axis=1, keepdims=True)
-            mid_finite = np.floor_divide(mid_finite, 2)
-            median_inds = np.argsort(pan_mod, axis=1)
-            median_inds = np.take_along_axis(median_inds, mid_finite, axis=1)
+            diff_mod = np.mean(diff_mod, axis=(2, 3, 4), keepdims=True)
+            median_inds = np.nanargmin(diff_mod, axis=1, keepdims=True)
             input_mod = np.take_along_axis(input_mod, median_inds, axis=1).squeeze(1)
             dates_mod = np.take_along_axis(dates_mod, median_inds, axis=1).squeeze(1)
 

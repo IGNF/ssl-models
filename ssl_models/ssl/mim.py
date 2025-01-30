@@ -42,7 +42,7 @@ class BaseMIM(nn.Module, ABC):
     def __init__(  # noqa: C901
         self,
         datasets: DatasetsConfig,
-        multimodal: Literal["msgfm", "shared", "mod", "group"],
+        multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         model: Literal["mae", "mixmae"],
         num_levels: Literal[1, 3, 4],
         unpool_dim: int | None,
@@ -71,22 +71,30 @@ class BaseMIM(nn.Module, ABC):
         self.len_bands = {
             name_mod: len(num_bands) for name_mod, num_bands in self.num_bands.items()
         }
+        self.norm_bands = {
+            name_mod: (
+                tuple(mod.norm_bands)
+                if mod.norm_bands is not None
+                else tuple(self.num_bands[name_mod])
+            )
+            for name_mod, mod in datasets.dataset.inputs.items()
+        }
+
         self.grid_size, self.out_grid_size = {}, {}
         self.patch_embed, self.embed_to_rec = nn.ModuleDict(), nn.ModuleDict()
         for name_mod, mod in self.dataset.inputs.items():
-            bands = mod.bands
             patch_size = mod.patch_size.mae if model == "mae" else mod.patch_size.mixmae
             self.grid_size[name_mod] = mod.image_size // patch_size
             self.out_grid_size[name_mod] = mod.image_size // (patch_size * self.stride)
             self.patch_embed[name_mod] = Patchify(
-                bands,
+                mod.bands,
                 embed_dim,
                 patch_size,
                 unpool_dim,
             )
             self.embed_to_rec[name_mod] = Pixelify(
                 decoder_dim,
-                bands,
+                mod.bands,
                 patch_size * self.stride,
                 unpool_dim,
             )
@@ -463,7 +471,7 @@ class BaseMIM(nn.Module, ABC):
                 target_groups = list(
                     torch.split(
                         target,
-                        self.num_bands[name_mod],
+                        self.norm_bands[name_mod],
                         dim=-1,
                     ),
                 )
@@ -633,6 +641,24 @@ class BaseMIM(nn.Module, ABC):
         for name_group in x:
             model_group = model[name_group] if name_group in model else model["shared"]
             x[name_group] = model_group(x[name_group])
+
+        return x
+
+    def encode_or_decode_all(
+        self,
+        x: dict[str, Tensor],
+        model: nn.Module,
+    ) -> dict[str, Tensor]:
+        """Apply encoder or decoder on all modalities."""
+        name_groups = list(x.keys())
+        split_groups = tuple(x[name_group].shape[1] for name_group in name_groups)
+
+        x_groups = torch.cat([x[name_group] for name_group in name_groups], dim=1)
+        x_groups = model(x_groups)
+        x_groups = x_groups.split(split_groups, dim=1)
+        for name_group, x_group in zip(name_groups, x_groups):
+            x[name_group] = x_group
+
         return x
 
     @abstractmethod

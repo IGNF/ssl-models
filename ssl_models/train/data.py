@@ -7,6 +7,7 @@ from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
 
 from conf.datasets import DatasetsConfig
+from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
 
 
 class SSLDataModule(LightningDataModule):
@@ -16,10 +17,11 @@ class SSLDataModule(LightningDataModule):
         self,
         datasets: DatasetsConfig,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
-        batch_size: int,
+        opt: OptPretrainConfig | OptProbeConfig | OptFinetuneConfig,
         num_workers: int,
         use_transform: bool,
         random_dates: bool,
+        random_crop: bool,
     ) -> None:
         super().__init__()
 
@@ -31,10 +33,11 @@ class SSLDataModule(LightningDataModule):
             ssl_phase=ssl_phase,
             use_transform=use_transform,
             random_dates=random_dates,
+            random_crop=random_crop,
         )
         self.train_loader = DataLoader(
             train_dataset,
-            batch_size=batch_size,
+            batch_size=opt.batch_size,
             num_workers=num_workers,
             shuffle=True,
             drop_last=True,
@@ -47,10 +50,11 @@ class SSLDataModule(LightningDataModule):
             ssl_phase=ssl_phase,
             use_transform=use_transform,
             random_dates=random_dates,
+            random_crop=random_crop,
         )
         self.val_loader = DataLoader(
             val_dataset,
-            batch_size=batch_size,
+            batch_size=opt.batch_size,
             num_workers=num_workers,
             shuffle=True,
             drop_last=True,
@@ -63,10 +67,11 @@ class SSLDataModule(LightningDataModule):
             ssl_phase=ssl_phase,
             use_transform=use_transform,
             random_dates=random_dates,
+            random_crop=random_crop,
         )
         self.test_loader = DataLoader(
             test_dataset,
-            batch_size=batch_size,
+            batch_size=opt.batch_size,
             num_workers=num_workers,
             shuffle=True,
             drop_last=True,
