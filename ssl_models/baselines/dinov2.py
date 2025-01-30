@@ -15,10 +15,10 @@ from ssl_models.layers.head import ClassificationHead, PixelifyHead
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 from einops import rearrange
 from typing import Literal
-
 from ssl_models.layers.utils import (
     group_mods,
     ungroup_mods,
+    encode_dates
 )
 
 class DinoSegmentor(Module, ABC):
@@ -35,6 +35,8 @@ class DinoSegmentor(Module, ABC):
         type_head: str = 'naive',
         weight_source: str = 'imagenet',
         weights_path: str = None,
+        fac_date_enc: float = 1.0,
+        date_dim: int = 8,
         **kwargs,
     ) -> None:
         """Constructor.
@@ -207,6 +209,18 @@ class DinoSegmentor(Module, ABC):
             },
             grid_size=self.grid_size,
         )
+
+        self.enc_date_encoding = {
+            name_mod: partial(
+                encode_dates,
+                dim=self.embed_dim,
+                date_dim=date_dim,
+                fac_date_enc=fac_date_enc,
+                grid_size=self.grid_size[name_mod],
+                len_bands=self.len_bands[name_mod],
+            )
+            for name_mod in self.dataset.inputs
+        }
 
     def get_hub_backbone(self, backbone_size):
         """Allows to load the right torch.hub dinov2 backbone, matching the backbone_size.
@@ -424,6 +438,24 @@ class DinoSegmentor(Module, ABC):
 
         return grouped_parameters
     
+    def add_date_encodings(
+        self,
+        x_enc: dict[str, Tensor],
+        dates: dict[str, Tensor],
+        ref_date: Tensor,
+    ) -> dict[str, Tensor]:
+        """Add positional and date encodings before encoder."""
+        x_enc = self.ungroup(x_enc)
+
+        for name_mod in x_enc:
+            date_encoding = self.enc_date_encoding[name_mod](
+                dates=dates[name_mod],
+                ref_date=ref_date,
+            )
+            x_enc[name_mod] = x_enc[name_mod] + date_encoding
+
+        return self.group(x_enc)
+
     def compute_loss_pred(
         self,
         x_enc: dict[str, Tensor],
@@ -537,7 +569,7 @@ class DinoSegmentor(Module, ABC):
         """
         # Forward pass through the dinov2 encoder, get encoder's feature maps.
         input = self.group(batch)
-        x = {}
+        x, dates = {}, {}
 
         for name_mod in self.dataset.inputs:
             input_mod = input[name_mod][:, self.channels_to_use[name_mod], :, :]
@@ -550,6 +582,10 @@ class DinoSegmentor(Module, ABC):
                 x_enc = x_enc[:, 1:]
         
             x[name_mod] = x_enc
+            dates[name_mod] = batch[f"{name_mod}_dates"]
+
+        ref_date = batch["ref_date"]
+        x = self.add_date_encodings(x, dates, ref_date)
 
         loss_pred = self.compute_loss_pred(
             x,
