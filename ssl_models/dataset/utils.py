@@ -74,6 +74,7 @@ def read_csv(
     csv_dir: Path,
     stage: Literal["train", "val", "test"],
     ssl_phase: Literal["pretrain", "probe", "finetune"],
+    version: str | None = None,
     balance_pretrain: bool = False,
     val_pretrain: bool = False,
     filter_percent: int | None = None,
@@ -82,6 +83,8 @@ def read_csv(
 ) -> Path:
     """Read dataset csv."""
     csv_name = []
+    if version:
+        csv_name += [version]
     if balance_pretrain and ssl_phase == "pretrain":
         csv_name += ["balanced"]
     if filter_percent:
