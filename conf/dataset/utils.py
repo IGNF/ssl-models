@@ -115,6 +115,14 @@ class DatasetConfig:
         """Check validity of modalities and further define non configurable attrs."""
         self._set_resolutions(resolutions_meters)
 
+        if self.ref_input and self.ref_input not in self.filter_inputs:
+            msg = f"Ref input {self.ref_input} is not selected."
+            raise ValueError(msg)
+
+        if not any(log_input in self.filter_inputs for log_input in self.log_inputs):
+            msg = "At least one selected modality must be logged."
+            raise ValueError(msg)
+
         self.inputs = {}
         for name_mod in self.filter_inputs:
             if name_mod not in self.__dict__:

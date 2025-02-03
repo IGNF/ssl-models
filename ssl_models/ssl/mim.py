@@ -534,9 +534,7 @@ class BaseMIM(nn.Module, ABC):
             dim=1,
         )
         loss_pred = 0
-        log_inputs = {}
-        log_preds = {}
-        log_targets = {}
+        log_inputs, log_preds, log_targets = {}, {}, {}
         for name_target, target in self.dataset.targets.items():
             targets = batch[name_target]
             # image logger
