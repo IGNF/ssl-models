@@ -26,10 +26,8 @@ from ssl_models.layers.utils import (
 from ssl_models.ssl.utils import (
     create_masked_image,
     get_cd_mask_from_logits,
-    get_pretrain_logs,
     get_segment_mask_from_logits,
     get_target_mask_from_batch,
-    should_log_probe_finetune,
 )
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
@@ -418,31 +416,31 @@ class BaseMIM(nn.Module, ABC):
         stage: Literal["train", "val", "test"],
     ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
         """Visu of reconstructed images, shared for all MIM modules."""
-        pixels_masked = {}
+        log_inputs, log_preds, log_targets = {}, {}, {}
         for name_mod in pixels_rec:
-            pixels_masked[name_mod] = torch.where(
+            if name_mod not in self.dataset.log_inputs:
+                continue
+            inputs = torch.where(
                 mask_rec[name_mod],
                 0,
                 batch[name_mod],
             )
-            pixels_masked[name_mod] = torch.where(
+            inputs = torch.where(
                 torch.all(mask_rec[name_mod], dim=2, keepdim=True),
                 1,
-                pixels_masked[name_mod],
+                inputs,
             )
-            pixels_rec[name_mod] = torch.where(
+            preds = torch.where(
                 mask_rec[name_mod],
                 pixels_rec[name_mod],
                 batch[name_mod],
             )
-        return get_pretrain_logs(
-            batch,
-            pixels_masked,
-            pixels_rec,
-            ssl_phase,
-            stage,
-            self.dataset.log_inputs,
-        )
+            targets = batch[name_mod]
+            log_inputs[f"{ssl_phase}_{stage}/_{name_mod}_input"] = inputs[0, 0]
+            log_preds[f"{ssl_phase}_{stage}/_{name_mod}_rec"] = preds[0, 0]
+            log_targets[f"{ssl_phase}_{stage}/_{name_mod}_target"] = targets[0, 0]
+
+        return log_inputs, log_preds, log_targets
 
     def compute_loss_rec(
         self,
@@ -536,13 +534,11 @@ class BaseMIM(nn.Module, ABC):
             dim=1,
         )
         loss_pred = 0
-        log_inputs = {}
-        log_preds = {}
-        log_targets = {}
+        log_inputs, log_preds, log_targets = {}, {}, {}
         for name_target, target in self.dataset.targets.items():
             targets = batch[name_target]
             # image logger
-            if should_log_probe_finetune(target.type_target):
+            if target.type_target in ("segment", "change_detect"):
                 input_keys = (x for x in self.dataset.log_inputs if x in batch)
                 input_img = batch[next(input_keys)][
                     0,
@@ -554,6 +550,13 @@ class BaseMIM(nn.Module, ABC):
                     batch[name_target][0, 0, 0],
                     num_classes,
                     target.missing_val,
+                )
+                log_targets[f"{ssl_phase}_{name_target}_{stage}/_target"] = (
+                    create_masked_image(
+                        input_img,
+                        target_msk,
+                        num_classes,
+                    )
                 )
             match target.type_target:
                 case "segment":
@@ -582,7 +585,7 @@ class BaseMIM(nn.Module, ABC):
                         create_masked_image(
                             input_img,
                             pred_msk,
-                            max(target_msk.shape[0], pred_msk.shape[0]),
+                            num_classes,
                         )
                     )
                     logits = rearrange(logits, "b 1 1 h w -> (b h w)")
@@ -594,15 +597,7 @@ class BaseMIM(nn.Module, ABC):
                 case "classif":
                     logits = self.heads[name_target](x_enc, ssl_phase)
                     targets = targets.long()
-            # image_logger
-            if should_log_probe_finetune(target.type_target):
-                log_targets[f"{ssl_phase}_{name_target}_{stage}/_target"] = (
-                    create_masked_image(
-                        input_img,
-                        target_msk,
-                        max(target_msk.shape[0], pred_msk.shape[0]),
-                    )
-                )
+
             if targets.ndim > 1:
                 inds = (targets != target.missing_val).all(dim=1)
             else:

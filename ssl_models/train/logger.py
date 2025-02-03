@@ -49,9 +49,6 @@ class TensorBoardLogger(TensorBoardLogger):
 class ImageLogger(Callback):
     """Log masked images, predicted images, and target images."""
 
-    def __init__(self, **kwargs) -> None:  # noqa: ANN003
-        super().__init__(**kwargs)
-
     @staticmethod
     def to_numpy(x: Tensor) -> np.ndarray:
         """Move to CPU and convert to numpy."""
@@ -62,11 +59,7 @@ class ImageLogger(Callback):
             else x_npy.mean(axis=0, keepdims=True)
         )
 
-    @staticmethod
-    def should_log(trainer: Trainer) -> bool:
-        """Check whether images should be logged."""
-        return trainer.global_rank == 0
-
+    @rank_zero_only
     def on_batch_end(
         self,
         trainer: Trainer,
@@ -120,14 +113,13 @@ class ImageLogger(Callback):
         dataloader_idx: int = 0,  # noqa: ARG002
     ) -> None:
         """Log train images."""
-        if ImageLogger.should_log(trainer):
-            self.on_batch_end(
-                trainer,
-                outputs,
-                batch,
-                batch_idx,
-                stage="train",
-            )
+        self.on_batch_end(
+            trainer,
+            outputs,
+            batch,
+            batch_idx,
+            stage="train",
+        )
 
     def on_validation_batch_end(
         self,
@@ -139,14 +131,13 @@ class ImageLogger(Callback):
         dataloader_idx: int = 0,  # noqa: ARG002
     ) -> None:
         """Log validation images."""
-        if ImageLogger.should_log(trainer):
-            self.on_batch_end(
-                trainer,
-                outputs,
-                batch,
-                batch_idx,
-                stage="val",
-            )
+        self.on_batch_end(
+            trainer,
+            outputs,
+            batch,
+            batch_idx,
+            stage="val",
+        )
 
 
 class MetricsLogger(Callback):
@@ -221,15 +212,15 @@ class MetricsLogger(Callback):
                     for name_metric, value in metrics.items():
                         if name_metric == "confusion_matrix":
                             cm = value.cpu().numpy()
-                            trainer.tb_logger.add_image(
-                                f"confmat_{trainer.ssl_phase}_{name_target}_{stage}/confmat",
-                                MetricsLogger.cm2arr(cm, normalized=False),
-                                trainer.current_epoch,
+                            self.log_confmat(
+                                trainer=trainer,
+                                name=f"confmat_{trainer.ssl_phase}_{name_target}_{stage}/confmat",
+                                cm=MetricsLogger.cm2arr(cm, normalized=False),
                             )
-                            trainer.tb_logger.add_image(
-                                f"confmat_{trainer.ssl_phase}_{name_target}_{stage}/confmat_norm",
-                                MetricsLogger.cm2arr(cm, normalized=True),
-                                trainer.current_epoch,
+                            self.log_confmat(
+                                trainer=trainer,
+                                name=f"confmat_{trainer.ssl_phase}_{name_target}_{stage}/confmat_norm",
+                                cm=MetricsLogger.cm2arr(cm, normalized=True),
                             )
                         else:
                             self.log_metric(
@@ -285,6 +276,15 @@ class MetricsLogger(Callback):
             logger=True,
             sync_dist=True,
         )
+
+    @rank_zero_only
+    def log_confmat(
+        self,
+        trainer: Trainer,
+        name: str,
+        cm: np.ndarray,
+    ) -> None:
+        trainer.tb_logger.add_image(name, cm, trainer.current_epoch)
 
     def log_metric(
         self,
