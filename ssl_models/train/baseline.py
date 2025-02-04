@@ -7,8 +7,6 @@ from torch import Tensor
 from torch.nn import functional as F  # noqa: N812
 
 from conf.datasets import DatasetsConfig
-from conf.mask import MaskConfig
-from ssl_models.ssl.mae import MAE
 from ssl_models.baselines.dinov2 import DinoSegmentor
 from ssl_models.baselines.dofa import DOFASegmentor
 from ssl_models.train.base import BaseModule
@@ -32,6 +30,7 @@ class BaselineModule(BaseModule):
         in_channels: Literal["RGB", "RGBI", "IRC"] = "RGB",
         weight_source: str = 'imagenet',
         weights_path: str = None,
+        freeze: bool = False
 
     ) -> None:
         super().__init__(datasets, model, loss)
@@ -73,7 +72,8 @@ class BaselineModule(BaseModule):
                     "unpool_dim": unpool_dim,
                     "weight_source": weight_source,
                     "weights_path": weights_path,
-                    "image_size": image_size
+                    "image_size": image_size,
+                    "freeze": freeze
                 }
 
                 self.model = DinoSegmentor(**model_args)

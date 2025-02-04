@@ -1,8 +1,8 @@
-from transformers import Dinov2Config, Dinov2Model
+from transformers import Dinov2Config, Dinov2Model, AutoModel, AutoConfig
 from abc import ABC, abstractmethod
-from ssl_models.baselines.utils import load_and_dequantize, get_backbone_weights
+from ssl_models.baselines.utils import get_imagenet_dinov2_state_dict, get_canopy_sate_dict
 import torch
-from torch.nn import Conv2d, Parameter, ModuleDict, Module
+from torch.nn import Conv2d, Parameter, ModuleDict, Module, init
 from torchmetrics import MeanMetric
 from functools import partial, reduce
 import torch.nn.functional as F  # noqa: N812
@@ -10,7 +10,6 @@ from torch import Tensor
 
 from conf.dataset.utils import RasterConfig
 from conf.datasets import DatasetsConfig
-from ssl_models.layers.embed import Patchify, Pixelify
 from ssl_models.layers.head import ClassificationHead, PixelifyHead
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 from einops import rearrange
@@ -32,7 +31,7 @@ class DinoSegmentor(Module, ABC):
         image_size: int,
         unpool_dim: int,
         freeze: bool = False,
-        type_head: str = 'naive',
+        type_head: str = 'linear',
         weight_source: str = 'imagenet',
         weights_path: str = None,
         fac_date_enc: float = 1.0,
@@ -56,7 +55,7 @@ class DinoSegmentor(Module, ABC):
         freeze: bool
             To freeze or not to freeze the DinoV2 backbone.
         type_head: str
-           Segmentation head to use. Either 'naive' or 'progressive' or 'upernet'. Default is 'naive'.
+           Segmentation head to use. Either 'linear' or 'attentive'. Default is 'linear'.
         weight_source: str
            Either "random", "imagenet" or "canopy". Default is "imagenet"
         hidden_dim: int
@@ -73,6 +72,7 @@ class DinoSegmentor(Module, ABC):
         self.weight_source = weight_source
         self.weights_path = weights_path
         self.backbone_size = backbone_size
+        self.std = 0.01
 
         if self.weight_source == 'imagenet':
             self.patch_size = 14
@@ -95,22 +95,14 @@ class DinoSegmentor(Module, ABC):
         if self.in_channels == 'RGB':
             self.channels_to_use = {'aerial':[0,1,2], 'spot':[0,1,2], 's2':[2,1,0]}
         elif self.in_channels == 'RGBI':
-            self.channels_to_use = {'aerial':[0,1,2,3]}
+            self.channels_to_use = {'aerial':[0,1,2,3], 's2': [2,1,0,3]}
         else: #IRC
             self.channels_to_use = {'aerial':[3,0,1]}
 
         self.input_image_size = (self.image_size // self.patch_size) * self.patch_size
         
-        if self.weight_source == 'imagenet':
-            self.dino = self.get_hub_backbone(backbone_size)
-            self.dino.mask_token.requires_grad = False
-            self.dim = self.adapt_to_channels_number(self.num_channels)
-        elif self.weight_source == 'random':
-            self.dino, self.dim = self.get_huggingface_backbone(backbone_size, self.num_channels)
-        else:
-            self.dino, self.dim = self.get_huggingface_backbone(backbone_size, self.num_channels)
-            self.load_cano_weights(self.weights_path, self.num_channels)
-                
+        self.dino = self.get_backbone(backbone_size, self.num_channels, self.weight_source)
+
         if freeze:
             self.freeze_backbone()
         
@@ -221,140 +213,45 @@ class DinoSegmentor(Module, ABC):
             )
             for name_mod in self.dataset.inputs
         }
-
-    def get_hub_backbone(self, backbone_size):
-        """Allows to load the right torch.hub dinov2 backbone, matching the backbone_size.
-        Only used when weight_source='imagenet'.
-
-        Parameters
-        ----------
-        backbone_size: str
-            Either 'small', 'base', 'large', or 'giant'.
-
-        Returns
-        -------
-        tuple: The loaded backbone.
-        """
-        backbone_archs = {
-            "small": "vits14",
-            "base": "vitb14",
-            "large": "vitl14",
-            "giant": "vitg14",
-        }
-        backbone_arch = backbone_archs[backbone_size]
-        backbone_name = f"dinov2_{backbone_arch}"
-
-        return(torch.hub.load(repo_or_dir="facebookresearch/dinov2", model=backbone_name, skip_validation=True))
     
-    def get_huggingface_backbone(self, backbone_size, num_channels):
-        """Allows to load the right huggingface dinov2 backbone, matching the backbone_size.
-        Only used when weight_source='canopy'.
+    def get_backbone(self, backbone_size, num_channels, weight_source):
+        original_config = AutoConfig.from_pretrained(f"facebook/dinov2-{backbone_size}")
+        config_dict = original_config.to_dict()
+        config_dict["num_channels"] = num_channels  # Adjust the number of channels
+        config_dict["patch_size"] = self.patch_size
+        config_dict["image_size"] = 224 if weight_source=='canopy' else 518
+        new_config = original_config.__class__(**config_dict)  # Updated config
         
-        Parameters
-        ----------
-        backbone_size: str
-            Only 'large'.
-        num_channels: int
-            Number of channels.
+        model = Dinov2Model(new_config)
 
-        Returns
-        -------
-        tuple: The loaded backbone.
-        """
-
-        if backbone_size == 'large':
-            config_dict = {
-                'patch_size':16,
-                'hidden_size': 1024,
-                'num_channels': num_channels,
-                'num_attention_heads': 16,
-                'num_hidden_layers': 24,
-                'out_features':['stage24'],
-                'out_indices':[24],
-                'stage_names':['stem']+['stage{}'.format(i) for i in range(1,25)]
-            }
-            configuration = Dinov2Config(**config_dict)
-            backbone = Dinov2Model(configuration)
-            dim = 1024
-
-            return backbone, dim
-        elif backbone_size == 'tiny':
-            config_dict = {
-                'patch_size': 16,
-                'hidden_size': 192,
-                'num_channels': num_channels,
-                'num_attention_heads': 3,
-                'num_hidden_layers': 12,
-                'out_features':['stage12'],
-                'out_indices': [12],
-                'stage_names':['stem']+['stage{}'.format(i) for i in range(1,13)]
-            }
-            configuration = Dinov2Config(**config_dict)
-            backbone = Dinov2Model(configuration)
-            dim = 192
-
-            return backbone, dim
-        else:
-            raise NotImplementedError
-
-    def load_cano_weights(self, weights_path, num_channels):
-        """
-        Load weights from the paper "Very high resolution canopy height maps from RGB imagery" (https://arxiv.org/abs/2304.07213).
-
-        Parameters
-        ----------
-        weights_path: str
-            Path to the weights.
-        num_channels: int
-            Number of input channels.
-        Returns
-        -------
-
-        """
-        if 'compressed' in weights_path:
-            state_dict = load_and_dequantize(weights_path)
-        else:
-            state_dict = torch.load(weights_path)
+        if weight_source == 'random':
+            return model
+        elif weight_source == 'canopy':
+            state_dict = get_canopy_sate_dict(self.weights_path)
+        else: #imagenet
+            state_dict = get_imagenet_dinov2_state_dict(backbone_size)
         
-        #Rename and load
-        backbone_state_dict = get_backbone_weights(state_dict)
-
         if num_channels>3:
-            old_weights = backbone_state_dict['embeddings.patch_embeddings.projection.weight']
+            state_dict = self.transfer_patch_embedding_to_more_channels(state_dict, num_channels, self.std)
+
+        model.load_state_dict(state_dict, strict=False)
+        
+        return model
+        
+    def transfer_patch_embedding_to_more_channels(self, state_dict, num_channels, std):        
+        with torch.no_grad():
+            old_weights = state_dict['embeddings.patch_embeddings.projection.weight']
             bs, _, hs, ws = old_weights.shape
+            
+            means = torch.zeros((bs, num_channels-3, hs, ws))
+            stds = torch.ones((bs, num_channels-3, hs, ws))*std
 
-            pad_tsr = torch.zeros((bs, num_channels-3, hs, ws))
-            new_weights = torch.cat((old_weights, pad_tsr), dim=1)
-            backbone_state_dict['embeddings.patch_embeddings.projection.weight'] = new_weights
-
-        self.dino.load_state_dict(backbone_state_dict, strict=False)
-
-    def adapt_to_channels_number(self, num_channels):
-        """Adapt the first layer of the backbone to take `num_channels` channels as input.
-
-        Parameters
-        ----------
-        num_channels: int
-            Number of channels.
-
-        Returns
-        -------
-        dim: The embedding number of dimensions.
-        
-        """
-        first_layer = self.dino.patch_embed.proj
-        pretrained_weights = first_layer.weight
-        dim = first_layer.out_channels
-        self.dim = dim
-
-        if num_channels>3:
-            print('Adjusting the number of channels...')
-            self.dino.patch_embed.proj = Conv2d(num_channels, dim, kernel_size=first_layer.kernel_size, stride=first_layer.stride)
-            self.dino.patch_embed.proj.weight.data.normal_(0, 0.001)
-            self.dino.patch_embed.proj.weight.data[:, :3, :, :] = Parameter(pretrained_weights)
-        
-        return dim
+            pad_tensor = torch.normal(means, stds)
+            new_weights = torch.cat((old_weights, pad_tensor), dim=1)
+            state_dict['embeddings.patch_embeddings.projection.weight'] = new_weights
     
+        return state_dict
+
     def freeze_backbone(self):
         """
         Freeze the backbone's parameters (self.dino).
@@ -369,13 +266,8 @@ class DinoSegmentor(Module, ABC):
         
         if self.num_channels > 3:
             # Necessary to unfreeze patchify layer if there are more than 3 channels
-            if self.weight_source=='imagenet':
-                for param in self.dino.patch_embed.parameters():
-                    param.requires_grad = True
-            
-            elif self.weight_source=='canopy':
-                for param in self.dino.embeddings.parameters():
-                    param.requires_grad = True
+            for param in self.dino.embeddings.parameters():
+                param.requires_grad = True
 
     def grouped_parameters(self, base_lr, rate_decay=0.75):
         """
@@ -393,42 +285,22 @@ class DinoSegmentor(Module, ABC):
         List: A list of dictionnaries, containing 'params' and 'lr' keys, in which parameters are grouped.
 
         """
+        num_layers = len(self.dino.encoder.layer)
+        lr_map = dict([('dino.encoder.layer.{}'.format(i), base_lr * rate_decay ** (num_layers - i)) for i in range(num_layers)])
 
-        if self.weight_source=='imagenet':
-            num_layers = len(self.dino.blocks)
-            lr_map = dict([('dino.blocks.{}'.format(i), base_lr * rate_decay ** (num_layers - i)) for i in range(num_layers)])
+        if self.in_channels in ['RGBI', 'IRC']:
+            lr_map['dino.embeddings'] = base_lr
+        else: #RGB
+            lr_map['dino.embeddings'] = base_lr * rate_decay ** (num_layers+1)
 
-            if self.in_channels in ['RGBI', 'IRC']:
-                lr_map['dino.patch_embed'] = base_lr
-            else: #RGB
-                lr_map['dino.patch_embed'] = base_lr * rate_decay ** (num_layers+1)
-                
-            lr_map['segmentation_head'] = base_lr
-            
-            params_dict = {}
-            params_dict['dino.patch_embed'] = self.dino.patch_embed.parameters()
-            params_dict['segmentation_head'] = self.segmentation_head.parameters()
+        lr_map['segmentation_head'] = base_lr
+        
+        params_dict = {}
+        params_dict['dino.embeddings'] = self.dino.embeddings.parameters()
+        params_dict['segmentation_head'] = self.segmentation_head.parameters()
 
-            for i in range(num_layers):
-                params_dict['dino.blocks.{}'.format(i)] = self.dino.blocks[i].parameters()
-                    
-        elif self.weight_source=='canopy':
-            num_layers = len(self.dino.encoder.layer)
-            lr_map = dict([('dino.encoder.layer.{}'.format(i), base_lr * rate_decay ** (num_layers - i)) for i in range(num_layers)])
-
-            if self.in_channels in ['RGBI', 'IRC']:
-                lr_map['dino.embeddings'] = base_lr
-            else: #RGB
-                lr_map['dino.embeddings'] = base_lr * rate_decay ** (num_layers+1)
-
-            lr_map['segmentation_head'] = base_lr
-            
-            params_dict = {}
-            params_dict['dino.embeddings'] = self.dino.embeddings.parameters()
-            params_dict['segmentation_head'] = self.segmentation_head.parameters()
-
-            for i in range(num_layers):
-                params_dict['dino.encoder.layer.{}'.format(i)] = self.dino.encoder.layer[i].parameters()
+        for i in range(num_layers):
+            params_dict['dino.encoder.layer.{}'.format(i)] = self.dino.encoder.layer[i].parameters()
             
         print('Layerwise learning rates:')
         grouped_parameters = []
@@ -573,13 +445,9 @@ class DinoSegmentor(Module, ABC):
 
         for name_mod in self.dataset.inputs:
             input_mod = input[name_mod][:, self.channels_to_use[name_mod], :, :]
-        
-            if self.weight_source == 'imagenet':
-                x_enc = self.dino.forward_features(input_mod)
-                x_enc = x_enc['x_norm_patchtokens']
-            else:
-                x_enc = self.dino(input_mod)['last_hidden_state']
-                x_enc = x_enc[:, 1:]
+            x_enc = self.dino.embeddings(input_mod)
+            x_enc = self.dino.encoder(x_enc)['last_hidden_state']
+            x_enc = x_enc[:, 1:]
         
             x[name_mod] = x_enc
             dates[name_mod] = batch[f"{name_mod}_dates"]

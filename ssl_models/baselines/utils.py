@@ -1,5 +1,6 @@
 import torch
 from collections import OrderedDict
+from huggingface_hub import hf_hub_download
 
 def replace_if_needed(k, dict_association):
     if k in dict_association:
@@ -7,7 +8,7 @@ def replace_if_needed(k, dict_association):
     else:
         return k
             
-def get_backbone_weights(ckpt):
+def rename_weights(ckpt):
     dict_association = {
         'cls_token': 'embeddings.cls_token',
         'mask_token': 'embeddings.mask_token',
@@ -63,7 +64,7 @@ def get_backbone_weights(ckpt):
     return OrderedDict(backbone_ckpt)
 
 def load_and_dequantize(path_compressed):
-    state_dict = torch.load(path_compressed)
+    state_dict = torch.load(path_compressed, weights_only=True)
     deq_state_dict = []
     
     for key, value in state_dict.items():
@@ -79,3 +80,46 @@ def load_and_dequantize(path_compressed):
             deq_state_dict.append((key, value))
 
     return OrderedDict(deq_state_dict)
+
+def get_canopy_sate_dict(weights_path):
+        """
+        Load weights from the paper "Very high resolution canopy height maps from RGB imagery" (https://arxiv.org/abs/2304.07213).
+
+        Parameters
+        ----------
+        weights_path: str
+            Path to the weights.
+        num_channels: int
+            Number of input channels.
+        Returns
+        -------
+
+        """
+        if 'compressed' in weights_path:
+            state_dict = load_and_dequantize(weights_path)
+        else:
+            state_dict = torch.load(weights_path, weights_only=True)
+        
+        #Rename and load
+        state_dict = rename_weights(state_dict)
+        
+        return state_dict
+
+def get_imagenet_dinov2_state_dict(model_size="large"):
+    """Récupère le state_dict brut sans initialiser le modèle complet"""
+    # Déterminer le nom du repo selon la taille
+    repo_id = f"facebook/dinov2-{model_size}"
+    
+    try:
+        # Télécharger le fichier de poids directement
+        model_path = hf_hub_download(
+            repo_id=repo_id,
+            filename="pytorch_model.bin",
+            cache_dir="./cache"
+        )
+        
+        # Charger le state_dict
+        return torch.load(model_path, weights_only=True)
+    
+    except Exception as e:
+        raise ValueError(f"Erreur de chargement pour {repo_id}: {str(e)}")
