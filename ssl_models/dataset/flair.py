@@ -43,7 +43,6 @@ class FLAIRDataset(GenericDataset):
             balance_pretrain=dataset.balance_pretrain,
             val_pretrain=dataset.val_pretrain,
             filter_percent=dataset.filter_percent,
-            nrows=100,
         )
 
         self.root_dir = root_dir
