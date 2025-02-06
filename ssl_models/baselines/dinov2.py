@@ -1,8 +1,9 @@
 from transformers import Dinov2Config, Dinov2Model, AutoModel, AutoConfig
+from transformers.models.dinov2.modeling_dinov2 import Dinov2Embeddings, Dinov2Encoder
 from abc import ABC, abstractmethod
 from ssl_models.baselines.utils import get_imagenet_dinov2_state_dict, get_canopy_sate_dict
 import torch
-from torch.nn import Conv2d, Parameter, ModuleDict, Module, init
+from torch.nn import ModuleDict, Module, LayerNorm
 from torchmetrics import MeanMetric
 from functools import partial, reduce
 import torch.nn.functional as F  # noqa: N812
@@ -100,8 +101,19 @@ class DinoSegmentor(Module, ABC):
             self.channels_to_use = {'aerial':[3,0,1]}
 
         self.input_image_size = (self.image_size // self.patch_size) * self.patch_size
-        
-        self.dino = self.get_backbone(backbone_size, self.num_channels, self.weight_source)
+
+        self.num_bands = {
+            name_mod: (
+                [mod.bands] if isinstance(mod.bands, int) else list(map(len, mod.bands))
+            )
+            for name_mod, mod in datasets.dataset.inputs.items()
+        }
+        self.len_bands = {
+            name_mod: len(num_bands) for name_mod, num_bands in self.num_bands.items()
+        }
+
+        #self.dino = self.get_backbone(backbone_size, self.num_channels, self.weight_source)
+        self._build_backbone(backbone_size, weight_source)
 
         if freeze:
             self.freeze_backbone()
@@ -175,16 +187,6 @@ class DinoSegmentor(Module, ABC):
                     dist_sync_on_step=False,
                 )
 
-        self.num_bands = {
-            name_mod: (
-                [mod.bands] if isinstance(mod.bands, int) else list(map(len, mod.bands))
-            )
-            for name_mod, mod in datasets.dataset.inputs.items()
-        }
-        self.len_bands = {
-            name_mod: len(num_bands) for name_mod, num_bands in self.num_bands.items()
-        }
-
         # flattening/unflattening of date dimensions
         self.group = partial(
             group_mods,
@@ -214,13 +216,73 @@ class DinoSegmentor(Module, ABC):
             for name_mod in self.dataset.inputs
         }
     
-    def get_backbone(self, backbone_size, num_channels, weight_source):
+    def _get_base_config(self, backbone_size):
         original_config = AutoConfig.from_pretrained(f"facebook/dinov2-{backbone_size}")
         config_dict = original_config.to_dict()
-        config_dict["num_channels"] = num_channels  # Adjust the number of channels
         config_dict["patch_size"] = self.patch_size
-        config_dict["image_size"] = 224 if weight_source=='canopy' else 518
-        new_config = original_config.__class__(**config_dict)  # Updated config
+        config_dict["image_size"] = 224 if self.weight_source=='canopy' else 518
+
+        return config_dict
+    
+    def _build_patch_embed(self, config_dict, state_dict=None):
+        patch_embed = ModuleDict()
+
+        for name_mod in self.dataset.inputs:
+            config_dict["num_channels"] = self.num_bands[name_mod][0]            
+            mod_config = Dinov2Config(**config_dict)
+
+            patch_embed[name_mod] = Dinov2Embeddings(mod_config)
+            
+            if state_dict is not None:
+                self._transfer(state_dict, patch_embed[name_mod], self.len_bands[name_mod])
+
+        return patch_embed
+    
+    def _build_encoder(self, config_dict, state_dict=None):
+        model_config = Dinov2Config(**config_dict)
+        encoder = Dinov2Encoder(model_config)
+        
+        if state_dict is not None:
+            self._transfer(state_dict, encoder, 3)
+
+        return encoder
+    
+    def _build_layer_norm(self, config_dict):
+        layernorm = LayerNorm(config_dict['hidden_size'], eps=config_dict['layer_norm_eps'])
+        
+        return layernorm
+    
+    def _transfer(self, state_dict, module, num_channels):
+        if num_channels>3:
+            adapted_state_dict = self.transfer_patch_embedding_to_more_channels(state_dict, num_channels, self.std)
+            module.load_state_dict(adapted_state_dict, strict=False)
+        else:
+            module.load_state_dict(state_dict, strict=False)
+    
+    def _build_backbone(self, backbone_size, weight_source):
+        #config dict
+        config_dict = self._get_base_config(backbone_size)
+        
+        #state dict
+        if weight_source == 'imagenet':
+            state_dict = get_imagenet_dinov2_state_dict(backbone_size)
+        elif weight_source == 'canopy':
+            state_dict = get_canopy_sate_dict(self.weights_path)
+        else: #random initialization
+            state_dict = None
+        
+        #patch embedding layers (per modality)
+        self.patch_embed = self._build_patch_embed(config_dict, state_dict=state_dict)
+        #encoder
+        self.encoder = self._build_encoder(config_dict, state_dict=state_dict)
+        #layer norm
+        self.layernorm = self._build_layer_norm(config_dict)
+
+    def get_backbone(self, backbone_size, num_channels, weight_source):
+        config_dict = self._get_base_config(backbone_size)
+
+        config_dict["num_channels"] = num_channels  # Adjust the number of channels
+        new_config = Dinov2Config(**config_dict)  # Updated config
         
         model = Dinov2Model(new_config)
 
@@ -444,13 +506,22 @@ class DinoSegmentor(Module, ABC):
         x, dates = {}, {}
 
         for name_mod in self.dataset.inputs:
+            x_tokenized = self.patch_embed[name_mod](input[name_mod])
+            x_enc = self.encoder(x_tokenized)['last_hidden_state']
+            x_enc = self.layernorm(x_enc)
+            x_enc = x_enc[:, 1:]
+        
+            x[name_mod] = x_enc
+            dates[name_mod] = batch[f"{name_mod}_dates"]
+        
+        """for name_mod in self.dataset.inputs:
             input_mod = input[name_mod][:, self.channels_to_use[name_mod], :, :]
             x_enc = self.dino.embeddings(input_mod)
             x_enc = self.dino.encoder(x_enc)['last_hidden_state']
             x_enc = x_enc[:, 1:]
         
             x[name_mod] = x_enc
-            dates[name_mod] = batch[f"{name_mod}_dates"]
+            dates[name_mod] = batch[f"{name_mod}_dates"]"""
 
         ref_date = batch["ref_date"]
         x = self.add_date_encodings(x, dates, ref_date)
