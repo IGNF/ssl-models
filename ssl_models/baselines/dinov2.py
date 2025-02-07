@@ -1,7 +1,7 @@
 from transformers import Dinov2Config, Dinov2Model, AutoModel, AutoConfig
 from transformers.models.dinov2.modeling_dinov2 import Dinov2Embeddings, Dinov2Encoder
 from abc import ABC, abstractmethod
-from ssl_models.baselines.utils import get_imagenet_dinov2_state_dict, get_canopy_sate_dict
+from ssl_models.baselines.utils import get_imagenet_dinov2_state_dict, get_canopy_sate_dict, filter_dict
 import torch
 from torch.nn import ModuleDict, Module, LayerNorm
 from torchmetrics import MeanMetric
@@ -234,7 +234,7 @@ class DinoSegmentor(Module, ABC):
             patch_embed[name_mod] = Dinov2Embeddings(mod_config)
             
             if state_dict is not None:
-                self._transfer(state_dict, patch_embed[name_mod], self.len_bands[name_mod])
+                self._transfer(state_dict, patch_embed[name_mod], config_dict["num_channels"], 'embeddings')
 
         return patch_embed
     
@@ -243,21 +243,24 @@ class DinoSegmentor(Module, ABC):
         encoder = Dinov2Encoder(model_config)
         
         if state_dict is not None:
-            self._transfer(state_dict, encoder, 3)
+            self._transfer(state_dict, encoder, 3, 'encoder')
 
         return encoder
     
-    def _build_layer_norm(self, config_dict):
+    def _build_layer_norm(self, config_dict, state_dict=None):
         layernorm = LayerNorm(config_dict['hidden_size'], eps=config_dict['layer_norm_eps'])
-        
+
+        if state_dict is not None:
+            self._transfer(state_dict, layernorm, 3, 'layernorm')
+
         return layernorm
     
-    def _transfer(self, state_dict, module, num_channels):
+    def _transfer(self, state_dict, module, num_channels, headname):
         if num_channels>3:
             adapted_state_dict = self.transfer_patch_embedding_to_more_channels(state_dict, num_channels, self.std)
-            module.load_state_dict(adapted_state_dict, strict=False)
+            module.load_state_dict(filter_dict(adapted_state_dict, headname), strict=True)
         else:
-            module.load_state_dict(state_dict, strict=False)
+            module.load_state_dict(filter_dict(state_dict, headname), strict=True)
     
     def _build_backbone(self, backbone_size, weight_source):
         #config dict
@@ -276,7 +279,7 @@ class DinoSegmentor(Module, ABC):
         #encoder
         self.encoder = self._build_encoder(config_dict, state_dict=state_dict)
         #layer norm
-        self.layernorm = self._build_layer_norm(config_dict)
+        self.layernorm = self._build_layer_norm(config_dict, state_dict=state_dict)
 
     def get_backbone(self, backbone_size, num_channels, weight_source):
         config_dict = self._get_base_config(backbone_size)
@@ -302,7 +305,9 @@ class DinoSegmentor(Module, ABC):
         
     def transfer_patch_embedding_to_more_channels(self, state_dict, num_channels, std):        
         with torch.no_grad():
-            old_weights = state_dict['embeddings.patch_embeddings.projection.weight']
+            new_state_dict = state_dict.copy()
+
+            old_weights = new_state_dict['embeddings.patch_embeddings.projection.weight']
             bs, _, hs, ws = old_weights.shape
             
             means = torch.zeros((bs, num_channels-3, hs, ws))
@@ -310,9 +315,9 @@ class DinoSegmentor(Module, ABC):
 
             pad_tensor = torch.normal(means, stds)
             new_weights = torch.cat((old_weights, pad_tensor), dim=1)
-            state_dict['embeddings.patch_embeddings.projection.weight'] = new_weights
+            new_state_dict['embeddings.patch_embeddings.projection.weight'] = new_weights
     
-        return state_dict
+        return new_state_dict
 
     def freeze_backbone(self):
         """

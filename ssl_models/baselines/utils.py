@@ -123,3 +123,7 @@ def get_imagenet_dinov2_state_dict(model_size="large"):
     
     except Exception as e:
         raise ValueError(f"Erreur de chargement pour {repo_id}: {str(e)}")
+
+def filter_dict(dictionnary, head):
+    prefix = f"{head}."
+    return {k[len(prefix):]: v for k, v in dictionnary.items() if k.startswith(prefix)}
