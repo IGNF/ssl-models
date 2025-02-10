@@ -17,7 +17,6 @@ ALLOWED_TARGETS = [
 class PatchSizeConfig:
     """Patch size config."""
 
-    norm: int | None = None
     mae: int = MISSING
     mixmae: int = MISSING
 
@@ -31,8 +30,6 @@ class RasterConfig:
     mask_threshold: float = 0.0
     num_dates: int = 1
     norm_fac: float | None = None
-    norm_dates: int | None = None
-    log_scale: bool = False
 
 
 @dataclass
@@ -118,11 +115,12 @@ class DatasetConfig:
         """Check validity of modalities and further define non configurable attrs."""
         self._set_resolutions(resolutions_meters)
 
-        if not any(log_input in self.filter_inputs for log_input in self.log_inputs):
-            self.log_inputs = self.filter_inputs
-
         if self.ref_input and self.ref_input not in self.filter_inputs:
             msg = f"Ref input {self.ref_input} is not selected."
+            raise ValueError(msg)
+
+        if not any(log_input in self.filter_inputs for log_input in self.log_inputs):
+            msg = "At least one selected modality must be logged."
             raise ValueError(msg)
 
         self.inputs = {}

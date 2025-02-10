@@ -139,7 +139,6 @@ class GenericDataset(Dataset, ABC):
         num_dates: int,
         mask_threshold: float,  # threshold on mask percentage cover
         norm_fac: float | None,
-        log_scale: bool,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> tuple[np.ndarray, np.ndarray]:
         """Read raster modality."""
@@ -219,12 +218,8 @@ class GenericDataset(Dataset, ABC):
             dates_mod = np.take_along_axis(dates_mod, median_inds, axis=1).squeeze(1)
 
         input_mod = input_mod.astype(np.float32)
-        if log_scale:
-            input_mod = np.log(np.maximum(input_mod, 1e-10))
-
         if norm_fac is not None:
             input_mod /= norm_fac
-
         return input_mod, dates_mod
 
     def transform_rasters(
