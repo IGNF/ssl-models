@@ -99,6 +99,8 @@ class DinoSegmentor(Module, ABC):
             self.channels_to_use = {'aerial':[0,1,2,3], 's2': [2,1,0,3]}
         else: #IRC
             self.channels_to_use = {'aerial':[3,0,1]}
+        
+        self.permut_channels = {'s2': [2,1,0]+list(range(3,10))}
 
         self.input_image_size = (self.image_size // self.patch_size) * self.patch_size
 
@@ -257,7 +259,7 @@ class DinoSegmentor(Module, ABC):
     
     def _transfer(self, state_dict, module, num_channels, headname):
         if num_channels>3:
-            adapted_state_dict = self.transfer_patch_embedding_to_more_channels(state_dict, num_channels, self.std)
+            adapted_state_dict = self._transfer_patch_embedding_to_more_channels(state_dict, num_channels, self.std)
             module.load_state_dict(filter_dict(adapted_state_dict, headname), strict=False)
         else:
             module.load_state_dict(filter_dict(state_dict, headname), strict=False)
@@ -280,30 +282,8 @@ class DinoSegmentor(Module, ABC):
         self.encoder = self._build_encoder(config_dict, state_dict=state_dict)
         #layer norm
         self.layernorm = self._build_layer_norm(config_dict, state_dict=state_dict)
-
-    def get_backbone(self, backbone_size, num_channels, weight_source):
-        config_dict = self._get_base_config(backbone_size)
-
-        config_dict["num_channels"] = num_channels  # Adjust the number of channels
-        new_config = Dinov2Config(**config_dict)  # Updated config
         
-        model = Dinov2Model(new_config)
-
-        if weight_source == 'random':
-            return model
-        elif weight_source == 'canopy':
-            state_dict = get_canopy_sate_dict(self.weights_path)
-        else: #imagenet
-            state_dict = get_imagenet_dinov2_state_dict(backbone_size)
-        
-        if num_channels>3:
-            state_dict = self.transfer_patch_embedding_to_more_channels(state_dict, num_channels, self.std)
-
-        model.load_state_dict(state_dict, strict=False)
-        
-        return model
-        
-    def transfer_patch_embedding_to_more_channels(self, state_dict, num_channels, std):        
+    def _transfer_patch_embedding_to_more_channels(self, state_dict, num_channels, std):        
         with torch.no_grad():
             new_state_dict = state_dict.copy()
 
@@ -511,22 +491,18 @@ class DinoSegmentor(Module, ABC):
         x, dates = {}, {}
 
         for name_mod in self.dataset.inputs:
-            x_tokenized = self.patch_embed[name_mod](input[name_mod])
+            if name_mod in self.permut_channels:
+                input_mod = input[name_mod][:, self.permut_channels[name_mod]]
+            else:
+                input_mod = input[name_mod]
+
+            x_tokenized = self.patch_embed[name_mod](input_mod)
             x_enc = self.encoder(x_tokenized)['last_hidden_state']
             x_enc = self.layernorm(x_enc)
             x_enc = x_enc[:, 1:]
         
             x[name_mod] = x_enc
             dates[name_mod] = batch[f"{name_mod}_dates"]
-        
-        """for name_mod in self.dataset.inputs:
-            input_mod = input[name_mod][:, self.channels_to_use[name_mod], :, :]
-            x_enc = self.dino.embeddings(input_mod)
-            x_enc = self.dino.encoder(x_enc)['last_hidden_state']
-            x_enc = x_enc[:, 1:]
-        
-            x[name_mod] = x_enc
-            dates[name_mod] = batch[f"{name_mod}_dates"]"""
 
         ref_date = batch["ref_date"]
         x = self.add_date_encodings(x, dates, ref_date)
