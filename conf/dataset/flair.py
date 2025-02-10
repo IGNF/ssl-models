@@ -85,7 +85,8 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=2,
             num_dates=4,
-            norm_fac=1.0,
+            norm_fac=5.0,
+            log_scale=True,
             name_group="sen1",
         ),
     )
@@ -95,7 +96,8 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=2,
             num_dates=4,
-            norm_fac=1.0,
+            norm_fac=5.0,
+            log_scale=True,
             name_group="sen1",
         ),
     )

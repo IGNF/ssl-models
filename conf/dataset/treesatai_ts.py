@@ -55,7 +55,8 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
             patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=2,
             num_dates=4,
-            norm_fac=0.25,
+            norm_fac=5.0,
+            log_scale=True,
             name_group="sen1",
         ),
     )
@@ -65,7 +66,8 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
             patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=2,
             num_dates=4,
-            norm_fac=0.25,
+            norm_fac=5.0,
+            log_scale=True,
             name_group="sen1",
         ),
     )

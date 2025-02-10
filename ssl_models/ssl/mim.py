@@ -78,10 +78,15 @@ class BaseMIM(nn.Module, ABC):
             for name_mod, mod in datasets.dataset.inputs.items()
         }
 
+        self.norm_patch_size,self.norm_dates = {}, {}
         self.grid_size, self.out_grid_size = {}, {}
         self.patch_embed, self.embed_to_rec = nn.ModuleDict(), nn.ModuleDict()
         for name_mod, mod in self.dataset.inputs.items():
             patch_size = mod.patch_size.mae if model == "mae" else mod.patch_size.mixmae
+            self.norm_patch_size[name_mod] = (
+                mod.patch_size.norm if mod.patch_size.norm else patch_size
+            )
+            self.norm_dates[name_mod] = mod.norm_dates if mod.norm_dates else 1
             self.grid_size[name_mod] = mod.image_size // patch_size
             self.out_grid_size[name_mod] = mod.image_size // (patch_size * self.stride)
             self.patch_embed[name_mod] = Patchify(
@@ -452,18 +457,19 @@ class BaseMIM(nn.Module, ABC):
         loss_recs = []
         weights = []
         for name_mod in pixels_rec:
-            G = self.len_bands[name_mod]  # noqa: N806
             D = batch[name_mod].shape[1]  # noqa: N806
+            G = self.len_bands[name_mod]  # noqa: N806
+            P = self.norm_patch_size[name_mod]  # noqa: N806
             H, W = (  # noqa: N806
-                self.out_grid_size[name_mod],
-                self.out_grid_size[name_mod],
+                batch[name_mod].shape[3] // P,
+                batch[name_mod].shape[4] // P,
             )
-            P = batch[name_mod].shape[3] // H  # noqa: N806
             target = rearrange(
                 batch[name_mod],
-                "b d c (h p1) (w p2) -> b d (h w) (p1 p2) c",
-                p1=P,
+                "b (d p1) c (h p2) (w p3) -> b d p1 (h w) (p2 p3) c",
+                p1=self.norm_dates[name_mod],
                 p2=P,
+                p3=P,
             )
             if self.norm_pix_loss:
                 target_groups = list(
@@ -474,16 +480,16 @@ class BaseMIM(nn.Module, ABC):
                     ),
                 )
                 for idx, target_group in enumerate(target_groups):
-                    mean = target_group.mean(dim=(-2, -1), keepdim=True)
-                    var = target_group.var(dim=(-2, -1), keepdim=True)
+                    mean = target_group.mean(dim=(2, -2, -1), keepdim=True)
+                    var = target_group.var(dim=(2, -2, -1), keepdim=True)
                     target_groups[idx] = (target_group - mean) / (var + 1.0e-6) ** 0.5
                 target = torch.cat(target_groups, dim=-1)
             target = rearrange(
                 target,
-                "b d (h w) (p1 p2) c -> b d c (h p1) (w p2)",
+                "b d p1 (h w) (p2 p3) c -> b (d p1) c (h p2) (w p3)",
                 h=H,
-                p1=P,
                 p2=P,
+                p3=P,
             )
 
             weight = G * D * H * W
