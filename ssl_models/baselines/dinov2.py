@@ -258,9 +258,9 @@ class DinoSegmentor(Module, ABC):
     def _transfer(self, state_dict, module, num_channels, headname):
         if num_channels>3:
             adapted_state_dict = self.transfer_patch_embedding_to_more_channels(state_dict, num_channels, self.std)
-            module.load_state_dict(filter_dict(adapted_state_dict, headname), strict=True)
+            module.load_state_dict(filter_dict(adapted_state_dict, headname), strict=False)
         else:
-            module.load_state_dict(filter_dict(state_dict, headname), strict=True)
+            module.load_state_dict(filter_dict(state_dict, headname), strict=False)
     
     def _build_backbone(self, backbone_size, weight_source):
         #config dict
