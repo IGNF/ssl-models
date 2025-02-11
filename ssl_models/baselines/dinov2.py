@@ -28,7 +28,6 @@ class DinoSegmentor(Module, ABC):
         self,
         datasets: DatasetsConfig,
         backbone_size: str,
-        in_channels: str,
         image_size: int,
         unpool_dim: int,
         freeze: bool = False,
@@ -49,8 +48,6 @@ class DinoSegmentor(Module, ABC):
             Defines the backbone to use. To choose in "small", "base", "large", "giant"
         num_classes: int
             Number of classes.
-        in_channels: int
-            Number of channels.
         image_size: int
             Image size (should be multiple of 14, e.g. 224 or 252)
         freeze: bool
@@ -87,21 +84,9 @@ class DinoSegmentor(Module, ABC):
                 or (self.weight_source == 'canopy' and backbone_size in ['large']) \
                 or (self.weight_source == 'random' and backbone_size in ['tiny'])), 'Weight source {} is not compatible with backbone_size {}'.format(weight_source, backbone_size)
         assert (self.weights_path is not None or self.weight_source == 'imagenet'), 'A weight path should be given.'
-        assert in_channels in ['RGB', 'RGBI', 'IRC'], 'in_channels should be RGB RGBI or IRC'
         
         self.embed_dim = self.embed_dim_by_size[self.backbone_size]
-        self.num_channels = len(in_channels)
-        self.in_channels = in_channels
-
-        if self.in_channels == 'RGB':
-            self.channels_to_use = {'aerial':[0,1,2], 'spot':[0,1,2], 's2':[2,1,0]}
-        elif self.in_channels == 'RGBI':
-            self.channels_to_use = {'aerial':[0,1,2,3], 's2': [2,1,0,3]}
-        else: #IRC
-            self.channels_to_use = {'aerial':[3,0,1]}
         
-        self.permut_channels = {'s2': [2,1,0]+list(range(3,10))}
-
         self.input_image_size = (self.image_size // self.patch_size) * self.patch_size
 
         self.num_bands = {
@@ -114,7 +99,6 @@ class DinoSegmentor(Module, ABC):
             name_mod: len(num_bands) for name_mod, num_bands in self.num_bands.items()
         }
 
-        #self.dino = self.get_backbone(backbone_size, self.num_channels, self.weight_source)
         self._build_backbone(backbone_size, weight_source)
 
         if freeze:
@@ -491,10 +475,7 @@ class DinoSegmentor(Module, ABC):
         x, dates = {}, {}
 
         for name_mod in self.dataset.inputs:
-            if name_mod in self.permut_channels:
-                input_mod = input[name_mod][:, self.permut_channels[name_mod]]
-            else:
-                input_mod = input[name_mod]
+            input_mod = input[name_mod]
 
             x_tokenized = self.patch_embed[name_mod](input_mod)
             x_enc = self.encoder(x_tokenized)['last_hidden_state']

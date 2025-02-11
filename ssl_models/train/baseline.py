@@ -27,7 +27,6 @@ class BaselineModule(BaseModule):
         model_size: Literal["small", "base", "large", "huge"],
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
-        in_channels: Literal["RGB", "RGBI", "IRC"] = "RGB",
         weight_source: str = 'imagenet',
         weights_path: str = None,
         freeze: bool = False
@@ -68,7 +67,6 @@ class BaselineModule(BaseModule):
                     "datasets": datasets,
                     "type_head": type_head,
                     "backbone_size": model_size,
-                    "in_channels": in_channels,
                     "unpool_dim": unpool_dim,
                     "weight_source": weight_source,
                     "weights_path": weights_path,

@@ -28,7 +28,6 @@ class BaselineConfig:  # noqa: D101
     model_size: str = "small"
     type_head: str = "linear"
     loss: str = "l2_norm"
-    in_channels: str = "RGB"
     freeze: bool = False
     weight_source: str = 'imagenet'
     weights_path: str = '/mnt/stores/store-DAI/equipiers/mvaccaro/foret/HighResCanopyHeight/compressed_SSLlarge.pth'
