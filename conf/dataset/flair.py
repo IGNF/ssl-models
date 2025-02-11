@@ -15,6 +15,7 @@ from ssl_models.dataset.flair import FLAIRDataset
 class FLAIRConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "FLAIR-INC"
     csv_dir: str | None = None
+    version: str | None = None
     balance_pretrain: bool = False
     val_pretrain: bool = False
     filter_percent: int | None = None

@@ -39,6 +39,7 @@ class FLAIRDataset(GenericDataset):
             csv_dir=csv_dir,
             stage=stage,
             ssl_phase=ssl_phase,
+            version=dataset.version,
             balance_pretrain=dataset.balance_pretrain,
             val_pretrain=dataset.val_pretrain,
             filter_percent=dataset.filter_percent,
