@@ -102,7 +102,7 @@ class DinoSegmentor(Module, ABC):
         self._build_backbone(backbone_size, weight_source)
 
         if freeze:
-            self.freeze_backbone()
+            self._freeze_backbone()
         
         self.grid_size = {}
 
@@ -283,7 +283,7 @@ class DinoSegmentor(Module, ABC):
     
         return new_state_dict
 
-    def freeze_backbone(self):
+    def _freeze_backbone(self):
         """
         Freeze the backbone's parameters (self.dino).
 
@@ -292,13 +292,17 @@ class DinoSegmentor(Module, ABC):
         Returns
         -------
         """
-        for param in self.dino.parameters():
-             param.requires_grad = False
-        
-        if self.num_channels > 3:
+        for name_mod in self.patch_embed.keys():
             # Necessary to unfreeze patchify layer if there are more than 3 channels
-            for param in self.dino.embeddings.parameters():
-                param.requires_grad = True
+            if self.len_bands[name_mod]<=3:
+                for param in self.patch_embed[name_mod].parameters():
+                    param.requires_grad = False
+        
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+        
+        for param in self.layernorm.parameters():
+            param.requires_grad = False
 
     def grouped_parameters(self, base_lr, rate_decay=0.75):
         """
@@ -316,23 +320,25 @@ class DinoSegmentor(Module, ABC):
         List: A list of dictionnaries, containing 'params' and 'lr' keys, in which parameters are grouped.
 
         """
-        num_layers = len(self.dino.encoder.layer)
-        lr_map = dict([('dino.encoder.layer.{}'.format(i), base_lr * rate_decay ** (num_layers - i)) for i in range(num_layers)])
+        num_layers = len(self.encoder.layer)
+        lr_map = dict([('encoder.layer.{}'.format(i), base_lr * rate_decay ** (num_layers - i)) for i in range(num_layers)])
+        
+        for name_mod in self.patch_embed:
+            if self.len_bands[name_mod]<=3:
+                lr_map['patch_embed.{}'.format(name_mod)] = base_lr
+            else: #RGB
+                lr_map['patch_embed.{}'.format(name_mod)] = base_lr * rate_decay ** (num_layers+1)
 
-        if self.in_channels in ['RGBI', 'IRC']:
-            lr_map['dino.embeddings'] = base_lr
-        else: #RGB
-            lr_map['dino.embeddings'] = base_lr * rate_decay ** (num_layers+1)
-
-        lr_map['segmentation_head'] = base_lr
+        lr_map['heads'] = base_lr
         
         params_dict = {}
-        params_dict['dino.embeddings'] = self.dino.embeddings.parameters()
-        params_dict['segmentation_head'] = self.segmentation_head.parameters()
+        for name_mod in self.patch_embed:
+            params_dict['patch_embed.{}'.format(name_mod)] = self.patch_embed[name_mod].parameters()
+        params_dict['heads'] = self.heads.parameters()
 
         for i in range(num_layers):
-            params_dict['dino.encoder.layer.{}'.format(i)] = self.dino.encoder.layer[i].parameters()
-            
+            params_dict['encoder.layer.{}'.format(i)] = self.encoder.layer[i].parameters()
+
         print('Layerwise learning rates:')
         grouped_parameters = []
         for k, lr in lr_map.items():
