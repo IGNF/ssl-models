@@ -2,7 +2,10 @@
 
 from typing import Literal
 
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import seaborn as sns
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
@@ -46,10 +49,6 @@ class TensorBoardLogger(TensorBoardLogger):
 class ImageLogger(Callback):
     """Log masked images, predicted images, and target images."""
 
-    def __init__(self, log_inputs: list[str], **kwargs) -> None:  # noqa: ANN003
-        super().__init__(**kwargs)
-        self.log_inputs = log_inputs
-
     @staticmethod
     def to_numpy(x: Tensor) -> np.ndarray:
         """Move to CPU and convert to numpy."""
@@ -60,20 +59,12 @@ class ImageLogger(Callback):
             else x_npy.mean(axis=0, keepdims=True)
         )
 
-    @staticmethod
-    def should_log(trainer: Trainer, outputs: dict) -> bool:
-        """Check whether images should be logged."""
-        return (
-            trainer.global_rank == 0
-            and outputs["rec"] is not None
-            and outputs["masked"] is not None
-        )
-
+    @rank_zero_only
     def on_batch_end(
         self,
         trainer: Trainer,
         outputs: dict[str, dict],
-        batch: dict[str, Tensor],
+        batch: dict[str, Tensor],  # noqa: ARG002
         batch_idx: int,
         stage: Literal["train", "val", "test"],
     ) -> None:
@@ -90,25 +81,25 @@ class ImageLogger(Callback):
         )
         if batch_idx % log_every_n_batches:
             return
-
         epoch = trainer.current_epoch
         prefix_idx = batch_idx // log_every_n_batches
-        for name_mod in outputs["masked"]:
-            if name_mod not in self.log_inputs:
-                continue
+
+        for log_title, log_img in outputs["log_inputs"].items():
             trainer.tb_logger.add_image(
-                f"{stage}/{prefix_idx}_{name_mod}_input",
-                ImageLogger.to_numpy(outputs["masked"][name_mod][0, 0]),
+                log_title.replace("/", f"/{prefix_idx}"),
+                ImageLogger.to_numpy(log_img),
                 epoch,
             )
+        for log_title, log_img in outputs["log_preds"].items():
             trainer.tb_logger.add_image(
-                f"{stage}/{prefix_idx}_{name_mod}_pred",
-                ImageLogger.to_numpy(outputs["rec"][name_mod][0, 0]),
+                log_title.replace("/", f"/{prefix_idx}"),
+                ImageLogger.to_numpy(log_img),
                 epoch,
             )
+        for log_title, log_img in outputs["log_targets"].items():
             trainer.tb_logger.add_image(
-                f"{stage}/{prefix_idx}_{name_mod}_target",
-                ImageLogger.to_numpy(batch[name_mod][0, 0]),
+                log_title.replace("/", f"/{prefix_idx}"),
+                ImageLogger.to_numpy(log_img),
                 epoch,
             )
 
@@ -122,14 +113,13 @@ class ImageLogger(Callback):
         dataloader_idx: int = 0,  # noqa: ARG002
     ) -> None:
         """Log train images."""
-        if ImageLogger.should_log(trainer, outputs):
-            self.on_batch_end(
-                trainer,
-                outputs,
-                batch,
-                batch_idx,
-                stage="train",
-            )
+        self.on_batch_end(
+            trainer,
+            outputs,
+            batch,
+            batch_idx,
+            stage="train",
+        )
 
     def on_validation_batch_end(
         self,
@@ -141,11 +131,174 @@ class ImageLogger(Callback):
         dataloader_idx: int = 0,  # noqa: ARG002
     ) -> None:
         """Log validation images."""
-        if ImageLogger.should_log(trainer, outputs):
-            self.on_batch_end(
-                trainer,
-                outputs,
-                batch,
-                batch_idx,
-                stage="val",
-            )
+        self.on_batch_end(
+            trainer,
+            outputs,
+            batch,
+            batch_idx,
+            stage="val",
+        )
+
+
+class MetricsLogger(Callback):
+    """Log metrics."""
+
+    @staticmethod
+    def cm2arr(cm: np.ndarray, normalized: bool = False) -> np.ndarray:
+        if cm.shape[0] <= 10:  # noqa: PLR2004
+            figsize = (10, 7)
+        elif cm.shape[0] > 10 and cm.shape[0] <= 16:  # noqa: PLR2004
+            figsize = (12, 9)
+        elif cm.shape[0] > 16 and cm.shape[0] <= 20:  # noqa: PLR2004
+            figsize = (16, 11)
+        else:
+            figsize = (21, 16)
+
+        match normalized:
+            case False:
+                cm_df = pd.DataFrame(cm)
+                fmt = ".0f"
+            case True:
+                cm_df = pd.DataFrame(
+                    np.divide(
+                        cm.astype(np.float32),
+                        np.sum(cm, axis=1)[:, np.newaxis],
+                        out=np.zeros_like(cm.astype(np.float32)),
+                        where=(np.sum(cm, axis=1)[:, np.newaxis] != 0),
+                    ),
+                )
+                fmt = ".3f"
+
+        fig, _ = plt.subplots(figsize=figsize)
+        sns.heatmap(cm_df, annot=True, fmt=fmt)
+        rgba_buf = fig.canvas.buffer_rgba()
+        (w, h) = fig.canvas.get_width_height()
+        return (
+            np.frombuffer(rgba_buf, dtype=np.uint8)
+            .reshape((h, w, 4))
+            .transpose((2, 0, 1))[:3]
+        )
+
+    def on_epoch_end(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,
+        stage: Literal["train", "val", "test"],
+    ) -> None:
+        """Log epoch metrics for training/val/test."""
+        if stage == "train" or pl_module.ema_model is None:
+            model = pl_module.model
+        else:
+            model = pl_module.ema_model
+
+        match trainer.ssl_phase:
+            case "pretrain":
+                self.log_metric(
+                    pl_module=pl_module,
+                    name=f"{trainer.ssl_phase}_loss_rec/{stage}",
+                    value=model.metrics[f"loss_rec_{stage}"].compute(),
+                )
+                model.metrics[f"loss_rec_{stage}"].reset()
+            case "probe" | "finetune":
+                self.log_metric(
+                    pl_module=pl_module,
+                    name=f"{trainer.ssl_phase}_loss_pred/{stage}",
+                    value=model.metrics[f"loss_pred_{stage}"].compute(),
+                )
+                model.metrics[f"loss_pred_{stage}"].reset()
+
+                for name_target in pl_module.dataset.targets:
+                    metrics = model.metrics[f"{name_target}_{stage}"].compute()
+                    for name_metric, value in metrics.items():
+                        if name_metric == "confusion_matrix":
+                            cm = value.cpu().numpy()
+                            self.log_confmat(
+                                trainer=trainer,
+                                name=f"confmat_{trainer.ssl_phase}_{name_target}_{stage}/confmat",
+                                cm=MetricsLogger.cm2arr(cm, normalized=False),
+                            )
+                            self.log_confmat(
+                                trainer=trainer,
+                                name=f"confmat_{trainer.ssl_phase}_{name_target}_{stage}/confmat_norm",
+                                cm=MetricsLogger.cm2arr(cm, normalized=True),
+                            )
+                        else:
+                            self.log_metric(
+                                pl_module=pl_module,
+                                name=f"{trainer.ssl_phase}_{name_target}/{name_metric}_{stage}",
+                                value=value,
+                            )
+                    model.metrics[f"{name_target}_{stage}"].reset()
+
+    def on_train_epoch_end(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,
+    ) -> None:
+        self.on_epoch_end(trainer=trainer, pl_module=pl_module, stage="train")
+
+    def on_validation_epoch_end(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,
+    ) -> None:
+        self.on_epoch_end(trainer=trainer, pl_module=pl_module, stage="val")
+
+    def on_test_epoch_end(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,
+    ) -> None:
+        self.on_epoch_end(trainer=trainer, pl_module=pl_module, stage="test")
+
+    def on_train_batch_end(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,
+        outputs: dict[str, Tensor],
+        batch: dict[str, Tensor],  # noqa: ARG002
+        batch_idx: int,  # noqa: ARG002
+        dataloader_idx: int = 0,  # noqa: ARG002
+    ) -> None:
+        """Log train loss."""
+        match trainer.ssl_phase:
+            case "pretrain":
+                name = "loss_rec"
+            case "probe" | "finetune":
+                name = "loss_pred"
+
+        pl_module.log(
+            name=f"{trainer.ssl_phase}_{name}/step_train",
+            value=outputs["loss"],
+            on_step=True,
+            on_epoch=False,
+            prog_bar=True,
+            logger=True,
+            sync_dist=True,
+        )
+
+    @rank_zero_only
+    def log_confmat(
+        self,
+        trainer: Trainer,
+        name: str,
+        cm: np.ndarray,
+    ) -> None:
+        trainer.tb_logger.add_image(name, cm, trainer.current_epoch)
+
+    def log_metric(
+        self,
+        pl_module: LightningModule,
+        name: str,
+        value: Tensor,
+    ) -> None:
+        """Log accuracy metric."""
+        pl_module.log(
+            name=name,
+            value=value,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+            sync_dist=True,
+        )

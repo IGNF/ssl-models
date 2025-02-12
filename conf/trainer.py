@@ -11,6 +11,7 @@ class TrainerConfig:  # noqa: D101
     devices: str = "auto"
     strategy: str = "ddp_find_unused_parameters_true"
     precision: str = "16-mixed"
+    num_nodes: int = 1
 
 
 trainer_store = store(group="trainer")

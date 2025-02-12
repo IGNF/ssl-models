@@ -32,10 +32,11 @@ class TreeSatAITSDataset(GenericDataset):
         )
 
         csv_data = read_csv(
-            root_dir=root_dir,
+            csv_dir=root_dir,
             stage=stage,
             ssl_phase=ssl_phase,
             balance_pretrain=dataset.balance_pretrain,
+            val_pretrain=dataset.val_pretrain,
             parse_dates=["aerial_date"],
         )
         target_cols = [

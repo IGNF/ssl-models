@@ -16,9 +16,15 @@ from ssl_models.dataset.pastis_hd import PASTISHDDataset
 class PASTISHDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "PASTIS-HD"
     balance_pretrain: bool = False
+    val_pretrain: bool = False
+    fold: int | None = None
+    repeats: int = 4
     crop_meters: float = 320
-    ref_input: str | None = "s2"  # defines grid for raster targets
 
+    ref_input: str | None = "s2"  # defines grid for raster targets
+    log_inputs: list[str] = field(
+        default_factory=lambda: ["spot"],
+    )  # logged input modalities
     filter_inputs: list[str] = field(
         default_factory=lambda: ["spot", "s2", "s1_asc", "s1_des"],
     )  # selected input modalities
@@ -39,6 +45,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
             bands=10,
+            norm_bands=[4, 6],
             num_dates=16,
             norm_fac=10000.0,
         ),
@@ -47,7 +54,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            bands=3,
+            bands=[[0, 1]],
             num_dates=4,
             norm_fac=20.0,
             name_group="sen1",
@@ -57,7 +64,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            bands=3,
+            bands=[[0, 1]],
             num_dates=4,
             norm_fac=20.0,
             name_group="sen1",

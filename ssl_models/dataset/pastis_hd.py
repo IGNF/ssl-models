@@ -21,8 +21,8 @@ class PASTISHDDataset(GenericDataset):
         stage: Literal["train", "val", "test"],
         use_transform: bool,
         random_dates: bool,
+        random_crop: bool,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
-        num_repeats: int = 10,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -30,22 +30,26 @@ class PASTISHDDataset(GenericDataset):
             stage=stage,
             use_transform=use_transform,
             random_dates=random_dates,
+            random_crop=random_crop,
         )
 
         csv_data = read_csv(
-            root_dir=root_dir,
+            csv_dir=root_dir,
             stage=stage,
             ssl_phase=ssl_phase,
             balance_pretrain=dataset.balance_pretrain,
+            val_pretrain=dataset.val_pretrain,
+            fold=dataset.fold,
         )
-        image_ids = csv_data["image"]
+        image_ids = csv_data["image"].tolist()
 
         meta_path = root_dir / "metadata.geojson"
         meta_data = gpd.read_file(meta_path).set_index("id")
 
         self.root_dir = root_dir
         self.image_ids = image_ids
-        self.num_repeats = num_repeats
+        self.base_length = len(self.image_ids)
+        self.repeats = dataset.repeats
 
         self.s2_dates = [
             dict_datetimes(meta_data.loc[str(image_id), "dates-S2"])
@@ -63,7 +67,11 @@ class PASTISHDDataset(GenericDataset):
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
-        idx = idx % len(self.image_ids)
+        idx, start_gcd = self.sample_gcd(
+            idx,
+            base_length=self.base_length,
+            repeats=self.repeats,
+        )
 
         image_id = self.image_ids[idx]
         spot_path = (
@@ -90,7 +98,7 @@ class PASTISHDDataset(GenericDataset):
         )
         meta["pastis_seg_dates"] = spot_date
 
-        inputs = self.preprocess_rasters(meta)
+        inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
 
         inputs["pastis_mlc"] = np.array(
             [((inputs["pastis_seg"] == idx) > 0).any() for idx in range(1, 19)],
@@ -103,4 +111,4 @@ class PASTISHDDataset(GenericDataset):
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return len(self.image_ids) * self.num_repeats
+        return self.base_length * self.repeats**2

@@ -1,6 +1,7 @@
 """Base classes for modality and single dataset."""
 
 from dataclasses import dataclass
+from math import gcd
 
 from hydra_zen import MISSING
 
@@ -25,6 +26,7 @@ class RasterConfig:
     """Generic raster modality config."""
 
     bands: int | list[list[int]] = MISSING
+    norm_bands: list[int] | None = None
     mask_threshold: float = 0.0
     num_dates: int = 1
     norm_fac: float | None = None
@@ -72,24 +74,34 @@ class DatasetConfig:
     """Generic dataset config."""
 
     def _set_resolutions(self, resolutions_meters: dict[str, int]) -> None:
+        self.sizes = {}
         for name_mod, resolution_meters in resolutions_meters.items():
             if name_mod not in self.__dict__:
                 msg = f"Invalid modality {name_mod} specified in resolution."
                 raise ValueError(msg)
 
-            total_size = self.total_meters / float(resolution_meters)
-            crop_size = self.crop_meters / float(resolution_meters)
+            mod = getattr(self, name_mod)
+            mod.resolution_meters = float(resolution_meters)
+
+            size = self.total_meters / mod.resolution_meters
             is_filtered = name_mod in self.filter_inputs + self.filter_targets
-            if not total_size.is_integer() and is_filtered:
+            if not size.is_integer() and is_filtered:
                 msg = f"Modality {name_mod}'s resolution does not divide image extent."
                 raise ValueError(msg)
 
-            if not crop_size.is_integer() and is_filtered:
-                msg = f"Modality {name_mod}'s resolution does not divide crop extent."
-                raise ValueError(msg)
+            self.sizes[name_mod] = round(size)
 
-            mod = getattr(self, name_mod)
-            mod.resolution_meters = float(resolution_meters)
+        size_gcd = gcd(*self.sizes.values())
+        crop_gcd = self.crop_meters / self.total_meters * size_gcd
+        if not crop_gcd.is_integer():
+            msg = (
+                f"Crop meters does not correspond to an integer number of pixels."
+                f"Use a multiple of {self.total_meters / size_gcd}."
+            )
+            raise ValueError(msg)
+
+        self.size_gcd = size_gcd
+        self.crop_gcd = round(crop_gcd)
 
     def _set_groups(self) -> list[tuple]:
         groups = []
@@ -102,6 +114,14 @@ class DatasetConfig:
     def __post_init__(self, resolutions_meters: dict[str, int]) -> None:
         """Check validity of modalities and further define non configurable attrs."""
         self._set_resolutions(resolutions_meters)
+
+        if self.ref_input and self.ref_input not in self.filter_inputs:
+            msg = f"Ref input {self.ref_input} is not selected."
+            raise ValueError(msg)
+
+        if not any(log_input in self.filter_inputs for log_input in self.log_inputs):
+            msg = "At least one selected modality must be logged."
+            raise ValueError(msg)
 
         self.inputs = {}
         for name_mod in self.filter_inputs:

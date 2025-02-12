@@ -7,17 +7,20 @@ from hydra_zen import store
 
 @dataclass
 class ModelConfig:  # noqa: D101
-    multimodal: str = "mod"
+    multimodal: str = "group"
+    allmods_depth: int = 3  # nb of blocks with all mods
     model: str = "mae"
     model_size: str = "tiny"
     type_head: str = "attentive"
-    loss: str = "l2_norm"
+    loss: str = "l1_norm"
     unpool_dim: int | None = None
     swin_version: int = 1
     v2_attn: bool = True
     num_levels: int = 3
     swin_abs_enc: bool = False
     use_date_enc: bool = True
+    batch_repeats: int | None = None
+    use_ema: bool = False
 
 @dataclass
 class BaselineConfig:  # noqa: D101

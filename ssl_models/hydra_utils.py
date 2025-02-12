@@ -7,8 +7,6 @@ from hydra.core.hydra_config import HydraConfig
 from omegaconf import OmegaConf
 from pytorch_lightning import seed_everything
 
-from conf.datasets import ALL_DATASETS
-
 
 def pre_call_seed(cfg: OmegaConf) -> None:
     """Seed everything if run is reproducible."""
@@ -33,12 +31,7 @@ def pre_call_resolve(cfg: OmegaConf) -> None:
         if cfg.model != load_cfg.model:
             msg = "Config is not consistent with loaded config for model."
             raise ValueError(msg)
-        if any(
-            cfg.datasets[name_dataset] != load_cfg.datasets[name_dataset]
-            for name_dataset in ALL_DATASETS
-        ):
-            msg = "Config is not consistent with loaded config for datasets."
-            raise ValueError(msg)
+
         cfg.run.load_ckpt_path = ckpt_path
         cfg.run.load_uuid = load_cfg.run.exp_uuid
 

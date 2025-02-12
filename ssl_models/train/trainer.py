@@ -14,7 +14,7 @@ from pytorch_lightning.loggers.logger import Logger
 from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
 from conf.run import RunConfig
 from ssl_models.hydra_utils import get_hydra_timestamp
-from ssl_models.train.logger import ImageLogger, TensorBoardLogger
+from ssl_models.train.logger import ImageLogger, MetricsLogger, TensorBoardLogger
 
 
 class SSLTrainer(pl.Trainer):
@@ -29,17 +29,22 @@ class SSLTrainer(pl.Trainer):
         devices: str | int,
         strategy: str,
         precision: str,
+        num_nodes: int,
     ) -> None:
         self.ssl_phase = ssl_phase
         self.exp_dir = run.exp_dir
         self.exp_name = run.exp_name
         self.exp_version = get_hydra_timestamp()
 
-        self.log_inputs = run.log_inputs
+        self.monitor = run.monitor
         self.logged_images_per_epoch = run.logged_images_per_epoch
 
         self.base_lr = opt.base_lr
         self.lw_decay = opt.lw_decay if isinstance(opt, OptFinetuneConfig) else None
+        self.final_factor = (
+            opt.final_factor if isinstance(opt, OptFinetuneConfig) else 1e7
+        )
+
         self.wd = opt.wd
         self.b1 = opt.b1
         self.b2 = opt.b2
@@ -54,6 +59,8 @@ class SSLTrainer(pl.Trainer):
             devices=devices,
             strategy=strategy,
             precision=precision,
+            num_nodes=num_nodes,
+            accumulate_grad_batches=opt.accumulate_grad_batches,
         )
 
     def configure_loggers(self) -> list[Logger]:
@@ -79,22 +86,17 @@ class SSLTrainer(pl.Trainer):
         callbacks.append(
             ModelCheckpoint(
                 filename=self.ssl_phase + "-{epoch}",
-                save_weights_only=True,
-            ),
-        )
-        callbacks.append(
-            ModelCheckpoint(
                 monitor=(
-                    "pretrain_loss_rec/val"
-                    if self.ssl_phase == "pretrain"
-                    else f"{self.ssl_phase}_loss_pred/val"
+                    None
+                    if self.ssl_phase == "pretrain" or self.monitor is None
+                    else f"{self.ssl_phase}_{self.monitor}"
                 ),
-                save_top_k=1,
-                filename=self.ssl_phase + "-best",
+                mode="max",
                 save_weights_only=True,
             ),
         )
-        callbacks.append(ImageLogger(self.log_inputs))
+        callbacks.append(ImageLogger())
+        callbacks.append(MetricsLogger())
         return callbacks
 
     def fit_and_test(
