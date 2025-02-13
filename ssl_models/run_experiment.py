@@ -31,26 +31,17 @@ def run_experiment(
 ) -> None:
     """Run experiment, with arguments set up using hydra zen."""
     trainer_partial = partial(SSLTrainer, run=run, **vars(trainer))
+    data_partial = partial(SSLDataModule, datasets=datasets, **vars(data))
 
     if isinstance(model, BaselineConfig):
         model_partial = partial(BaselineModule, datasets=datasets, **vars(model))
     else:
         model_partial = partial(SSLModule, datasets=datasets, mask=mask, **vars(model))
 
-    data_partial = partial(SSLDataModule, datasets=datasets, **vars(data))
-    
-    if run.load_ckpt_path:
-        model = SSLModule.load_from_checkpoint(run.load_ckpt_path, datasets=datasets)
-    else:
-        model = model_partial()
-
-    data_pretrain = data_partial(ssl_phase="pretrain")
-    trainer_pretrain = trainer_partial(
-        ssl_phase="pretrain",
-        opt=opt_pretrain,
-    )
-
-    if run.use_clearml and trainer_pretrain.global_rank == 0:
+    if (
+        run.use_clearml
+        and trainer_partial(ssl_phase="pretrain", opt=opt_pretrain).global_rank == 0
+    ):
         LOGGER.info("Set up ClearML")
         config = {
             "run": vars(run),
