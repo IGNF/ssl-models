@@ -1,5 +1,5 @@
 """Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
-
+import copy
 from typing import Literal
 
 import torch
@@ -29,8 +29,8 @@ class BaselineModule(BaseModule):
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         weight_source: str = 'imagenet',
         weights_path: str = None,
-        freeze: bool = False
-
+        freeze: bool = False,
+        use_ema: bool = False
     ) -> None:
         super().__init__(datasets, model, loss)
 
@@ -82,6 +82,13 @@ class BaselineModule(BaseModule):
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)
 
+        if use_ema:
+            self.ema_model = copy.deepcopy(self.model).to("cpu")
+            for param in self.ema_model.parameters():
+                param.requires_grad = False
+        else:
+            self.ema_model = None
+
         self.dataset = datasets.dataset
         self.tb_logger = None
         self.save_hyperparameters(ignore=["datasets"])
@@ -130,19 +137,23 @@ class BaselineModule(BaseModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Probing/finetuning step."""
-        _, _, _, loss_pred = self.model(
+        if stage == "train" or self.ema_model is None:
+            model = self.model
+        else:
+            model = self.ema_model
+
+        _, log_inputs, log_preds, log_targets, loss_pred = model(
             batch,
             stage=stage,
             ssl_phase=self.trainer.ssl_phase,
         )
 
-        self.log_step(
-            name="loss_pred",
-            value=loss_pred,
-            ssl_phase=self.trainer.ssl_phase,
-            stage=stage,
-        )
-        return {"loss": loss_pred, "masked": None, "rec": None}
+        return {
+            "loss": loss_pred,
+            "log_inputs": log_inputs,
+            "log_preds": log_preds,
+            "log_targets": log_targets,
+        }
 
     def shared_step(
         self,
@@ -168,14 +179,18 @@ class BaselineModule(BaseModule):
             )
 
         match self.trainer.ssl_phase:
-            case "probe" | "finetune":
+            case "finetune":
                 return self.probe_or_finetune_step(batch, stage)
             case _:
                 msg = (
                     f"Invalid ssl phase {self.trainer.ssl_phase}."
-                    " Expected 'probe' or 'finetune'"
+                    " Expected 'finetune'"
                 )
                 raise ValueError(msg)
+            
+    def on_train_epoch_end(self) -> None:
+        if self.ema_model is not None:
+            self.update_ema()
 
     def training_step(
         self,
@@ -197,20 +212,3 @@ class BaselineModule(BaseModule):
         batch_idx: int,  # noqa: ARG002
     ) -> dict[str, torch.Tensor]:
         return self.shared_step(batch, stage="test")
-
-    def on_epoch_end(self, stage: Literal["train", "val", "test"]) -> None:
-        """Log epoch metrics for training/validation."""
-        self.log_metric(
-            name=f"{self.trainer.ssl_phase}_loss_pred/{stage}",
-            value=self.model.metrics[f"loss_pred_{stage}"].compute(),
-        )
-        self.model.metrics[f"loss_pred_{stage}"].reset()
-
-        for name_target in self.dataset.targets:
-            metrics = self.model.metrics[f"{name_target}_{stage}"].compute()
-            for name_metric, value in metrics.items():
-                self.log_metric(
-                    name=f"{self.trainer.ssl_phase}_{name_target}/{name_metric}_{stage}",
-                    value=value,
-                )
-            self.model.metrics[f"{name_target}_{stage}"].reset()

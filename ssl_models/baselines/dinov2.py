@@ -1,27 +1,32 @@
-from transformers import Dinov2Config, Dinov2Model, AutoModel, AutoConfig
-from transformers.models.dinov2.modeling_dinov2 import Dinov2Embeddings, Dinov2Encoder
-from abc import ABC, abstractmethod
-from ssl_models.baselines.utils import get_imagenet_dinov2_state_dict, get_canopy_sate_dict, filter_dict
-import torch
+from abc import ABC
+
 from torch.nn import ModuleDict, Module, LayerNorm
 from torchmetrics import MeanMetric
-from functools import partial, reduce
 import torch.nn.functional as F  # noqa: N812
 from torch import Tensor
+import torch
 
 from conf.dataset.utils import RasterConfig
 from conf.datasets import DatasetsConfig
+
 from ssl_models.layers.head import ClassificationHead, PixelifyHead
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
-from einops import rearrange
-from typing import Literal
 from ssl_models.layers.utils import (
     group_mods,
     ungroup_mods,
     encode_dates
 )
+from ssl_models.baselines.utils import get_imagenet_dinov2_state_dict, get_canopy_sate_dict, filter_dict
+from ssl_models.baselines.base import BaseModule
 
-class DinoSegmentor(Module, ABC):
+from einops import rearrange
+from typing import Literal
+from functools import partial
+
+from transformers import Dinov2Config, AutoConfig
+from transformers.models.dinov2.modeling_dinov2 import Dinov2Embeddings, Dinov2Encoder
+
+class DinoSegmentor(BaseModule):
     """Semantic Segmentation model based on DinoV2."""
 
     def __init__(
@@ -62,8 +67,6 @@ class DinoSegmentor(Module, ABC):
             Arguments to pass to `BaseModel` constructor.
         """
 
-        super().__init__(**kwargs)
-
         self.dataset = datasets.dataset
         self.image_size = image_size
         self.type_head = type_head
@@ -76,7 +79,7 @@ class DinoSegmentor(Module, ABC):
             self.patch_size = 14
         else:
             self.patch_size = 16
-        
+
         self.embed_dim_by_size =  {'tiny': 192, 'small': 384, 'base': 768, 'large': 1024, 'huge': 1280}
         
         assert self.image_size % self.patch_size == 0, "Image size ({}) must be multiple of patch size ({})".format(self.image_size, self.patch_size)
@@ -86,6 +89,8 @@ class DinoSegmentor(Module, ABC):
         assert (self.weights_path is not None or self.weight_source == 'imagenet'), 'A weight path should be given.'
         
         self.embed_dim = self.embed_dim_by_size[self.backbone_size]
+
+        super().__init__(datasets, self.patch_size, self.embed_dim, type_head, unpool_dim, fac_date_enc, date_dim, **kwargs)
         
         self.input_image_size = (self.image_size // self.patch_size) * self.patch_size
 
@@ -347,116 +352,6 @@ class DinoSegmentor(Module, ABC):
 
         return grouped_parameters
     
-    def add_date_encodings(
-        self,
-        x_enc: dict[str, Tensor],
-        dates: dict[str, Tensor],
-        ref_date: Tensor,
-    ) -> dict[str, Tensor]:
-        """Add positional and date encodings before encoder."""
-        x_enc = self.ungroup(x_enc)
-
-        for name_mod in x_enc:
-            date_encoding = self.enc_date_encoding[name_mod](
-                dates=dates[name_mod],
-                ref_date=ref_date,
-            )
-            x_enc[name_mod] = x_enc[name_mod] + date_encoding
-
-        return self.group(x_enc)
-
-    def compute_loss_pred(
-        self,
-        x_enc: dict[str, Tensor],
-        batch: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
-        stage: Literal["train", "val", "test"],
-    ) -> Tensor:
-        """Shared loss computation for all MIM modules."""
-        x_enc = self.ungroup(x_enc)
-
-        ref_input = self.dataset.ref_input
-        if ref_input is not None:
-            x_ref = {}
-            for name_mod in x_enc:
-                D = x_enc[name_mod].shape[1]  # noqa: N806
-                H = self.grid_size[name_mod]  # noqa: N806
-                x_ref[name_mod] = rearrange(
-                    x_enc[name_mod],
-                    "b d (h w) c -> (b d) c h w",
-                    h=H,
-                )
-                x_ref[name_mod] = F.interpolate(
-                    x_ref[name_mod],
-                    (self.grid_size[ref_input],) * 2,
-                    mode="bilinear",
-                )
-                x_ref[name_mod] = rearrange(
-                    x_ref[name_mod],
-                    "(b d) c h w -> b d (h w) c",
-                    d=D,
-                )
-            x_ref = torch.cat(
-                [x_ref[name_mod] for name_mod in x_ref],
-                dim=1,
-            )
-
-        x_enc = torch.cat(
-            [x_enc[name_mod].flatten(1, 2) for name_mod in x_enc],
-            dim=1,
-        )
-
-        loss_pred = 0
-        for name_target, target in self.dataset.targets.items():
-            targets = batch[name_target]
-
-            match target.type_target:
-                case "segment":
-                    logits = self.heads[name_target](x_ref, ssl_phase)
-                    logits = rearrange(logits, "b 1 c h w -> (b h w) c")
-                    targets = rearrange(targets, "b 1 1 h w -> (b h w)")
-                    targets = targets.long()
-                case "change_detect":
-                    logits = self.heads[name_target](x_ref, ssl_phase)
-                    logits = rearrange(logits, "b 1 1 h w -> (b h w)")
-                    targets = rearrange(targets, "b 1 1 h w -> (b h w)")
-                    targets = targets.float()
-                case "multilabel_classif":
-                    logits = self.heads[name_target](x_enc, ssl_phase)
-                    targets = targets.float()
-                case "classif":
-                    logits = self.heads[name_target](x_enc, ssl_phase)
-                    targets = targets.long()
-
-            if targets.ndim > 1:
-                inds = (targets != target.missing_val).all(dim=1)
-            else:
-                inds = targets != target.missing_val
-
-            inds = inds.nonzero().squeeze(dim=1)
-            if len(inds) == 0:
-                continue
-
-            logits_selected = torch.index_select(
-                logits,
-                dim=0,
-                index=inds,
-            )
-            targets_selected = torch.index_select(
-                targets,
-                dim=0,
-                index=inds,
-            )
-            loss_pred += self.loss_pred[name_target](
-                logits_selected,
-                targets_selected,
-            )
-            self.metrics[f"{name_target}_{stage}"].update(
-                logits_selected,
-                targets_selected,
-            )
-        return loss_pred
-
     def forward(self,
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
@@ -492,14 +387,13 @@ class DinoSegmentor(Module, ABC):
             dates[name_mod] = batch[f"{name_mod}_dates"]
 
         ref_date = batch["ref_date"]
-        x = self.add_date_encodings(x, dates, ref_date)
+        x = self._add_date_encodings(x, dates, ref_date)
 
-        loss_pred = self.compute_loss_pred(
+        loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
             x,
             batch,
             ssl_phase,
             stage,
         )
         self.metrics[f"loss_pred_{stage}"].update(loss_pred)
-
-        return None, None, None, loss_pred
+        return None, log_input, log_pred, log_target, loss_pred

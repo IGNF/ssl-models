@@ -100,40 +100,6 @@ class BaseModule(LightningModule, ABC):
         """Probing/finetuning step."""
         return
     
-    def on_epoch_end(self, stage: Literal["train", "val", "test"]) -> None:
-        """Log epoch metrics for training/validation."""
-        match self.trainer.ssl_phase:
-            case "pretrain":
-                self.log_metric(
-                    name=f"{self.trainer.ssl_phase}_loss_rec/{stage}",
-                    value=self.model.metrics[f"loss_rec_{stage}"].compute(),
-                )
-                self.model.metrics[f"loss_rec_{stage}"].reset()
-            case "probe" | "finetune":
-                self.log_metric(
-                    name=f"{self.trainer.ssl_phase}_loss_pred/{stage}",
-                    value=self.model.metrics[f"loss_pred_{stage}"].compute(),
-                )
-                self.model.metrics[f"loss_pred_{stage}"].reset()
-
-                for name_target in self.dataset.targets:
-                    metrics = self.model.metrics[f"{name_target}_{stage}"].compute()
-                    for name_metric, value in metrics.items():
-                        self.log_metric(
-                            name=f"{self.trainer.ssl_phase}_{name_target}/{name_metric}_{stage}",
-                            value=value,
-                        )
-                    self.model.metrics[f"{name_target}_{stage}"].reset()
-
-    def on_train_epoch_end(self) -> None:
-        self.on_epoch_end(stage="train")
-
-    def on_validation_epoch_end(self) -> None:
-        self.on_epoch_end(stage="val")
-
-    def on_test_epoch_end(self) -> None:
-        self.on_epoch_end(stage="test")
-
     def log_metric(
         self,
         name: str,

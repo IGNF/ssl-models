@@ -30,21 +30,14 @@ def run_experiment(
     trainer: TrainerConfig,
 ) -> None:
     """Run experiment, with arguments set up using hydra zen."""
-    
+
     trainer_partial = partial(SSLTrainer, run=run, **vars(trainer))
+    data_partial = partial(SSLDataModule, datasets=datasets, **vars(data))
 
     if isinstance(model, BaselineConfig):
         model_partial = partial(BaselineModule, datasets=datasets, **vars(model))
     else:
         model_partial = partial(SSLModule, datasets=datasets, mask=mask, **vars(model))
-
-    data_partial = partial(SSLDataModule, datasets=datasets, **vars(data))
-    
-    data_pretrain = data_partial(ssl_phase="pretrain")
-    trainer_pretrain = trainer_partial(
-        ssl_phase="pretrain",
-        opt=opt_pretrain,
-    )
 
     if (
         run.use_clearml
