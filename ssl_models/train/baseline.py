@@ -7,8 +7,8 @@ from torch import Tensor
 from torch.nn import functional as F  # noqa: N812
 
 from conf.datasets import DatasetsConfig
-from ssl_models.baselines.dinov2 import DinoSegmentor
-from ssl_models.baselines.dofa import DOFASegmentor
+from ssl_models.baselines.dinov2 import Dinov2Baseline
+from ssl_models.baselines.dofa import DOFABaseline
 from ssl_models.train.base import BaseModule
 
 torch.set_float32_matmul_precision(precision="medium")
@@ -74,10 +74,23 @@ class BaselineModule(BaseModule):
                     "freeze": freeze
                 }
 
-                self.model = DinoSegmentor(**model_args)
+                self.model = Dinov2Baseline(**model_args)
 
             case "dofa":
-                pass
+                unpool_dim = None
+
+                if len(datasets.filter_finetune)>1:
+                    raise NotImplementedError("Too many datasets given.")
+                
+                model_args = {
+                    "datasets": datasets,
+                    "type_head": type_head,
+                    "backbone_size": model_size,
+                    "unpool_dim": unpool_dim,
+                    "freeze": freeze
+                }
+
+                self.model = DOFABaseline(**model_args)
             case _:
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)
