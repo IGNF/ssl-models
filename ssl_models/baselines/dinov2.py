@@ -1,32 +1,19 @@
-from abc import ABC
-
-from torch.nn import ModuleDict, Module, LayerNorm
-from torchmetrics import MeanMetric
+from torch.nn import ModuleDict, LayerNorm
 import torch.nn.functional as F  # noqa: N812
 from torch import Tensor
 import torch
 
-from conf.dataset.utils import RasterConfig
 from conf.datasets import DatasetsConfig
 
-from ssl_models.layers.head import ClassificationHead, PixelifyHead
-from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
-from ssl_models.layers.utils import (
-    group_mods,
-    ungroup_mods,
-    encode_dates
-)
 from ssl_models.baselines.utils import get_imagenet_dinov2_state_dict, get_canopy_sate_dict, filter_dict
 from ssl_models.baselines.base import BaseModule
 
-from einops import rearrange
 from typing import Literal
-from functools import partial
 
 from transformers import Dinov2Config, AutoConfig
 from transformers.models.dinov2.modeling_dinov2 import Dinov2Embeddings, Dinov2Encoder
 
-class DinoSegmentor(BaseModule):
+class Dinov2Baseline(BaseModule):
     """Semantic Segmentation model based on DinoV2."""
 
     def __init__(
@@ -92,120 +79,10 @@ class DinoSegmentor(BaseModule):
 
         super().__init__(datasets, self.patch_size, self.embed_dim, type_head, unpool_dim, fac_date_enc, date_dim, **kwargs)
         
-        self.input_image_size = (self.image_size // self.patch_size) * self.patch_size
-
-        self.num_bands = {
-            name_mod: (
-                [mod.bands] if isinstance(mod.bands, int) else list(map(len, mod.bands))
-            )
-            for name_mod, mod in datasets.dataset.inputs.items()
-        }
-        self.len_bands = {
-            name_mod: len(num_bands) for name_mod, num_bands in self.num_bands.items()
-        }
-
         self._build_backbone(backbone_size, weight_source)
 
         if freeze:
             self._freeze_backbone()
-        
-        self.grid_size = {}
-
-        for name_mod, mod in self.dataset.inputs.items():
-            self.grid_size[name_mod] = mod.image_size // self.patch_size
-
-        # heads
-        self.heads = ModuleDict()
-        for name_target, target in self.dataset.targets.items():
-            if isinstance(target, RasterConfig):
-                if self.dataset.ref_input is None:
-                    msg = f"Ref input must be provided for raster target {name_target}"
-                    raise ValueError(msg)
-                target_image_size = round(
-                    self.dataset.crop_meters / target.resolution_meters,
-                )
-                ref_grid_size = self.grid_size[self.dataset.ref_input]
-                if target_image_size % ref_grid_size:
-                    msg = (
-                        f"Target image size {target_image_size} "
-                        f"is not a multiple of ref input grid {ref_grid_size}"
-                    )
-                    raise ValueError(msg)
-                self.heads[name_target] = PixelifyHead(
-                    type_head,
-                    self.embed_dim,
-                    unpool_dim,
-                    target.num_classes,
-                    target_image_size // ref_grid_size,
-                )
-            else:
-                self.heads[name_target] = ClassificationHead(
-                    type_head,
-                    self.embed_dim,
-                    target.num_classes,
-                )
-
-        self.loss_pred = {}
-        self.metrics = ModuleDict()
-        for name_target, target in datasets.dataset.targets.items():
-            match target.type_target:
-                case "classif" | "segment":
-                    self.loss_pred[name_target] = F.cross_entropy
-                    metric_partial = partial(
-                        MonoLabelMetric,
-                        type_target=target.type_target,
-                        num_classes=target.num_classes,
-                    )
-                case "change_detect":
-                    self.loss_pred[name_target] = F.binary_cross_entropy_with_logits
-                    metric_partial = partial(
-                        MonoLabelMetric,
-                        type_target=target.type_target,
-                        num_classes=target.num_classes,
-                    )
-                case "multilabel_classif":
-                    self.loss_pred[name_target] = F.binary_cross_entropy_with_logits
-                    metric_partial = partial(
-                        MultiLabelMetric,
-                        num_labels=target.num_classes,
-                    )
-            for stage in ("train", "val", "test"):
-                self.metrics[f"{name_target}_{stage}"] = metric_partial()
-
-        for name_loss in ("loss_rec", "loss_pred"):
-            for stage in ("train", "val", "test"):
-                self.metrics[f"{name_loss}_{stage}"] = MeanMetric(
-                    dist_sync_on_step=False,
-                )
-
-        # flattening/unflattening of date dimensions
-        self.group = partial(
-            group_mods,
-            multimodal='shared',
-            groups=self.dataset.groups,
-        )
-        self.ungroup = partial(
-            ungroup_mods,
-            multimodal='shared',
-            groups=self.dataset.groups,
-            num_dates={
-                name_mod: mod.num_dates * self.len_bands[name_mod]
-                for name_mod, mod in self.dataset.inputs.items()
-            },
-            grid_size=self.grid_size,
-        )
-
-        self.enc_date_encoding = {
-            name_mod: partial(
-                encode_dates,
-                dim=self.embed_dim,
-                date_dim=date_dim,
-                fac_date_enc=fac_date_enc,
-                grid_size=self.grid_size[name_mod],
-                len_bands=self.len_bands[name_mod],
-            )
-            for name_mod in self.dataset.inputs
-        }
     
     def _get_base_config(self, backbone_size):
         original_config = AutoConfig.from_pretrained(f"facebook/dinov2-{backbone_size}")
