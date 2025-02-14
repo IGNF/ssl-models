@@ -1,74 +1,115 @@
 from torchgeo.models import DOFABase16_Weights, DOFALarge16_Weights
 import torch
-from abc import ABC, abstractmethod
-from torch.nn import Identity, Module
+from torch import Tensor
+from abc import ABC
+from torch.nn import ModuleDict, Parameter, ParameterDict
+from ssl_models.baselines.base import BaseModule
+from typing import Literal
+from ssl_models.baselines.utils import filter_dict
+from timm.models.vision_transformer import Block
 
-class DOFASegmentor(Module, ABC):
+class DOFABaseline(BaseModule, ABC):
     def __init__(
         self,
-        image_size: int,
-        in_channels: int,
+        datasets,
         backbone_size: str,
-        num_classes: int,
+        unpool_dim: int,
         freeze: bool = False,
-        seg_head: str = 'naive',
+        type_head: str = 'linear',
+        fac_date_enc: float = 1.0,
+        date_dim: int = 8,
         **kwargs,
     ) -> None:
 
-        super().__init__(**kwargs)
-
-        self.image_size = image_size
-        self.in_channels = in_channels
         self.backbone_size = backbone_size
-        self.num_classes = num_classes
         self.freeze = freeze
         
         self.patch_size = 16
 
-        self.args_by_size = {#'small': {'embed_dim': 384, 'depth': 12, 'num_heads': 6},
+        self.args_by_size = {
                              'base':  {'embed_dim': 768, 'depth': 12, 'num_heads': 12},
                              'large': {'embed_dim': 1024, 'depth': 24, 'num_heads': 16},
-                             #'huge':  {'embed_dim': 1280, 'depth': 32, 'num_heads': 16}
                             }
         self.weights_by_size = {'base': DOFABase16_Weights.DOFA_MAE,
                                 'large': DOFALarge16_Weights.DOFA_MAE}
 
         assert backbone_size in self.args_by_size.keys(), 'backbone_size should be in {}'.format(self.args_by_size.keys())
-
-        self.dofa = DOFA(img_size = self.image_size, patch_size = self.patch_size, global_pool=False, task='segmentation', **self.args_by_size[self.backbone_size])
-        self.dofa.load_state_dict(self.weights_by_size[self.backbone_size].get_state_dict(progress=True), strict=False)
-        self.dim = self.args_by_size[backbone_size]['embed_dim']
-        self.dofa.head = Identity()
-        self.wavelengths = [0.64, 0.56, 0.48, 0.81][:self.in_channels]
         
-        self.segmentation_head = self.get_segmentation_head(seg_head)
-        
-        self.aux_config = {}
+        self.weights_dict = self.weights_by_size[self.backbone_size].get_state_dict(progress=True)
+        #params
+        self.depth = self.args_by_size[backbone_size]['depth']
+        self.embed_dim = self.args_by_size[backbone_size]['embed_dim']
+        self.num_heads = self.args_by_size[backbone_size]['num_heads']
+        self.mlp_ratio = 4.0
+        self.norm_layer = partial(nn.LayerNorm, eps=1e-6)
+        self.type_head = type_head
+        self.unpool_dim = unpool_dim
+        self.fac_date_enc = fac_date_enc
+        self.date_dim = date_dim
 
-    def get_segmentation_head(self, seg_head):
-        """
-        Load the chosen segmentation head.
+        super().__init__(datasets, self.patch_size, self.embed_dim, self.type_head, self.unpool_dim, self.fac_date_enc, self.date_dim, **kwargs)
 
-        Parameters
-        ----------
-        seg_head: str
-            To chose among 'naive', 'progressive', 'upernet'.
+        #layers
+        self.wavelengths = {'aerial':[0.64, 0.56, 0.48, 0.81]}
+        self.patch_embed, self.pos_embed = self._build_patch_and_pos_embed(self.embed_dim, self.weights_dict)
+        self.cls_token = self._build_cls_token(self.embed_dim, self.weights_dict)
+        self.encoder = self._build_encoder(self.depth, self.embed_dim, self.num_heads, self.mlp_ratio, self.norm_layer, self.weights_dict)
+        self.layernorm = self._build_layernorm(self.embed_dim, self.norm_layer, self.weights_dict)
 
-        Returns
-        -------
-        tuple: The segmentation head (nn.Module) instance.
-        
-        """
+    def _build_backbone(self):
+        #layers
+        self.wavelengths = {'aerial':[0.64, 0.56, 0.48, 0.81]}
+        self.patch_embed, self.pos_embed = self._build_patch_and_pos_embed(self.embed_dim, self.weights_dict)
+        self.cls_token = self._build_cls_token(self.embed_dim, self.weights_dict)
+        self.encoder = self._build_encoder(self.depth, self.embed_dim, self.num_heads, self.mlp_ratio, self.norm_layer, self.weights_dict)
+        self.layernorm = self._build_layernorm(self.embed_dim, self.norm_layer, self.weights_dict)
 
-        if seg_head == 'naive':
-            return NaiveHead(self.patch_size, self.dim, self.image_size, self.num_classes)
-        elif seg_head == 'upernet':
-            assert self.backbone_size == 'large', "Upernet segmentation head needs ViT large backbone."
-            return UperNetSegmentationHead(self.patch_size, self.dim, self.image_size, self.num_classes, backbone_type='dinov2_large')
-        else:
-            raise NotImplementedError
+    def _build_patch_and_pos_embed(self, embed_dim, state_dict=None):
+        patch_embed = ModuleDict()
+        pos_embed = ParameterDict()
     
-    def freeze_backbone(self):
+        for name_mod in self.dataset.inputs:
+            patch_embed[name_mod] = DOFAEmbedding(
+                dynamic_embed_dim=128, kernel_size=16, embed_dim=embed_dim
+            )
+
+            num_patches = (self.dataset.inputs[name_mod].image_size // self.patch_size) ** 2 
+
+            pos_embed[name_mod] = Parameter(torch.zeros(1, num_patches + 1, embed_dim), requires_grad=False)  # fixed sin-cos embedding
+
+            if state_dict is not None:
+                self._transfer(state_dict, patch_embed[name_mod], 'embeddings')
+
+        return patch_embed, pos_embed
+    
+    def _build_cls_token(self, embed_dim, state_dict):
+        cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        
+        if state_dict is not None:
+            cls_token.data = state_dict['cls_token']
+        
+        return cls_token 
+    
+    def _build_encoder(self, depth, embed_dim, num_heads, mlp_ratio, norm_layer, state_dict=None):
+        encoder = nn.ModuleList([Block(embed_dim,num_heads,mlp_ratio, qkv_bias=True,norm_layer=norm_layer) for i in range(depth)])
+        
+        if state_dict is not None:
+            self._transfer(state_dict, encoder, 'blocks')
+        
+        return encoder
+    
+    def _build_layernorm(self, embed_dim, norm_layer, state_dict=None):
+        layernorm = norm_layer(embed_dim)
+
+        if state_dict is not None:
+            self._transfer(state_dict, layernorm, 'layernorm')
+
+        return layernorm
+
+    def _transfer(self, state_dict, module, headname):
+        module.load_state_dict(filter_dict(state_dict, headname), strict=False)
+
+    def _freeze_backbone(self):
         """
         Freeze the backbone's parameters (self.dofa).
 
@@ -77,8 +118,7 @@ class DOFASegmentor(Module, ABC):
         Returns
         -------
         """
-        for param in self.dofa.parameters():
-            param.requires_grad = False
+        pass
     
     def grouped_parameters(self, base_lr, rate_decay=0.75):
         """
@@ -119,30 +159,45 @@ class DOFASegmentor(Module, ABC):
             print('Layer "{}": {}'.format(k, lr))
 
         return grouped_parameters
+    
+    def forward(self, batch: dict[str, Tensor],         
+                ssl_phase: Literal["pretrain", "probe", "finetune"],
+                stage: Literal["train", "val", "test"],
+    ):
+        # append cls token
+        input = self.group(batch)
+        x, dates = {}, {}
 
-    def forward(self, batch, key):
-        """
-        DOFA forward pass.
+        for name_mod in self.dataset.inputs:
+            input_mod = input[name_mod]
+            waves_mod = torch.tensor(self.wavelengths[name_mod], device=input_mod.device).float()
 
-        Parameters
-        ----------
-        batch: dict
-            Dictionary containing the data.
-        key: str
-            Input's key.
+            x_tokenized, _ = self.patch_embed[name_mod](input_mod, waves_mod)
+            x_tokenized = x_tokenized + self.pos_embed[name_mod][:, 1:, :]
+            cls_token = self.cls_token + self.pos_embed[name_mod][:, :1, :]
+            cls_tokens = cls_token.expand(x_tokenized.shape[0], -1, -1)
+            x_enc = torch.cat((cls_tokens, x_tokenized), dim=1)
 
-        Returns
-        -------
-        tuple: DOFA's outputs.
-        """
-        # Forward pass through the dinov2 encoder, get encoder's feature maps.
-        input = batch[key][:, :self.in_channels, :, :]
+            for block in self.encoder:
+                x_enc = block(x_enc)
 
-        output_dofa = self.dofa(input, self.wavelengths)
-        output = self.segmentation_head(output_dofa)
-        
-        return output, []
-        
+            x_enc = self.layernorm(x_enc) #??
+
+            x[name_mod] = x_enc[:, 1:]
+            dates[name_mod] = batch[f"{name_mod}_dates"]
+
+        ref_date = batch["ref_date"]
+        x = self._add_date_encodings(x, dates, ref_date)
+
+        loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
+            x,
+            batch,
+            ssl_phase,
+            stage,
+        )
+        self.metrics[f"loss_pred_{stage}"].update(loss_pred)
+        return None, log_input, log_pred, log_target, loss_pred
+
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
