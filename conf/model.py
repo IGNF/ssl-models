@@ -1,9 +1,9 @@
 """Model conf."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from hydra_zen import store
-
+from typing import List
 
 @dataclass
 class ModelConfig:  # noqa: D101
@@ -30,7 +30,7 @@ class BaselineConfig:  # noqa: D101
     loss: str = "l2_norm"
     freeze: bool = False
     weight_source: str = 'imagenet'
-    weights_path: str = '/mnt/stores/store-DAI/equipiers/mvaccaro/foret/HighResCanopyHeight/compressed_SSLlarge.pth'
+    weights_path: str = None
 
 model_store = store(group="model")
 model_store(ModelConfig, name="default_model")

@@ -4,7 +4,7 @@ from torch import Tensor
 from abc import ABC
 from torch.nn import ModuleDict, Parameter, ParameterDict
 from ssl_models.baselines.base import BaseModule
-from typing import Literal
+from typing import Literal, List
 from ssl_models.baselines.utils import filter_dict
 from timm.models.vision_transformer import Block
 
@@ -14,8 +14,9 @@ class DOFABaseline(BaseModule, ABC):
         datasets,
         backbone_size: str,
         unpool_dim: int,
+        weights_path: str = None,
         freeze: bool = False,
-        type_head: str = 'linear',
+        type_head: List[str] = 'linear',
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         **kwargs,
@@ -35,7 +36,11 @@ class DOFABaseline(BaseModule, ABC):
 
         assert backbone_size in self.args_by_size.keys(), 'backbone_size should be in {}'.format(self.args_by_size.keys())
         
-        self.weights_dict = self.weights_by_size[self.backbone_size].get_state_dict(progress=True)
+        if weights_path is not None:
+            self.weights_dict = torch.load(weights_path)
+        else:
+            self.weights_dict = self.weights_by_size[self.backbone_size].get_state_dict(progress=True)
+
         #params
         self.depth = self.args_by_size[backbone_size]['depth']
         self.embed_dim = self.args_by_size[backbone_size]['embed_dim']
@@ -55,7 +60,7 @@ class DOFABaseline(BaseModule, ABC):
         self.cls_token = self._build_cls_token(self.embed_dim, self.weights_dict)
         self.encoder = self._build_encoder(self.depth, self.embed_dim, self.num_heads, self.mlp_ratio, self.norm_layer, self.weights_dict)
         self.layernorm = self._build_layernorm(self.embed_dim, self.norm_layer, self.weights_dict)
-
+    
     def _build_backbone(self):
         #layers
         self.wavelengths = {'aerial':[0.64, 0.56, 0.48, 0.81]}
@@ -78,7 +83,7 @@ class DOFABaseline(BaseModule, ABC):
             pos_embed[name_mod] = Parameter(torch.zeros(1, num_patches + 1, embed_dim), requires_grad=False)  # fixed sin-cos embedding
 
             if state_dict is not None:
-                self._transfer(state_dict, patch_embed[name_mod], 'embeddings')
+                self._transfer(state_dict, patch_embed[name_mod], 'patch_embed')
 
         return patch_embed, pos_embed
     
@@ -102,7 +107,7 @@ class DOFABaseline(BaseModule, ABC):
         layernorm = norm_layer(embed_dim)
 
         if state_dict is not None:
-            self._transfer(state_dict, layernorm, 'layernorm')
+            self._transfer(state_dict, layernorm, 'norm')
 
         return layernorm
 

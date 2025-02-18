@@ -87,7 +87,8 @@ class BaselineModule(BaseModule):
                     "type_head": type_head,
                     "backbone_size": model_size,
                     "unpool_dim": unpool_dim,
-                    "freeze": freeze
+                    "freeze": freeze,
+                    "weights_path": weights_path
                 }
 
                 self.model = DOFABaseline(**model_args)
