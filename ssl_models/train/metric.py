@@ -90,10 +90,14 @@ class MonoLabelMetric(Metric):
         metrics = {
             "overall_accuracy": overall_acc,
             "average_f1": torch.index_select(
-                per_class_f1, dim=0, index=valid_classes_inds
+                per_class_f1,
+                dim=0,
+                index=valid_classes_inds,
             ).mean(),
             "average_iou": torch.index_select(
-                per_class_iou, dim=0, index=valid_classes_inds
+                per_class_iou,
+                dim=0,
+                index=valid_classes_inds,
             ).mean(),
             "confusion_matrix": self.cm,
         }
