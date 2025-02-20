@@ -55,15 +55,14 @@ class DOFABaseline(BaseModule, ABC):
         super().__init__(datasets, self.patch_size, self.embed_dim, self.type_head, self.unpool_dim, self.fac_date_enc, self.date_dim, **kwargs)
 
         #layers
-        self.wavelengths = {'aerial':[0.64, 0.56, 0.48, 0.81]}
-        self.patch_embed, self.pos_embed = self._build_patch_and_pos_embed(self.embed_dim, self.weights_dict)
-        self.cls_token = self._build_cls_token(self.embed_dim, self.weights_dict)
-        self.encoder = self._build_encoder(self.depth, self.embed_dim, self.num_heads, self.mlp_ratio, self.norm_layer, self.weights_dict)
-        self.layernorm = self._build_layernorm(self.embed_dim, self.norm_layer, self.weights_dict)
+        self.wavelengths = {'aerial':[0.64, 0.56, 0.48, 0.81], 
+                            'spot':[0.66, 0.56, 0.48], 
+                            's2':[0.665, 0.560, 0.490, 0.842, 0.705, 0.740, 0.783, 0.865, 1.610, 2.190],
+                            's1':[5.405, 5.405]}
+        self._build_backbone()
     
     def _build_backbone(self):
         #layers
-        self.wavelengths = {'aerial':[0.64, 0.56, 0.48, 0.81]}
         self.patch_embed, self.pos_embed = self._build_patch_and_pos_embed(self.embed_dim, self.weights_dict)
         self.cls_token = self._build_cls_token(self.embed_dim, self.weights_dict)
         self.encoder = self._build_encoder(self.depth, self.embed_dim, self.num_heads, self.mlp_ratio, self.norm_layer, self.weights_dict)
