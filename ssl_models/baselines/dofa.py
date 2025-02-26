@@ -165,21 +165,23 @@ class DOFABaseline(BaseModule, ABC):
         List: A list of dictionnaries, containing 'params' and 'lr' keys, in which parameters are grouped.
 
         """
-        num_layers = len(self.dofa.blocks)
-        lr_map = dict([('dofa.blocks.{}'.format(i), base_lr * rate_decay ** (num_layers - i)) for i in range(num_layers)])
+        num_layers = len(self.encoder)
+        lr_map = dict([('encoder.{}'.format(i), base_lr * rate_decay ** (num_layers - i)) for i in range(num_layers)])
         
-        lr_map['dofa.norm'] = base_lr * rate_decay ** (num_layers+1)
-        lr_map['dofa.patch_embed'] = base_lr * rate_decay ** (num_layers+1)
+        lr_map['layernorm'] = base_lr * rate_decay ** (num_layers+1)
+        lr_map['patch_embed'] = base_lr * rate_decay ** (num_layers+1)
  
-        lr_map['segmentation_head'] = base_lr
+        lr_map['heads'] = base_lr
         
         params_dict = {}
-        params_dict['dofa.norm'] = self.dofa.norm.parameters()
-        params_dict['dofa.patch_embed'] = self.dofa.patch_embed.parameters()
-        params_dict['segmentation_head'] = self.segmentation_head.parameters()
+        params_dict['layernorm'] = self.layernorm.parameters()
+        for name_mod in self.patch_embed:
+            params_dict['patch_embed.{}'.format(name_mod)] = self.patch_embed[name_mod].parameters()
+
+        params_dict['heads'] = self.heads.parameters()
 
         for i in range(num_layers):
-            params_dict['dofa.blocks.{}'.format(i)] = self.dofa.blocks[i].parameters()
+            params_dict['encoder.{}'.format(i)] = self.encoder[i].parameters()
             
         print('Layerwise learning rates:')
         grouped_parameters = []
