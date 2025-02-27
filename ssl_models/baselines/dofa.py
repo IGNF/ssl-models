@@ -169,7 +169,8 @@ class DOFABaseline(BaseModule, ABC):
         lr_map = dict([('encoder.{}'.format(i), base_lr * rate_decay ** (num_layers - i)) for i in range(num_layers)])
         
         lr_map['layernorm'] = base_lr * rate_decay ** (num_layers+1)
-        lr_map['patch_embed'] = base_lr * rate_decay ** (num_layers+1)
+        for name_mod in self.patch_embed:
+            lr_map['patch_embed.{}'.format(name_mod)] = base_lr * rate_decay ** (num_layers+1)
  
         lr_map['heads'] = base_lr
         
