@@ -165,8 +165,12 @@ class DOFABaseline(BaseModule, ABC):
         List: A list of dictionnaries, containing 'params' and 'lr' keys, in which parameters are grouped.
 
         """
-        num_layers = len(self.encoder)
-        lr_map = dict([('encoder.{}'.format(i), base_lr * rate_decay ** (num_layers - i)) for i in range(num_layers)])
+        lr_map = {}
+
+        for name_mod in self.encoder:
+            num_layers = len(self.encoder[name_mod])
+            for i in range(num_layers):
+                lr_map['encoder.{}.{}'.format(name_mod, i)] = base_lr * rate_decay ** (num_layers - i)
         
         lr_map['layernorm'] = base_lr * rate_decay ** (num_layers+1)
         for name_mod in self.patch_embed:
@@ -180,9 +184,11 @@ class DOFABaseline(BaseModule, ABC):
             params_dict['patch_embed.{}'.format(name_mod)] = self.patch_embed[name_mod].parameters()
 
         params_dict['heads'] = self.heads.parameters()
-
-        for i in range(num_layers):
-            params_dict['encoder.{}'.format(i)] = self.encoder[i].parameters()
+        
+        for name_mod in self.encoder:
+            num_layers = len(self.encoder[name_mod])
+            for i in range(num_layers):
+                params_dict['encoder.{}.{}'.format(name_mod, i)] = self.encoder[i].parameters()
             
         print('Layerwise learning rates:')
         grouped_parameters = []
