@@ -24,6 +24,7 @@ class Dinov2Baseline(BaseModule):
         unpool_dim: int,
         freeze: bool = False,
         type_head: str = 'linear',
+        multimodal: str = 'shared',
         weight_source: str = 'imagenet',
         weights_path: str = None,
         fac_date_enc: float = 1.0,
@@ -57,6 +58,7 @@ class Dinov2Baseline(BaseModule):
         self.dataset = datasets.dataset
         self.image_size = image_size
         self.type_head = type_head
+        self.multimodal = multimodal
         self.weight_source = weight_source
         self.weights_path = weights_path
         self.backbone_size = backbone_size
@@ -77,7 +79,7 @@ class Dinov2Baseline(BaseModule):
         
         self.embed_dim = self.embed_dim_by_size[self.backbone_size]
 
-        super().__init__(datasets, self.patch_size, self.embed_dim, type_head, unpool_dim, fac_date_enc, date_dim, **kwargs)
+        super().__init__(datasets, self.patch_size, self.embed_dim, self.type_head, self.multimodal, unpool_dim, fac_date_enc, date_dim, **kwargs)
         
         self._build_backbone(backbone_size, weight_source)
 
@@ -105,13 +107,20 @@ class Dinov2Baseline(BaseModule):
                 self._transfer(state_dict, patch_embed[name_mod], config_dict["num_channels"], 'embeddings')
 
         return patch_embed
-    
+
     def _build_encoder(self, config_dict, state_dict=None):
-        model_config = Dinov2Config(**config_dict)
-        encoder = Dinov2Encoder(model_config)
+        encoder = ModuleDict()
         
-        if state_dict is not None:
-            self._transfer(state_dict, encoder, 3, 'encoder')
+        model_names = self.dataset.inputs if self.multimodal != 'shared' else ['shared']
+        model_config = Dinov2Config(**config_dict)
+
+        for name_mod in model_names:
+            encoder_mod = Dinov2Encoder(model_config)
+
+            if state_dict is not None:
+                self._transfer(state_dict, encoder, 3, 'encoder')
+
+            encoder[name_mod] = encoder_mod
 
         return encoder
     
@@ -256,7 +265,10 @@ class Dinov2Baseline(BaseModule):
             input_mod = input[name_mod]
 
             x_tokenized = self.patch_embed[name_mod](input_mod)
-            x_enc = self.encoder(x_tokenized)['last_hidden_state']
+
+            encoder_mod = 'shared' if self.multimodal == 'shared' else name_mod
+
+            x_enc = self.encoder[encoder_mod](x_tokenized)['last_hidden_state']
             x_enc = self.layernorm(x_enc)
             x_enc = x_enc[:, 1:]
         
