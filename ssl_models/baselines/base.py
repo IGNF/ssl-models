@@ -27,12 +27,13 @@ from typing import Literal
 BANDS_RGB = 3
 
 class BaseModule(Module, ABC):
-    def __init__(self, datasets, patch_size, embed_dim, type_head, unpool_dim, fac_date_enc: float = 1.0, date_dim: int = 8, **kwargs):
+    def __init__(self, datasets, patch_size, embed_dim, type_head, multimodal, unpool_dim, fac_date_enc: float = 1.0, date_dim: int = 8, **kwargs):
         super().__init__(**kwargs)
 
         self.dataset = datasets.dataset
         self.type_head = type_head 
         self.patch_size = patch_size #à terme l'intégrer dans le dataset?
+        self.multimodal = multimodal
 
         self.num_bands = {
             name_mod: (
@@ -116,12 +117,12 @@ class BaseModule(Module, ABC):
         # flattening/unflattening of date dimensions
         self.group = partial(
             group_mods,
-            multimodal='shared',
+            multimodal=self.multimodal,
             groups=self.dataset.groups,
         )
         self.ungroup = partial(
             ungroup_mods,
-            multimodal='shared',
+            multimodal=self.multimodal,
             groups=self.dataset.groups,
             num_dates={
                 name_mod: mod.num_dates * self.len_bands[name_mod]

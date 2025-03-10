@@ -17,6 +17,7 @@ class DOFABaseline(BaseModule, ABC):
         weights_path: str = None,
         freeze: bool = False,
         type_head: List[str] = 'linear',
+        multimodal: str = 'shared',
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         **kwargs,
@@ -48,11 +49,12 @@ class DOFABaseline(BaseModule, ABC):
         self.mlp_ratio = 4.0
         self.norm_layer = partial(nn.LayerNorm, eps=1e-6)
         self.type_head = type_head
+        self.multimodal = multimodal
         self.unpool_dim = unpool_dim
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
 
-        super().__init__(datasets, self.patch_size, self.embed_dim, self.type_head, self.unpool_dim, self.fac_date_enc, self.date_dim, **kwargs)
+        super().__init__(datasets, self.patch_size, self.embed_dim, self.type_head, self.multimodal, self.unpool_dim, self.fac_date_enc, self.date_dim, **kwargs)
 
         #layers
         self.wavelengths = {'aerial':[0.64, 0.56, 0.48, 0.81], 
@@ -65,7 +67,12 @@ class DOFABaseline(BaseModule, ABC):
         #layers
         self.patch_embed, self.pos_embed = self._build_patch_and_pos_embed(self.embed_dim, self.weights_dict)
         self.cls_token = self._build_cls_token(self.embed_dim, self.weights_dict)
-        self.encoder = self._build_encoder(self.depth, self.embed_dim, self.num_heads, self.mlp_ratio, self.norm_layer, self.weights_dict)
+
+        if self.multimodal == 'shared':
+            self.encoder = self._build_encoder(self.depth, self.embed_dim, self.num_heads, self.mlp_ratio, self.norm_layer, self.weights_dict)
+        else:
+            self.encoder = self._build_multi_encoder(self.depth, self.embed_dim, self.num_heads, self.mlp_ratio, self.norm_layer, self.weights_dict)
+
         self.layernorm = self._build_layernorm(self.embed_dim, self.norm_layer, self.weights_dict)
 
     def _build_patch_and_pos_embed(self, embed_dim, state_dict=None):
@@ -95,13 +102,19 @@ class DOFABaseline(BaseModule, ABC):
         return cls_token 
     
     def _build_encoder(self, depth, embed_dim, num_heads, mlp_ratio, norm_layer, state_dict=None):
-        encoder = nn.ModuleList([Block(embed_dim,num_heads,mlp_ratio, qkv_bias=True,norm_layer=norm_layer) for i in range(depth)])
+        encoder = ModuleDict()
         
-        if state_dict is not None:
-            self._transfer(state_dict, encoder, 'blocks')
-        
+        model_names = self.dataset.inputs if self.multimodal != 'shared' else ['shared']
+
+        for name_mod in model_names:
+            encoder_mod = nn.ModuleList([Block(embed_dim,num_heads,mlp_ratio, qkv_bias=True,norm_layer=norm_layer) for i in range(depth)])
+            if state_dict is not None:
+                self._transfer(state_dict, encoder_mod, 'blocks')
+
+            encoder[name_mod] = encoder_mod
+
         return encoder
-    
+        
     def _build_layernorm(self, embed_dim, norm_layer, state_dict=None):
         layernorm = norm_layer(embed_dim)
 
@@ -122,8 +135,20 @@ class DOFABaseline(BaseModule, ABC):
         Returns
         -------
         """
-        pass
-    
+        for name_mod in self.patch_embed.keys():
+            # Necessary to unfreeze patchify layer if there are more than 3 channels
+            if self.len_bands[name_mod]<=3:
+                for param in self.patch_embed[name_mod].parameters():
+                    param.requires_grad = False
+        
+        self.cls_token.requires_grad = False
+
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+        
+        for param in self.layernorm.parameters():
+            param.requires_grad = False
+        
     def grouped_parameters(self, base_lr, rate_decay=0.75):
         """
         Return the grouped parameters dictionnary with layerwise learning rate.
@@ -181,10 +206,11 @@ class DOFABaseline(BaseModule, ABC):
             cls_token = self.cls_token + self.pos_embed[name_mod][:, :1, :]
             cls_tokens = cls_token.expand(x_tokenized.shape[0], -1, -1)
             x_enc = torch.cat((cls_tokens, x_tokenized), dim=1)
-
-            for block in self.encoder:
+            
+            encoder_mod = 'shared' if self.multimodal == 'shared' else name_mod
+            for block in self.encoder[encoder_mod]:
                 x_enc = block(x_enc)
-
+                            
             x_enc = self.layernorm(x_enc) #??
 
             x[name_mod] = x_enc[:, 1:]
