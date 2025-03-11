@@ -68,10 +68,7 @@ class DOFABaseline(BaseModule, ABC):
         self.patch_embed, self.pos_embed = self._build_patch_and_pos_embed(self.embed_dim, self.weights_dict)
         self.cls_token = self._build_cls_token(self.embed_dim, self.weights_dict)
 
-        if self.multimodal == 'shared':
-            self.encoder = self._build_encoder(self.depth, self.embed_dim, self.num_heads, self.mlp_ratio, self.norm_layer, self.weights_dict)
-        else:
-            self.encoder = self._build_multi_encoder(self.depth, self.embed_dim, self.num_heads, self.mlp_ratio, self.norm_layer, self.weights_dict)
+        self.encoder = self._build_encoder(self.depth, self.embed_dim, self.num_heads, self.mlp_ratio, self.norm_layer, self.weights_dict)
 
         self.layernorm = self._build_layernorm(self.embed_dim, self.norm_layer, self.weights_dict)
 
@@ -188,7 +185,7 @@ class DOFABaseline(BaseModule, ABC):
         for name_mod in self.encoder:
             num_layers = len(self.encoder[name_mod])
             for i in range(num_layers):
-                params_dict['encoder.{}.{}'.format(name_mod, i)] = self.encoder[i].parameters()
+                params_dict['encoder.{}.{}'.format(name_mod, i)] = self.encoder[name_mod][i].parameters()
             
         print('Layerwise learning rates:')
         grouped_parameters = []
