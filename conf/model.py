@@ -24,6 +24,7 @@ class ModelConfig:  # noqa: D101
 
 @dataclass
 class BaselineConfig:  # noqa: D101
+    multimodal: str = "shared"
     model: str = "dinov2" 
     model_size: str = "small"
     type_head: str = "linear"

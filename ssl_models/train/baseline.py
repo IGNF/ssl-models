@@ -30,7 +30,8 @@ class BaselineModule(BaseModule):
         weight_source: str = 'imagenet',
         weights_path: str = None,
         freeze: bool = False,
-        use_ema: bool = False
+        use_ema: bool = False,
+        multimodal: str = 'shared'
     ) -> None:
         super().__init__(datasets, model, loss)
 
@@ -71,7 +72,8 @@ class BaselineModule(BaseModule):
                     "weight_source": weight_source,
                     "weights_path": weights_path,
                     "image_size": image_size,
-                    "freeze": freeze
+                    "freeze": freeze,
+                    "multimodal": multimodal
                 }
 
                 self.model = Dinov2Baseline(**model_args)
@@ -88,7 +90,8 @@ class BaselineModule(BaseModule):
                     "backbone_size": model_size,
                     "unpool_dim": unpool_dim,
                     "freeze": freeze,
-                    "weights_path": weights_path
+                    "weights_path": weights_path,
+                    "multimodal": multimodal
                 }
 
                 self.model = DOFABaseline(**model_args)
