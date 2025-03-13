@@ -2,7 +2,7 @@ from torchgeo.models import DOFABase16_Weights, DOFALarge16_Weights
 import torch
 from torch import Tensor
 from abc import ABC
-from torch.nn import ModuleDict, Parameter, ParameterDict
+from torch.nn import ModuleDict, Parameter, ParameterDict, Identity
 from ssl_models.baselines.base import BaseModule
 from typing import Literal, List
 from ssl_models.baselines.utils import filter_dict
@@ -20,6 +20,7 @@ class DOFABaseline(BaseModule, ABC):
         multimodal: str = 'shared',
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
+        keep_norm: bool = True,
         **kwargs,
     ) -> None:
 
@@ -53,8 +54,9 @@ class DOFABaseline(BaseModule, ABC):
         self.unpool_dim = unpool_dim
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
-
-        super().__init__(datasets, self.patch_size, self.embed_dim, self.type_head, self.multimodal, self.unpool_dim, self.fac_date_enc, self.date_dim, **kwargs)
+        self.keep_norm = keep_norm
+        
+        super().__init__(datasets, self.patch_size, self.embed_dim, self.unpool_dim, self.type_head, self.multimodal, self.fac_date_enc, self.date_dim, self.keep_norm, **kwargs)
 
         #layers
         self.wavelengths = {'aerial':[0.64, 0.56, 0.48, 0.81], 
@@ -62,15 +64,18 @@ class DOFABaseline(BaseModule, ABC):
                             's2':[0.665, 0.560, 0.490, 0.842, 0.705, 0.740, 0.783, 0.865, 1.610, 2.190],
                             's1':[5.405, 5.405]}
         self._build_backbone()
-    
+
     def _build_backbone(self):
         #layers
         self.patch_embed, self.pos_embed = self._build_patch_and_pos_embed(self.embed_dim, self.weights_dict)
         self.cls_token = self._build_cls_token(self.embed_dim, self.weights_dict)
 
         self.encoder = self._build_encoder(self.depth, self.embed_dim, self.num_heads, self.mlp_ratio, self.norm_layer, self.weights_dict)
-
-        self.layernorm = self._build_layernorm(self.embed_dim, self.norm_layer, self.weights_dict)
+        
+        if self.keep_norm:
+            self.layernorm = self._build_layernorm(self.embed_dim, self.norm_layer, self.weights_dict)
+        else:
+            self.layernorm = Identity()
 
     def _build_patch_and_pos_embed(self, embed_dim, state_dict=None):
         patch_embed = ModuleDict()
@@ -133,15 +138,14 @@ class DOFABaseline(BaseModule, ABC):
         -------
         """
         for name_mod in self.patch_embed.keys():
-            # Necessary to unfreeze patchify layer if there are more than 3 channels
-            if self.len_bands[name_mod]<=3:
-                for param in self.patch_embed[name_mod].parameters():
-                    param.requires_grad = False
+            for param in self.patch_embed[name_mod].parameters():
+                param.requires_grad = False
         
         self.cls_token.requires_grad = False
-
-        for param in self.encoder.parameters():
-            param.requires_grad = False
+        
+        for name_mod in self.encoder.keys():
+            for param in self.encoder[name_mod].parameters():
+                param.requires_grad = False
         
         for param in self.layernorm.parameters():
             param.requires_grad = False
@@ -164,29 +168,28 @@ class DOFABaseline(BaseModule, ABC):
         """
         lr_map = {}
 
-        for name_mod in self.encoder:
-            num_layers = len(self.encoder[name_mod])
-            for i in range(num_layers):
-                lr_map['encoder.{}.{}'.format(name_mod, i)] = base_lr * rate_decay ** (num_layers - i)
-        
-        lr_map['layernorm'] = base_lr * rate_decay ** (num_layers+1)
         for name_mod in self.patch_embed:
-            lr_map['patch_embed.{}'.format(name_mod)] = base_lr * rate_decay ** (num_layers+1)
- 
+            lr_map['patch_embed.{}'.format(name_mod)] = base_lr * rate_decay ** (self.depth+1)
+
+        for name_mod in self.encoder:
+            for i in range(self.depth):
+                lr_map['encoder.{}.{}'.format(name_mod, i)] = base_lr * rate_decay ** (self.depth-i)
+        
         lr_map['heads'] = base_lr
         
         params_dict = {}
-        params_dict['layernorm'] = self.layernorm.parameters()
         for name_mod in self.patch_embed:
             params_dict['patch_embed.{}'.format(name_mod)] = self.patch_embed[name_mod].parameters()
-
-        params_dict['heads'] = self.heads.parameters()
         
         for name_mod in self.encoder:
-            num_layers = len(self.encoder[name_mod])
-            for i in range(num_layers):
+            for i in range(self.depth):
                 params_dict['encoder.{}.{}'.format(name_mod, i)] = self.encoder[name_mod][i].parameters()
-            
+        params_dict['heads'] = self.heads.parameters()
+        
+        if self.keep_norm:
+            lr_map['layernorm'] = base_lr
+            params_dict['layernorm'] = self.layernorm.parameters()
+
         print('Layerwise learning rates:')
         grouped_parameters = []
         for k, lr in lr_map.items():

@@ -32,6 +32,8 @@ class BaselineConfig:  # noqa: D101
     freeze: bool = False
     weight_source: str = 'imagenet'
     weights_path: str = None
+    keep_norm: bool = True
+
 
 model_store = store(group="model")
 model_store(ModelConfig, name="default_model")

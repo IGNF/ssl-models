@@ -29,6 +29,7 @@ class Dinov2Baseline(BaseModule):
         weights_path: str = None,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
+        keep_norm: bool = True,
         **kwargs,
     ) -> None:
         """Constructor.
@@ -63,6 +64,10 @@ class Dinov2Baseline(BaseModule):
         self.weights_path = weights_path
         self.backbone_size = backbone_size
         self.std = 0.01
+        self.keep_norm = keep_norm
+        self.unpool_dim = unpool_dim
+        self.fac_date_enc = fac_date_enc
+        self.date_dim = date_dim
 
         if self.weight_source == 'imagenet':
             self.patch_size = 14
@@ -70,7 +75,7 @@ class Dinov2Baseline(BaseModule):
             self.patch_size = 16
 
         self.embed_dim_by_size =  {'tiny': 192, 'small': 384, 'base': 768, 'large': 1024, 'huge': 1280}
-        
+        self.depth_by_size = {'small': 12, 'base': 12, 'large': 24, 'huge': 32}
         assert self.image_size % self.patch_size == 0, "Image size ({}) must be multiple of patch size ({})".format(self.image_size, self.patch_size)
         assert ((self.weight_source == 'imagenet' and backbone_size in ['small', 'base', 'large', 'huge']) \
                 or (self.weight_source == 'canopy' and backbone_size in ['large']) \
@@ -79,7 +84,7 @@ class Dinov2Baseline(BaseModule):
         
         self.embed_dim = self.embed_dim_by_size[self.backbone_size]
 
-        super().__init__(datasets, self.patch_size, self.embed_dim, self.type_head, self.multimodal, unpool_dim, fac_date_enc, date_dim, **kwargs)
+        super().__init__(datasets, self.patch_size, self.embed_dim, self.unpool_dim, self.type_head, self.multimodal, self.fac_date_enc, self.date_dim, self.keep_norm, **kwargs)
         
         self._build_backbone(backbone_size, weight_source)
 
@@ -156,7 +161,8 @@ class Dinov2Baseline(BaseModule):
         #encoder
         self.encoder = self._build_encoder(config_dict, state_dict=state_dict)
         #layer norm
-        self.layernorm = self._build_layer_norm(config_dict, state_dict=state_dict)
+        if self.keep_norm:
+            self.layernorm = self._build_layer_norm(config_dict, state_dict=state_dict)
         
     def _transfer_patch_embedding_to_more_channels(self, state_dict, num_channels, std):        
         with torch.no_grad():
@@ -189,8 +195,9 @@ class Dinov2Baseline(BaseModule):
                 for param in self.patch_embed[name_mod].parameters():
                     param.requires_grad = False
         
-        for param in self.encoder.parameters():
-            param.requires_grad = False
+        for name_mod in self.encoder.keys():
+            for param in self.encoder[name_mod].parameters():
+                param.requires_grad = False
         
         for param in self.layernorm.parameters():
             param.requires_grad = False
@@ -211,24 +218,32 @@ class Dinov2Baseline(BaseModule):
         List: A list of dictionnaries, containing 'params' and 'lr' keys, in which parameters are grouped.
 
         """
-        num_layers = len(self.encoder.layer)
-        lr_map = dict([('encoder.layer.{}'.format(i), base_lr * rate_decay ** (num_layers - i)) for i in range(num_layers)])
-        
+        lr_map = {}
+
         for name_mod in self.patch_embed:
             if self.len_bands[name_mod]<=3:
                 lr_map['patch_embed.{}'.format(name_mod)] = base_lr
             else: #RGB
-                lr_map['patch_embed.{}'.format(name_mod)] = base_lr * rate_decay ** (num_layers+1)
+                lr_map['patch_embed.{}'.format(name_mod)] = base_lr * rate_decay ** (self.depth+1)
 
-        lr_map['heads'] = base_lr
+        for name_mod in self.encoder:
+            for i in range(self.depth):
+                lr_map['encoder.{}.{}'.format(name_mod, i)] = base_lr * rate_decay ** (self.depth-i)
         
+        lr_map['heads'] = base_lr
+                
         params_dict = {}
         for name_mod in self.patch_embed:
             params_dict['patch_embed.{}'.format(name_mod)] = self.patch_embed[name_mod].parameters()
-        params_dict['heads'] = self.heads.parameters()
 
-        for i in range(num_layers):
+        for i in range(self.depth):
             params_dict['encoder.layer.{}'.format(i)] = self.encoder.layer[i].parameters()
+
+        if self.keep_norm:
+            lr_map['layernorm'] = base_lr
+            params_dict['layernorm'] =self.layernorm.parameters()
+
+        params_dict['heads'] = self.heads.parameters()
 
         print('Layerwise learning rates:')
         grouped_parameters = []
@@ -269,7 +284,10 @@ class Dinov2Baseline(BaseModule):
             encoder_mod = 'shared' if self.multimodal == 'shared' else name_mod
 
             x_enc = self.encoder[encoder_mod](x_tokenized)['last_hidden_state']
-            x_enc = self.layernorm(x_enc)
+
+            if self.keep_norm:
+                x_enc = self.layernorm(x_enc)
+
             x_enc = x_enc[:, 1:]
         
             x[name_mod] = x_enc

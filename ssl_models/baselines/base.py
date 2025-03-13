@@ -6,6 +6,8 @@ import torch
 
 from abc import ABC, abstractmethod
 from conf.dataset.utils import RasterConfig
+from conf.datasets import DatasetsConfig
+
 from ssl_models.layers.head import ClassificationHead, PixelifyHead
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 from ssl_models.layers.utils import (
@@ -27,14 +29,27 @@ from typing import Literal
 BANDS_RGB = 3
 
 class BaseModule(Module, ABC):
-    def __init__(self, datasets, patch_size, embed_dim, type_head, multimodal, unpool_dim, fac_date_enc: float = 1.0, date_dim: int = 8, **kwargs):
+    def __init__(
+        self, 
+        datasets: DatasetsConfig, 
+        patch_size: int, 
+        embed_dim: int, 
+        unpool_dim: int, 
+        type_head: str = 'linear', 
+        multimodal: str = 'shared', 
+        fac_date_enc: float = 1.0, 
+        date_dim: int = 8,
+        keep_norm: bool = True,
+        **kwargs
+    ) -> None:
         super().__init__(**kwargs)
 
         self.dataset = datasets.dataset
         self.type_head = type_head 
         self.patch_size = patch_size #à terme l'intégrer dans le dataset?
         self.multimodal = multimodal
-
+        self.keep_norm = keep_norm 
+        
         self.num_bands = {
             name_mod: (
                 [mod.bands] if isinstance(mod.bands, int) else list(map(len, mod.bands))
