@@ -31,7 +31,8 @@ class BaselineModule(BaseModule):
         weights_path: str = None,
         freeze: bool = False,
         use_ema: bool = False,
-        multimodal: str = 'shared'
+        multimodal: str = 'shared',
+        keep_norm: bool = True,
     ) -> None:
         super().__init__(datasets, model, loss)
 
@@ -73,7 +74,8 @@ class BaselineModule(BaseModule):
                     "weights_path": weights_path,
                     "image_size": image_size,
                     "freeze": freeze,
-                    "multimodal": multimodal
+                    "multimodal": multimodal,
+                    "keep_norm": keep_norm
                 }
 
                 self.model = Dinov2Baseline(**model_args)
@@ -91,7 +93,8 @@ class BaselineModule(BaseModule):
                     "unpool_dim": unpool_dim,
                     "freeze": freeze,
                     "weights_path": weights_path,
-                    "multimodal": multimodal
+                    "multimodal": multimodal,
+                    'keep_norm': keep_norm
                 }
 
                 self.model = DOFABaseline(**model_args)
