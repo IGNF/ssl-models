@@ -2,6 +2,7 @@
 
 import warnings
 from abc import ABC
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -111,12 +112,15 @@ class GenericDataset(Dataset, ABC):
         # read raster slices
         inputs = {}
         for name_mod, mod in self.dataset.rasters.items():
+            zoom_size = self.dataset.zoom_size if "zoom" in name_mod else None
             input_mod, dates_mod = self.preprocess_raster(
                 meta[f"{name_mod}_path"],
                 meta[f"{name_mod}_dates"],
                 meta.get(f"{name_mod}_mask", None),
                 meta.get(f"{name_mod}_h5_name", None),
                 meta.get(f"{name_mod}_h5_mask", None),
+                meta.get("ref_date"),
+                zoom_size,
                 start[name_mod],
                 end[name_mod],
                 **vars(mod),
@@ -126,13 +130,15 @@ class GenericDataset(Dataset, ABC):
 
         return inputs
 
-    def preprocess_raster(  # noqa: PLR0915
+    def preprocess_raster(  # noqa: PLR0915, C901
         self,
         path_mod: Path,
         dates_mod: np.ndarray,
         mask: Path | None,
         h5_name: str | None,
         h5_mask: str | None,
+        ref_date: np.array,
+        zoom_size: int | None,
         start: tuple[int],
         end: tuple[int],
         bands: int | list[list[int]],
@@ -192,7 +198,25 @@ class GenericDataset(Dataset, ABC):
                 msg = f"File format {path_mod.suffix} not supported."
                 raise NotImplementedError(msg)
 
-        if len(dates_mod) != num_dates:
+        if zoom_size:
+            ref_date_dtime = datetime.strptime(  # noqa: DTZ007
+                f"{ref_date[0]}-{ref_date[1]:03d}",
+                "%Y-%j",
+            )
+            zoom_dates_idx = np.argsort(
+                [
+                    np.abs(
+                        ref_date_dtime
+                        - datetime.strptime(f"{x[0]}-{x[1]:03d}", "%Y-%j"),  # noqa: DTZ007
+                    )
+                    for x in dates_mod
+                ],
+            )[:zoom_size]
+            dates_mod = np.take(dates_mod, np.sort(zoom_dates_idx), axis=0)
+            dates_mod = np.expand_dims(dates_mod, axis=(2, 3))
+            input_mod = np.take(input_mod, np.sort(zoom_dates_idx), axis=0)
+
+        elif len(dates_mod) != num_dates:
             input_mod = input_mod[slices[2]]
             input_mod = self.unflatten(input_mod, 0, (num_dates, -1))
             dates_mod = dates_mod[slices[2], :, None, None]
@@ -220,6 +244,7 @@ class GenericDataset(Dataset, ABC):
         input_mod = input_mod.astype(np.float32)
         if norm_fac is not None:
             input_mod /= norm_fac
+
         return input_mod, dates_mod
 
     def transform_rasters(
