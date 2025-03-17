@@ -14,7 +14,7 @@ class DOFABaseline(BaseModule, ABC):
         datasets,
         backbone_size: str,
         unpool_dim: int,
-        weights_path: str = None,
+        pretrained_path: str = None,
         freeze: bool = False,
         type_head: List[str] = 'linear',
         multimodal: str = 'shared',
@@ -38,8 +38,8 @@ class DOFABaseline(BaseModule, ABC):
 
         assert backbone_size in self.args_by_size.keys(), 'backbone_size should be in {}'.format(self.args_by_size.keys())
         
-        if weights_path is not None:
-            self.weights_dict = torch.load(weights_path)
+        if pretrained_path is not None:
+            self.weights_dict = torch.load(pretrained_path)
         else:
             self.weights_dict = self.weights_by_size[self.backbone_size].get_state_dict(progress=True)
 
