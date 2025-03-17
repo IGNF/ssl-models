@@ -81,13 +81,13 @@ def load_and_dequantize(path_compressed):
 
     return OrderedDict(deq_state_dict)
 
-def get_canopy_sate_dict(weights_path):
+def get_canopy_sate_dict(pretrained_path):
         """
         Load weights from the paper "Very high resolution canopy height maps from RGB imagery" (https://arxiv.org/abs/2304.07213).
 
         Parameters
         ----------
-        weights_path: str
+        pretrained_path: str
             Path to the weights.
         num_channels: int
             Number of input channels.
@@ -95,10 +95,10 @@ def get_canopy_sate_dict(weights_path):
         -------
 
         """
-        if 'compressed' in weights_path:
-            state_dict = load_and_dequantize(weights_path)
+        if 'compressed' in pretrained_path:
+            state_dict = load_and_dequantize(pretrained_path)
         else:
-            state_dict = torch.load(weights_path, weights_only=True)
+            state_dict = torch.load(pretrained_path, weights_only=True)
         
         #Rename and load
         state_dict = rename_weights(state_dict)

@@ -28,7 +28,7 @@ class BaselineModule(BaseModule):
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         weight_source: str = 'imagenet',
-        weights_path: str = None,
+        pretrained_path: str = None,
         freeze: bool = False,
         use_ema: bool = False,
         multimodal: str = 'shared',
@@ -71,7 +71,7 @@ class BaselineModule(BaseModule):
                     "backbone_size": model_size,
                     "unpool_dim": unpool_dim,
                     "weight_source": weight_source,
-                    "weights_path": weights_path,
+                    "pretrained_path": pretrained_path,
                     "image_size": image_size,
                     "freeze": freeze,
                     "multimodal": multimodal,
@@ -92,7 +92,7 @@ class BaselineModule(BaseModule):
                     "backbone_size": model_size,
                     "unpool_dim": unpool_dim,
                     "freeze": freeze,
-                    "weights_path": weights_path,
+                    "pretrained_path": pretrained_path,
                     "multimodal": multimodal,
                     'keep_norm': keep_norm
                 }
