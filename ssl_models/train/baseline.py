@@ -27,11 +27,11 @@ class BaselineModule(BaseModule):
         model_size: Literal["small", "base", "large", "huge"],
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
-        weight_source: str = 'imagenet',
+        weight_source: str = "imagenat",
         pretrained_path: str = None,
         freeze: bool = False,
         use_ema: bool = False,
-        multimodal: str = 'shared',
+        multimodal: str = "shared",
         keep_norm: bool = True,
     ) -> None:
         super().__init__(datasets, model, loss)
@@ -94,7 +94,7 @@ class BaselineModule(BaseModule):
                     "freeze": freeze,
                     "pretrained_path": pretrained_path,
                     "multimodal": multimodal,
-                    'keep_norm': keep_norm
+                    "keep_norm": keep_norm
                 }
 
                 self.model = DOFABaseline(**model_args)

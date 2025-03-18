@@ -16,8 +16,8 @@ class DOFABaseline(BaseModule, ABC):
         unpool_dim: int,
         pretrained_path: str = None,
         freeze: bool = False,
-        type_head: List[str] = 'linear',
-        multimodal: str = 'shared',
+        type_head: List[str] = "linear",
+        multimodal: str = "shared",
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -30,13 +30,13 @@ class DOFABaseline(BaseModule, ABC):
         self.patch_size = 16
 
         self.args_by_size = {
-                             'base':  {'embed_dim': 768, 'depth': 12, 'num_heads': 12},
-                             'large': {'embed_dim': 1024, 'depth': 24, 'num_heads': 16},
+                             "base":  {"embed_dim": 768, "depth": 12, "num_heads": 12},
+                             "large": {"embed_dim": 1024, "depth": 24, "num_heads": 16},
                             }
-        self.weights_by_size = {'base': DOFABase16_Weights.DOFA_MAE,
-                                'large': DOFALarge16_Weights.DOFA_MAE}
+        self.weights_by_size = {"base": DOFABase16_Weights.DOFA_MAE,
+                                "large": DOFALarge16_Weights.DOFA_MAE}
 
-        assert backbone_size in self.args_by_size.keys(), 'backbone_size should be in {}'.format(self.args_by_size.keys())
+        assert backbone_size in self.args_by_size.keys(), "backbone_size should be in {}".format(self.args_by_size.keys())
         
         if pretrained_path is not None:
             self.weights_dict = torch.load(pretrained_path)
@@ -44,9 +44,9 @@ class DOFABaseline(BaseModule, ABC):
             self.weights_dict = self.weights_by_size[self.backbone_size].get_state_dict(progress=True)
 
         #params
-        self.depth = self.args_by_size[backbone_size]['depth']
-        self.embed_dim = self.args_by_size[backbone_size]['embed_dim']
-        self.num_heads = self.args_by_size[backbone_size]['num_heads']
+        self.depth = self.args_by_size[backbone_size]["depth"]
+        self.embed_dim = self.args_by_size[backbone_size]["embed_dim"]
+        self.num_heads = self.args_by_size[backbone_size]["num_heads"]
         self.mlp_ratio = 4.0
         self.norm_layer = partial(nn.LayerNorm, eps=1e-6)
         self.type_head = type_head
@@ -59,10 +59,10 @@ class DOFABaseline(BaseModule, ABC):
         super().__init__(datasets, self.patch_size, self.embed_dim, self.unpool_dim, self.type_head, self.multimodal, self.fac_date_enc, self.date_dim, self.keep_norm, **kwargs)
 
         #layers
-        self.wavelengths = {'aerial':[0.64, 0.56, 0.48, 0.81], 
-                            'spot':[0.66, 0.56, 0.48], 
-                            's2':[0.665, 0.560, 0.490, 0.842, 0.705, 0.740, 0.783, 0.865, 1.610, 2.190],
-                            's1':[5.405, 5.405]}
+        self.wavelengths = {"aerial":[0.64, 0.56, 0.48, 0.81], 
+                            "spot":[0.66, 0.56, 0.48], 
+                            "s2":[0.665, 0.560, 0.490, 0.842, 0.705, 0.740, 0.783, 0.865, 1.610, 2.190],
+                            "s1":[5.405, 5.405]}
         self._build_backbone()
 
     def _build_backbone(self):
@@ -91,7 +91,7 @@ class DOFABaseline(BaseModule, ABC):
             pos_embed[name_mod] = Parameter(torch.zeros(1, num_patches + 1, embed_dim), requires_grad=False)  # fixed sin-cos embedding
 
             if state_dict is not None:
-                self._transfer(state_dict, patch_embed[name_mod], 'patch_embed')
+                self._transfer(state_dict, patch_embed[name_mod], "patch_embed")
 
         return patch_embed, pos_embed
     
@@ -99,19 +99,19 @@ class DOFABaseline(BaseModule, ABC):
         cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         
         if state_dict is not None:
-            cls_token.data = state_dict['cls_token']
+            cls_token.data = state_dict["cls_token"]
         
         return cls_token 
     
     def _build_encoder(self, depth, embed_dim, num_heads, mlp_ratio, norm_layer, state_dict=None):
         encoder = ModuleDict()
         
-        model_names = self.dataset.inputs if self.multimodal != 'shared' else ['shared']
+        model_names = self.dataset.inputs if self.multimodal != "shared" else ["shared"]
 
         for name_mod in model_names:
             encoder_mod = nn.ModuleList([Block(embed_dim,num_heads,mlp_ratio, qkv_bias=True,norm_layer=norm_layer) for i in range(depth)])
             if state_dict is not None:
-                self._transfer(state_dict, encoder_mod, 'blocks')
+                self._transfer(state_dict, encoder_mod, "blocks")
 
             encoder[name_mod] = encoder_mod
 
@@ -121,7 +121,7 @@ class DOFABaseline(BaseModule, ABC):
         layernorm = norm_layer(embed_dim)
 
         if state_dict is not None:
-            self._transfer(state_dict, layernorm, 'norm')
+            self._transfer(state_dict, layernorm, "norm")
 
         return layernorm
 
@@ -169,31 +169,31 @@ class DOFABaseline(BaseModule, ABC):
         lr_map = {}
 
         for name_mod in self.patch_embed:
-            lr_map['patch_embed.{}'.format(name_mod)] = base_lr * rate_decay ** (self.depth+1)
+            lr_map["patch_embed.{}".format(name_mod)] = base_lr * rate_decay ** (self.depth+1)
 
         for name_mod in self.encoder:
             for i in range(self.depth):
-                lr_map['encoder.{}.{}'.format(name_mod, i)] = base_lr * rate_decay ** (self.depth-i)
+                lr_map["encoder.{}.{}".format(name_mod, i)] = base_lr * rate_decay ** (self.depth-i)
         
-        lr_map['heads'] = base_lr
+        lr_map["heads"] = base_lr
         
         params_dict = {}
         for name_mod in self.patch_embed:
-            params_dict['patch_embed.{}'.format(name_mod)] = self.patch_embed[name_mod].parameters()
+            params_dict["patch_embed.{}".format(name_mod)] = self.patch_embed[name_mod].parameters()
         
         for name_mod in self.encoder:
             for i in range(self.depth):
-                params_dict['encoder.{}.{}'.format(name_mod, i)] = self.encoder[name_mod][i].parameters()
-        params_dict['heads'] = self.heads.parameters()
+                params_dict["encoder.{}.{}".format(name_mod, i)] = self.encoder[name_mod][i].parameters()
+        params_dict["heads"] = self.heads.parameters()
         
         if self.keep_norm:
-            lr_map['layernorm'] = base_lr
-            params_dict['layernorm'] = self.layernorm.parameters()
+            lr_map["layernorm"] = base_lr
+            params_dict["layernorm"] = self.layernorm.parameters()
 
         print('Layerwise learning rates:')
         grouped_parameters = []
         for k, lr in lr_map.items():
-            grouped_parameters.append({'params': params_dict[k], 'lr': lr, 'name': k})
+            grouped_parameters.append({"params": params_dict[k], "lr": lr, "name": k})
             print('Layer "{}": {}'.format(k, lr))
 
         return grouped_parameters
@@ -216,7 +216,7 @@ class DOFABaseline(BaseModule, ABC):
             cls_tokens = cls_token.expand(x_tokenized.shape[0], -1, -1)
             x_enc = torch.cat((cls_tokens, x_tokenized), dim=1)
             
-            encoder_mod = 'shared' if self.multimodal == 'shared' else name_mod
+            encoder_mod = "shared" if self.multimodal == "shared" else name_mod
             for block in self.encoder[encoder_mod]:
                 x_enc = block(x_enc)
                             
@@ -270,7 +270,7 @@ def position_embedding(embed_dim: int, pos: Tensor) -> Tensor:
     omega = 1.0 / 10000**omega  # (D/2,)
 
     pos = pos.reshape(-1)  # (M,)
-    out = torch.einsum('m,d->md', pos, omega)  # (M, D/2), outer product
+    out = torch.einsum("m,d->md", pos, omega)  # (M, D/2), outer product
 
     emb_sin = torch.sin(out)  # (M, D/2)
     emb_cos = torch.cos(out)  # (M, D/2)
@@ -310,7 +310,7 @@ class TransformerWeightGenerator(nn.Module):
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=input_dim,
             nhead=num_heads,
-            activation='gelu',
+            activation="gelu",
             norm_first=False,
             batch_first=False,
             dropout=False,
@@ -491,7 +491,7 @@ class DOFA(nn.Module):
         global_pool: bool = True,
         mlp_ratio: float = 4.0,
         norm_layer: type[nn.Module] = partial(nn.LayerNorm, eps=1e-6),  # type: ignore[assignment]
-        task: str = 'segmentation'
+        task: str = "segmentation"
     ) -> None:
         """Initialize a new DOFA instance.
 
@@ -589,7 +589,7 @@ class DOFA(nn.Module):
         if self.global_pool:
             x = x[:, 1:, :].mean(dim=1)  # global pool without cls token
             outcome: Tensor = self.fc_norm(x)
-        elif self.task == 'segmentation':
+        elif self.task == "segmentation":
             x = self.norm(x)
             outcome = x[:, 1:, :]
         else:
