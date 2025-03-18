@@ -28,7 +28,7 @@ class BaselineModule(BaseModule):
         model_size: Literal["small", "base", "large", "huge"],
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
-        weight_source: str = 'imagenet',
+        weight_source: str = 'imagenat',
         pretrained_path: str = None,
         freeze: bool = False,
         use_ema: bool = False,

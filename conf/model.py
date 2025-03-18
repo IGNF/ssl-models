@@ -30,7 +30,7 @@ class BaselineConfig:  # noqa: D101
     type_head: str = "linear"
     loss: str = "l2_norm"
     freeze: bool = False
-    weight_source: str = 'imagenet'
+    weight_source: str = 'imagenat'
     pretrained_path: str = None
     keep_norm: bool = True
 

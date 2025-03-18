@@ -105,7 +105,7 @@ def get_dinov2_sat_sate_dict(pretrained_path):
         
         return state_dict
 
-def get_imagenet_dinov2_state_dict(model_size="large"):
+def get_imagenat_dinov2_state_dict(model_size="large"):
     """Récupère le state_dict brut sans initialiser le modèle complet"""
     # Déterminer le nom du repo selon la taille
     repo_id = f"facebook/dinov2-{model_size}"

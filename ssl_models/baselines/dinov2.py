@@ -5,7 +5,7 @@ import torch
 
 from conf.datasets import DatasetsConfig
 
-from ssl_models.baselines.utils import get_imagenet_dinov2_state_dict, get_dinov2_sat_sate_dict, filter_dict
+from ssl_models.baselines.utils import get_imagenat_dinov2_state_dict, get_dinov2_sat_sate_dict, filter_dict
 from ssl_models.baselines.base import BaseModule
 
 from typing import Literal
@@ -25,7 +25,7 @@ class Dinov2Baseline(BaseModule):
         freeze: bool = False,
         type_head: str = 'linear',
         multimodal: str = 'shared',
-        weight_source: str = 'imagenet',
+        weight_source: str = 'imagenat',
         pretrained_path: str = None,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
@@ -49,7 +49,7 @@ class Dinov2Baseline(BaseModule):
         type_head: str
            Segmentation head to use. Either 'linear' or 'attentive'. Default is 'linear'.
         weight_source: str
-           Either "random", "imagenet" or "dinov2_sat". Default is "imagenet"
+           Either "random", "imagenat" or "dinov2_sat". Default is "imagenat"
         hidden_dim: int
            Used if "seg_head" is set to "progressive".
         kwargs:
@@ -69,7 +69,7 @@ class Dinov2Baseline(BaseModule):
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
 
-        if self.weight_source == 'imagenet':
+        if self.weight_source == 'imagenat':
             self.patch_size = 14
         else:
             self.patch_size = 16
@@ -77,10 +77,10 @@ class Dinov2Baseline(BaseModule):
         self.embed_dim_by_size =  {'tiny': 192, 'small': 384, 'base': 768, 'large': 1024, 'huge': 1280}
         self.depth_by_size = {'small': 12, 'base': 12, 'large': 24, 'huge': 32}
         assert self.image_size % self.patch_size == 0, "Image size ({}) must be multiple of patch size ({})".format(self.image_size, self.patch_size)
-        assert ((self.weight_source == 'imagenet' and backbone_size in ['small', 'base', 'large', 'huge']) \
+        assert ((self.weight_source == 'imagenat' and backbone_size in ['small', 'base', 'large', 'huge']) \
                 or (self.weight_source == 'dinov2_sat' and backbone_size in ['large']) \
                 or (self.weight_source == 'random' and backbone_size in ['tiny'])), 'Weight source {} is not compatible with backbone_size {}'.format(weight_source, backbone_size)
-        assert (self.pretrained_path is not None or self.weight_source == 'imagenet'), 'A weight path should be given.'
+        assert (self.pretrained_path is not None or self.weight_source == 'imagenat'), 'A weight path should be given.'
         
         self.embed_dim = self.embed_dim_by_size[self.backbone_size]
 
@@ -149,8 +149,8 @@ class Dinov2Baseline(BaseModule):
         config_dict = self._get_base_config(backbone_size)
         
         #state dict
-        if weight_source == 'imagenet':
-            state_dict = get_imagenet_dinov2_state_dict(backbone_size)
+        if weight_source == 'imagenat':
+            state_dict = get_imagenat_dinov2_state_dict(backbone_size)
         elif weight_source == 'dinov2_sat':
             state_dict = get_dinov2_sat_sate_dict(self.pretrained_path)
         else: #random initialization
