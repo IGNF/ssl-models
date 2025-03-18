@@ -5,7 +5,7 @@ import torch
 
 from conf.datasets import DatasetsConfig
 
-from ssl_models.baselines.utils import get_imagenet_dinov2_state_dict, get_canopy_sate_dict, filter_dict
+from ssl_models.baselines.utils import get_imagenet_dinov2_state_dict, get_dinov2_sat_sate_dict, filter_dict
 from ssl_models.baselines.base import BaseModule
 
 from typing import Literal
@@ -49,7 +49,7 @@ class Dinov2Baseline(BaseModule):
         type_head: str
            Segmentation head to use. Either 'linear' or 'attentive'. Default is 'linear'.
         weight_source: str
-           Either "random", "imagenet" or "canopy". Default is "imagenet"
+           Either "random", "imagenet" or "dinov2_sat". Default is "imagenet"
         hidden_dim: int
            Used if "seg_head" is set to "progressive".
         kwargs:
@@ -78,7 +78,7 @@ class Dinov2Baseline(BaseModule):
         self.depth_by_size = {'small': 12, 'base': 12, 'large': 24, 'huge': 32}
         assert self.image_size % self.patch_size == 0, "Image size ({}) must be multiple of patch size ({})".format(self.image_size, self.patch_size)
         assert ((self.weight_source == 'imagenet' and backbone_size in ['small', 'base', 'large', 'huge']) \
-                or (self.weight_source == 'canopy' and backbone_size in ['large']) \
+                or (self.weight_source == 'dinov2_sat' and backbone_size in ['large']) \
                 or (self.weight_source == 'random' and backbone_size in ['tiny'])), 'Weight source {} is not compatible with backbone_size {}'.format(weight_source, backbone_size)
         assert (self.pretrained_path is not None or self.weight_source == 'imagenet'), 'A weight path should be given.'
         
@@ -95,7 +95,7 @@ class Dinov2Baseline(BaseModule):
         original_config = AutoConfig.from_pretrained(f"facebook/dinov2-{backbone_size}")
         config_dict = original_config.to_dict()
         config_dict["patch_size"] = self.patch_size
-        config_dict["image_size"] = 224 if self.weight_source=='canopy' else 518
+        config_dict["image_size"] = 224 if self.weight_source=='dinov2_sat' else 518
 
         return config_dict
     
@@ -151,8 +151,8 @@ class Dinov2Baseline(BaseModule):
         #state dict
         if weight_source == 'imagenet':
             state_dict = get_imagenet_dinov2_state_dict(backbone_size)
-        elif weight_source == 'canopy':
-            state_dict = get_canopy_sate_dict(self.pretrained_path)
+        elif weight_source == 'dinov2_sat':
+            state_dict = get_dinov2_sat_sate_dict(self.pretrained_path)
         else: #random initialization
             state_dict = None
         

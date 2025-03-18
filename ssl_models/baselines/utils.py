@@ -81,9 +81,9 @@ def load_and_dequantize(path_compressed):
 
     return OrderedDict(deq_state_dict)
 
-def get_canopy_sate_dict(pretrained_path):
+def get_dinov2_sat_sate_dict(pretrained_path):
         """
-        Load weights from the paper "Very high resolution canopy height maps from RGB imagery" (https://arxiv.org/abs/2304.07213).
+        Load weights from the paper "Very high resolution dinov2_sat height maps from RGB imagery" (https://arxiv.org/abs/2304.07213).
 
         Parameters
         ----------
