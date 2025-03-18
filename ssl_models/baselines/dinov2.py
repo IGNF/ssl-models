@@ -23,9 +23,9 @@ class Dinov2Baseline(BaseModule):
         image_size: int,
         unpool_dim: int,
         freeze: bool = False,
-        type_head: str = 'linear',
-        multimodal: str = 'shared',
-        weight_source: str = 'imagenat',
+        type_head: str = "linear",
+        multimodal: str = "shared",
+        weight_source: str = "imagenat",
         pretrained_path: str = None,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
@@ -69,18 +69,18 @@ class Dinov2Baseline(BaseModule):
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
 
-        if self.weight_source == 'imagenat':
+        if self.weight_source == "imagenat":
             self.patch_size = 14
         else:
             self.patch_size = 16
 
-        self.embed_dim_by_size =  {'tiny': 192, 'small': 384, 'base': 768, 'large': 1024, 'huge': 1280}
-        self.depth_by_size = {'small': 12, 'base': 12, 'large': 24, 'huge': 32}
+        self.embed_dim_by_size =  {"tiny": 192, "small": 384, "base": 768, "large": 1024, "huge": 1280}
+        self.depth_by_size = {"small": 12, "base": 12, "large": 24, "huge": 32}
         assert self.image_size % self.patch_size == 0, "Image size ({}) must be multiple of patch size ({})".format(self.image_size, self.patch_size)
-        assert ((self.weight_source == 'imagenat' and backbone_size in ['small', 'base', 'large', 'huge']) \
-                or (self.weight_source == 'sat' and backbone_size in ['large']) \
-                or (self.weight_source == 'random' and backbone_size in ['tiny'])), 'Weight source {} is not compatible with backbone_size {}'.format(weight_source, backbone_size)
-        assert (self.pretrained_path is not None or self.weight_source == 'imagenat'), 'A weight path should be given.'
+        assert ((self.weight_source == "imagenat" and backbone_size in ["small", "base", "large", "huge"]) \
+                or (self.weight_source == "sat" and backbone_size in ["large"]) \
+                or (self.weight_source == "random" and backbone_size in ["tiny"])), "Weight source {} is not compatible with backbone_size {}".format(weight_source, backbone_size)
+        assert (self.pretrained_path is not None or self.weight_source == "imagenat"), "A weight path should be given."
         
         self.embed_dim = self.embed_dim_by_size[self.backbone_size]
 
@@ -95,7 +95,7 @@ class Dinov2Baseline(BaseModule):
         original_config = AutoConfig.from_pretrained(f"facebook/dinov2-{backbone_size}")
         config_dict = original_config.to_dict()
         config_dict["patch_size"] = self.patch_size
-        config_dict["image_size"] = 224 if self.weight_source=='sat' else 518
+        config_dict["image_size"] = 224 if self.weight_source=="sat" else 518
 
         return config_dict
     
@@ -109,31 +109,31 @@ class Dinov2Baseline(BaseModule):
             patch_embed[name_mod] = Dinov2Embeddings(mod_config)
             
             if state_dict is not None:
-                self._transfer(state_dict, patch_embed[name_mod], config_dict["num_channels"], 'embeddings')
+                self._transfer(state_dict, patch_embed[name_mod], config_dict["num_channels"], "embeddings")
 
         return patch_embed
 
     def _build_encoder(self, config_dict, state_dict=None):
         encoder = ModuleDict()
         
-        model_names = self.dataset.inputs if self.multimodal != 'shared' else ['shared']
+        model_names = self.dataset.inputs if self.multimodal != "shared" else ["shared"]
         model_config = Dinov2Config(**config_dict)
 
         for name_mod in model_names:
             encoder_mod = Dinov2Encoder(model_config)
 
             if state_dict is not None:
-                self._transfer(state_dict, encoder, 3, 'encoder')
+                self._transfer(state_dict, encoder, 3, "encoder")
 
             encoder[name_mod] = encoder_mod
 
         return encoder
     
     def _build_layer_norm(self, config_dict, state_dict=None):
-        layernorm = LayerNorm(config_dict['hidden_size'], eps=config_dict['layer_norm_eps'])
+        layernorm = LayerNorm(config_dict["hidden_size"], eps=config_dict["layer_norm_eps"])
 
         if state_dict is not None:
-            self._transfer(state_dict, layernorm, 3, 'layernorm')
+            self._transfer(state_dict, layernorm, 3, "layernorm")
 
         return layernorm
     
@@ -149,9 +149,9 @@ class Dinov2Baseline(BaseModule):
         config_dict = self._get_base_config(backbone_size)
         
         #state dict
-        if weight_source == 'imagenat':
+        if weight_source == "imagenat":
             state_dict = get_imagenat_dinov2_state_dict(backbone_size)
-        elif weight_source == 'sat':
+        elif weight_source == "sat":
             state_dict = get_sat_dinov2_state_dict(self.pretrained_path)
         else: #random initialization
             state_dict = None
@@ -168,7 +168,7 @@ class Dinov2Baseline(BaseModule):
         with torch.no_grad():
             new_state_dict = state_dict.copy()
 
-            old_weights = new_state_dict['embeddings.patch_embeddings.projection.weight']
+            old_weights = new_state_dict["embeddings.patch_embeddings.projection.weight"]
             bs, _, hs, ws = old_weights.shape
             
             means = torch.zeros((bs, num_channels-3, hs, ws))
@@ -176,7 +176,7 @@ class Dinov2Baseline(BaseModule):
 
             pad_tensor = torch.normal(means, stds)
             new_weights = torch.cat((old_weights, pad_tensor), dim=1)
-            new_state_dict['embeddings.patch_embeddings.projection.weight'] = new_weights
+            new_state_dict["embeddings.patch_embeddings.projection.weight"] = new_weights
     
         return new_state_dict
 
@@ -215,40 +215,40 @@ class Dinov2Baseline(BaseModule):
 
         Returns
         -------
-        List: A list of dictionnaries, containing 'params' and 'lr' keys, in which parameters are grouped.
+        List: A list of dictionnaries, containing "params" and "lr" keys, in which parameters are grouped.
 
         """
         lr_map = {}
 
         for name_mod in self.patch_embed:
             if self.len_bands[name_mod]<=3:
-                lr_map['patch_embed.{}'.format(name_mod)] = base_lr
+                lr_map["patch_embed.{}".format(name_mod)] = base_lr
             else: #RGB
-                lr_map['patch_embed.{}'.format(name_mod)] = base_lr * rate_decay ** (self.depth+1)
+                lr_map["patch_embed.{}".format(name_mod)] = base_lr * rate_decay ** (self.depth+1)
 
         for name_mod in self.encoder:
             for i in range(self.depth):
-                lr_map['encoder.{}.{}'.format(name_mod, i)] = base_lr * rate_decay ** (self.depth-i)
+                lr_map["encoder.{}.{}".format(name_mod, i)] = base_lr * rate_decay ** (self.depth-i)
         
-        lr_map['heads'] = base_lr
+        lr_map["heads"] = base_lr
                 
         params_dict = {}
         for name_mod in self.patch_embed:
-            params_dict['patch_embed.{}'.format(name_mod)] = self.patch_embed[name_mod].parameters()
+            params_dict["patch_embed.{}".format(name_mod)] = self.patch_embed[name_mod].parameters()
 
         for i in range(self.depth):
-            params_dict['encoder.layer.{}'.format(i)] = self.encoder.layer[i].parameters()
+            params_dict["encoder.layer.{}".format(i)] = self.encoder.layer[i].parameters()
 
         if self.keep_norm:
-            lr_map['layernorm'] = base_lr
-            params_dict['layernorm'] =self.layernorm.parameters()
+            lr_map["layernorm"] = base_lr
+            params_dict["layernorm"] =self.layernorm.parameters()
 
-        params_dict['heads'] = self.heads.parameters()
+        params_dict["heads"] = self.heads.parameters()
 
         print('Layerwise learning rates:')
         grouped_parameters = []
         for k, lr in lr_map.items():
-            grouped_parameters.append({'params': params_dict[k], 'lr': lr, 'name': k})
+            grouped_parameters.append({"params": params_dict[k], "lr": lr, "name": k})
             print('Layer "{}": {}'.format(k, lr))
 
         return grouped_parameters
@@ -281,9 +281,9 @@ class Dinov2Baseline(BaseModule):
 
             x_tokenized = self.patch_embed[name_mod](input_mod)
 
-            encoder_mod = 'shared' if self.multimodal == 'shared' else name_mod
+            encoder_mod = "shared" if self.multimodal == "shared" else name_mod
 
-            x_enc = self.encoder[encoder_mod](x_tokenized)['last_hidden_state']
+            x_enc = self.encoder[encoder_mod](x_tokenized)["last_hidden_state"]
 
             if self.keep_norm:
                 x_enc = self.layernorm(x_enc)
