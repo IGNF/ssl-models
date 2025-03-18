@@ -1,9 +1,8 @@
 """Model conf."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from hydra_zen import store
-from typing import List
 
 @dataclass
 class ModelConfig:  # noqa: D101

@@ -20,7 +20,6 @@ class Dinov2Baseline(BaseModule):
         self,
         datasets: DatasetsConfig,
         backbone_size: str,
-        image_size: int,
         unpool_dim: int,
         freeze: bool = False,
         type_head: str = "linear",
@@ -42,8 +41,6 @@ class Dinov2Baseline(BaseModule):
             Defines the backbone to use. To choose in "small", "base", "large", "giant"
         num_classes: int
             Number of classes.
-        image_size: int
-            Image size (should be multiple of 14, e.g. 224 or 252)
         freeze: bool
             To freeze or not to freeze the DinoV2 backbone.
         type_head: str
@@ -57,7 +54,6 @@ class Dinov2Baseline(BaseModule):
         """
 
         self.dataset = datasets.dataset
-        self.image_size = image_size
         self.type_head = type_head
         self.multimodal = multimodal
         self.weight_source = weight_source
@@ -76,7 +72,6 @@ class Dinov2Baseline(BaseModule):
 
         self.embed_dim_by_size =  {"tiny": 192, "small": 384, "base": 768, "large": 1024, "huge": 1280}
         self.depth_by_size = {"small": 12, "base": 12, "large": 24, "huge": 32}
-        assert self.image_size % self.patch_size == 0, "Image size ({}) must be multiple of patch size ({})".format(self.image_size, self.patch_size)
         assert ((self.weight_source == "imagenat" and backbone_size in ["small", "base", "large", "huge"]) \
                 or (self.weight_source == "sat" and backbone_size in ["large"]) \
                 or (self.weight_source == "random" and backbone_size in ["tiny"])), "Weight source {} is not compatible with backbone_size {}".format(weight_source, backbone_size)
