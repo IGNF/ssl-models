@@ -56,7 +56,6 @@ class DatasetsConfig:
         name_dataset = self.filter_pretrain[0]
         dataset = self.pretrain[name_dataset]
         
-        print(names_dataset)
         if len(names_dataset) > 1:
             msg = "Multi-dataset pretraining/finetuning not implemented yet."
             raise NotImplementedError(msg)
