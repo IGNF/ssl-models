@@ -29,11 +29,7 @@ class BaselineConfig:  # noqa: D101
     type_head: str = "linear"
     loss: str = "l2_norm"
     freeze: bool = False
-<<<<<<< HEAD
-    weight_source: str = 'imagenat'
-=======
     weight_source: str = "imagenat"
->>>>>>> dinov2-and-dofa
     pretrained_path: str = None
     keep_norm: bool = True
 
