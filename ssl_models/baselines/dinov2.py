@@ -26,7 +26,7 @@ class Dinov2Baseline(BaseModule):
         type_head: str = 'linear',
         multimodal: str = 'shared',
         weight_source: str = 'imagenet',
-        weights_path: str = None,
+        pretrained_path: str = None,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -61,7 +61,7 @@ class Dinov2Baseline(BaseModule):
         self.type_head = type_head
         self.multimodal = multimodal
         self.weight_source = weight_source
-        self.weights_path = weights_path
+        self.pretrained_path = pretrained_path
         self.backbone_size = backbone_size
         self.std = 0.01
         self.keep_norm = keep_norm
@@ -80,7 +80,7 @@ class Dinov2Baseline(BaseModule):
         assert ((self.weight_source == 'imagenet' and backbone_size in ['small', 'base', 'large', 'huge']) \
                 or (self.weight_source == 'canopy' and backbone_size in ['large']) \
                 or (self.weight_source == 'random' and backbone_size in ['tiny'])), 'Weight source {} is not compatible with backbone_size {}'.format(weight_source, backbone_size)
-        assert (self.weights_path is not None or self.weight_source == 'imagenet'), 'A weight path should be given.'
+        assert (self.pretrained_path is not None or self.weight_source == 'imagenet'), 'A weight path should be given.'
         
         self.embed_dim = self.embed_dim_by_size[self.backbone_size]
 
@@ -152,7 +152,7 @@ class Dinov2Baseline(BaseModule):
         if weight_source == 'imagenet':
             state_dict = get_imagenet_dinov2_state_dict(backbone_size)
         elif weight_source == 'canopy':
-            state_dict = get_canopy_sate_dict(self.weights_path)
+            state_dict = get_canopy_sate_dict(self.pretrained_path)
         else: #random initialization
             state_dict = None
         

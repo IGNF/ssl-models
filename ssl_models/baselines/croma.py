@@ -7,7 +7,7 @@ import warnings
 
 from ssl_models.baselines.base import BaseModule
 from torch import Tensor
-from typing import Literal
+from typing import Literal, List
 
 class CROMABaseline(BaseModule):
     def __init__(
@@ -15,7 +15,7 @@ class CROMABaseline(BaseModule):
         datasets,
         backbone_size: str,
         unpool_dim: int,
-        weights_path: str = None,
+        pretrained_path: str = None,
         freeze: bool = False,
         type_head: List[str] = 'linear',
         multimodal: str = 'shared',
@@ -31,7 +31,7 @@ class CROMABaseline(BaseModule):
         self.multimodal = multimodal
 
         self.unpool_dim = unpool_dim
-        self.weights_path = weights_path
+        self.pretrained_path = pretrained_path
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
         self.keep_norm = keep_norm
@@ -66,7 +66,7 @@ class CROMABaseline(BaseModule):
         else:
             raise NotImplementedError
         
-        self.encoder = PretrainedCROMA(pretrained_path = self.weights_path, size = self.backbone_size, modality=self.croma_modality, image_resolution=self.image_size)
+        self.encoder = PretrainedCROMA(pretrained_path = self.pretrained_path, size = self.backbone_size, modality=self.croma_modality, image_resolution=self.image_size)
     
     def _check_image_size(self):
         all_image_size = None

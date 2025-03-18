@@ -9,6 +9,7 @@ from torch.nn import functional as F  # noqa: N812
 from conf.datasets import DatasetsConfig
 from ssl_models.baselines.dinov2 import Dinov2Baseline
 from ssl_models.baselines.dofa import DOFABaseline
+from ssl_models.baselines.croma import CROMABaseline
 from ssl_models.train.base import BaseModule
 
 torch.set_float32_matmul_precision(precision="medium")
@@ -28,7 +29,7 @@ class BaselineModule(BaseModule):
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         weight_source: str = 'imagenet',
-        weights_path: str = None,
+        pretrained_path: str = None,
         freeze: bool = False,
         use_ema: bool = False,
         multimodal: str = 'shared',
@@ -71,7 +72,7 @@ class BaselineModule(BaseModule):
                     "backbone_size": model_size,
                     "unpool_dim": unpool_dim,
                     "weight_source": weight_source,
-                    "weights_path": weights_path,
+                    "pretrained_path": pretrained_path,
                     "image_size": image_size,
                     "freeze": freeze,
                     "multimodal": multimodal,
@@ -80,7 +81,7 @@ class BaselineModule(BaseModule):
 
                 self.model = Dinov2Baseline(**model_args)
 
-            case "dofa":
+            case "dofa" | "croma":
                 unpool_dim = None
 
                 if len(datasets.filter_finetune)>1:
@@ -92,12 +93,14 @@ class BaselineModule(BaseModule):
                     "backbone_size": model_size,
                     "unpool_dim": unpool_dim,
                     "freeze": freeze,
-                    "weights_path": weights_path,
+                    "pretrained_path": pretrained_path,
                     "multimodal": multimodal,
                     'keep_norm': keep_norm
                 }
+                
+                model_dict = {"dofa": DOFABaseline, "croma": CROMABaseline}
+                self.model = model_dict[model](**model_args)
 
-                self.model = DOFABaseline(**model_args)
             case _:
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)
