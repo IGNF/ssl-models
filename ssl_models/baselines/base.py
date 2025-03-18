@@ -46,7 +46,7 @@ class BaseModule(Module, ABC):
 
         self.dataset = datasets.dataset
         self.type_head = type_head 
-        self.patch_size = patch_size #à terme l'intégrer dans le dataset?
+        self.patch_size = patch_size
         self.multimodal = multimodal
         self.keep_norm = keep_norm 
         
