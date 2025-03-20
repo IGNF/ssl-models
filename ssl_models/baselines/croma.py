@@ -81,14 +81,28 @@ class CROMABaseline(BaseModule):
         
         return all_image_size
     
+    def _freeze_backbone(self):
+       for param in self.encoder.parameters():
+           param.requires_grad = False
+
+    def grouped_parameters(self, base_lr, rate_decay=0.75):
+        pass
+    
+    def expand_channels(self, input, channels_to_copy):
+       s = input[:, channels_to_copy, :, :]
+       return torch.cat((input, s), dim=1)
+    
     def forward(self, batch: dict[str, Tensor],         
                 ssl_phase: Literal["pretrain", "probe", "finetune"],
                 stage: Literal["train", "val", "test"],
     ):
         
         input = self.group(batch)
+        
+        sar_input = input['s1_asc']
+        optical_input = self.expand_channels(input['s2'], [0,1])
 
-        output_croma = self.encoder(SAR_images=input['s1_asc'], optical_images=input['s2'])
+        output_croma = self.encoder(SAR_images=sar_input, optical_images=optical_input)
         
         x = {}
         
