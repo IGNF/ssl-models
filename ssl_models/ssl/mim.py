@@ -543,7 +543,7 @@ class BaseMIM(nn.Module, ABC):
                 input_img = batch[next(input_keys)][
                     0,
                     0,
-                ][:RGB_BANDS]
+                ][:BANDS_RGB]
                 target_msk = get_target_mask_from_batch(
                     batch[name_target][0, 0, 0],
                     target.num_classes,
@@ -578,7 +578,7 @@ class BaseMIM(nn.Module, ABC):
                 case "change_detect":
                     logits = self.heads[name_target](x_ref, ssl_phase)
                     # image logger
-                    input_img = batch[next(input_keys)][0, 0][:RGB_BANDS]
+                    input_img = batch[next(input_keys)][0, 0][:BANDS_RGB]
                     pred_msk = get_cd_mask_from_logits(logits)
                     log_preds[f"{ssl_phase}_{name_target}_{stage}/_pred"] = (
                         create_masked_image(
