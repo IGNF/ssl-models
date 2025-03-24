@@ -35,7 +35,7 @@ class MAE(BaseMIM):
         decoder_dim_head: int,
         decoder_mlp_ratio: float,
         type_head: Literal["linear", "attentive"] = "linear",
-        loss_fn: Literal[torch.square, torch.square] = torch.square,
+        loss_fn: Literal[torch.abs, torch.square] = torch.square,
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
@@ -72,7 +72,14 @@ class MAE(BaseMIM):
             num_dates_mod[name_mod] += num_dates
             num_dates_group[name_group] += num_dates
 
-        self.mask_ratio, self.mask_mod, self.mask_bands, self.mask_dates = (
+        (
+            self.mask_ratio,
+            self.mask_mod,
+            self.mask_bands,
+            self.mask_dates,
+            self.mask_loc,
+        ) = (
+            {},
             {},
             {},
             {},
@@ -90,36 +97,39 @@ class MAE(BaseMIM):
                     self.mask_mod[name_mod] = None
                     self.mask_bands[name_mod] = None
                     self.mask_dates[name_mod] = None
-            case "mod":
-                name_models = list(num_dates_mod.keys())
-                for name_mod, _ in datasets.dataset.groups:
-                    mod = datasets.dataset.inputs[name_mod]
-                    scale_fac = num_dates_mod[name_mod] ** mask.mask_scale
-                    self.mask_ratio[name_mod] = 1 - (1 - mask.mask_ratio) / scale_fac
-                    self.mask_mod[name_mod] = None
-                    self.mask_bands[name_mod] = (
-                        mask.mask_bands if self.len_bands[name_mod] > 1 else None
-                    )
-                    self.mask_dates[name_mod] = (
-                        mask.mask_dates if mod.num_dates > 1 else None
-                    )
-            case "group":
-                name_models = list(num_dates_group.keys())
+                    self.mask_loc[name_mod] = None
+            case "mod" | "group":
+                name_models = (
+                    list(num_dates_group.keys())
+                    if multimodal == "group"
+                    else list(num_dates_mod.keys())
+                )
                 for name_mod, name_group in datasets.dataset.groups:
                     mod = datasets.dataset.inputs[name_mod]
-                    scale_fac = num_dates_group[name_group] ** mask.mask_scale
-                    self.mask_ratio[name_group] = 1 - (1 - mask.mask_ratio) / scale_fac
-                    self.mask_mod[name_mod] = (
-                        mask.mask_mod
-                        if num_dates_mod[name_mod] != num_dates_group[name_group]
-                        else None
-                    )
+                    if multimodal == "group":
+                        scale_fac = num_dates_group[name_group] ** mask.mask_scale
+                        self.mask_ratio[name_group] = (
+                            1 - (1 - mask.mask_ratio) / scale_fac
+                        )
+                        self.mask_mod[name_mod] = (
+                            mask.mask_mod
+                            if num_dates_mod[name_mod] != num_dates_group[name_group]
+                            else None
+                        )
+                    else:
+                        scale_fac = num_dates_mod[name_mod] ** mask.mask_scale
+                        self.mask_ratio[name_mod] = (
+                            1 - (1 - mask.mask_ratio) / scale_fac
+                        )
+                        self.mask_mod[name_mod] = None
+
                     self.mask_bands[name_mod] = (
                         mask.mask_bands if self.len_bands[name_mod] > 1 else None
                     )
                     self.mask_dates[name_mod] = (
                         mask.mask_dates if mod.num_dates > 1 else None
                     )
+                    self.mask_loc[name_mod] = mask.mask_loc
             case _:
                 msg = f"Invalid multimodal mode {multimodal}."
                 raise ValueError(msg)
@@ -199,8 +209,10 @@ class MAE(BaseMIM):
                     )
                 if self.mask_dates[name_mod]:
                     mask[name_mod] += (
-                        torch.rand((B, G, D // G, 1)) < self.mask_dates[name_mod]
+                        torch.rand((B, 1, D // G, 1)) < self.mask_dates[name_mod]
                     )
+                if self.mask_loc[name_mod]:
+                    mask[name_mod] += torch.rand((B, 1, 1, L)) < self.mask_loc[name_mod]
                 mask[name_mod] = mask[name_mod].reshape((B, D, L, 1))
 
             mask = self.group(mask)

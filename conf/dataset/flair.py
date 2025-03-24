@@ -17,10 +17,10 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     csv_dir: str | None = None
     version: str | None = None
     balance_pretrain: bool = False
-    val_pretrain: bool = False
+    val_pretrain: bool = True
     filter_percent: int | None = None
-    repeats: int = 2
-    crop_meters: float = 51.2
+    repeats: int = 1
+    crop_meters: float = 102.4
 
     ref_input: str | None = "aerial"  # defines grid for raster targets
     log_inputs: list[str] = field(
@@ -46,7 +46,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
 
     aerial: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=256,
+            image_size=512,
             patch_size=PatchSizeConfig(mae=16, mixmae=4),
             bands=[[3, 0, 1, 2]],
             norm_bands=[1, 3],
@@ -55,7 +55,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     )
     dem: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=256,
+            image_size=512,
             patch_size=PatchSizeConfig(mae=32, mixmae=8),
             bands=2,
             norm_fac=1000.0,
@@ -63,7 +63,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     )
     spot: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=32,
+            image_size=64,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
             bands=4,
             norm_fac=2000.0,
@@ -71,10 +71,10 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     )
     s2: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=5,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            image_size=10,
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=10,
-            norm_bands=[4, 6],
+            norm_bands=[4, 4, 2],
             num_dates=16,
             mask_threshold=0.0,
             norm_fac=5000.0,
@@ -82,21 +82,25 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     )
     s1_asc: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=5,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            image_size=10,
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=2,
+            norm_bands=[1, 1],
             num_dates=4,
-            norm_fac=1.0,
+            norm_fac=5.0,
+            log_scale=True,
             name_group="sen1",
         ),
     )
     s1_des: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=5,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            image_size=10,
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=2,
+            norm_bands=[1, 1],
             num_dates=4,
-            norm_fac=1.0,
+            norm_fac=5.0,
+            log_scale=True,
             name_group="sen1",
         ),
     )

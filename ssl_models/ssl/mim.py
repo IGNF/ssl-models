@@ -15,6 +15,12 @@ from conf.dataset.utils import RasterConfig
 from conf.datasets import DatasetsConfig
 from ssl_models.layers.embed import Patchify, Pixelify
 from ssl_models.layers.head import ClassificationHead, PixelifyHead
+from ssl_models.layers.mask import (
+    create_masked_image,
+    get_cd_mask_from_logits,
+    get_segment_mask_from_logits,
+    get_target_mask_from_batch,
+)
 from ssl_models.layers.utils import (
     encode_dates,
     group_mods,
@@ -22,12 +28,6 @@ from ssl_models.layers.utils import (
     reshape_encoding,
     shuffle_enc_to_dec,
     ungroup_mods,
-)
-from ssl_models.ssl.utils import (
-    create_masked_image,
-    get_cd_mask_from_logits,
-    get_segment_mask_from_logits,
-    get_target_mask_from_batch,
 )
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
@@ -449,7 +449,7 @@ class BaseMIM(nn.Module, ABC):
         batch: dict[str, Tensor],
     ) -> Tensor:
         """Shared loss computation for all MIM modules."""
-        loss_recs = []
+        losses_rec = []
         weights = []
         for name_mod in pixels_rec:
             G = self.len_bands[name_mod]  # noqa: N806
@@ -490,10 +490,11 @@ class BaseMIM(nn.Module, ABC):
             weights.append(weight)
             loss_rec = self.loss_fn(target - pixels_rec[name_mod])
             loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod]).mean()
-            loss_recs.append(weight * loss_rec)
-        return torch.stack(loss_recs).sum() / sum(weights)
+            losses_rec.append(weight * loss_rec)
 
-    def compute_loss_pred(  # noqa: PLR0915
+        return torch.stack(losses_rec).sum() / sum(weights)
+
+    def compute_loss_pred(
         self,
         x_enc: dict[str, Tensor],
         batch: dict[str, Tensor],
@@ -543,31 +544,33 @@ class BaseMIM(nn.Module, ABC):
                 input_img = batch[next(input_keys)][
                     0,
                     0,
-                ][:RGB_BANDS]
-                log_inputs[f"{ssl_phase}_{name_target}_{stage}/_input"] = input_img
-                num_classes = target.num_classes
+                ][:BANDS_RGB]
                 target_msk = get_target_mask_from_batch(
                     batch[name_target][0, 0, 0],
-                    num_classes,
+                    target.num_classes,
                     target.missing_val,
                 )
+                log_inputs[f"{ssl_phase}_{name_target}_{stage}/_input"] = input_img
                 log_targets[f"{ssl_phase}_{name_target}_{stage}/_target"] = (
                     create_masked_image(
                         input_img,
                         target_msk,
-                        num_classes,
+                        target.num_classes,
                     )
                 )
             match target.type_target:
                 case "segment":
                     logits = self.heads[name_target](x_ref, ssl_phase)
                     # image_logger
-                    pred_msk = get_segment_mask_from_logits(logits[0, 0], num_classes)
+                    pred_msk = get_segment_mask_from_logits(
+                        logits[0, 0],
+                        target.num_classes,
+                    )
                     log_preds[f"{ssl_phase}_{name_target}_{stage}/_pred"] = (
                         create_masked_image(
                             input_img,
                             pred_msk,
-                            num_classes,
+                            target.num_classes,
                         )
                     )
                     logits = rearrange(logits, "b 1 c h w -> (b h w) c")
@@ -576,16 +579,13 @@ class BaseMIM(nn.Module, ABC):
                 case "change_detect":
                     logits = self.heads[name_target](x_ref, ssl_phase)
                     # image logger
-                    log_inputs[f"{ssl_phase}_{name_target}_{stage}/_image_1"] = (
-                        log_inputs.pop(f"{ssl_phase}_{name_target}_{stage}/_input")
-                    )
-                    input_img = batch[next(input_keys)][0, 0][:RGB_BANDS]
+                    input_img = batch[next(input_keys)][0, 0][:BANDS_RGB]
                     pred_msk = get_cd_mask_from_logits(logits)
-                    log_preds[f"{ssl_phase}_{name_target}_{stage}/_image_2_pred"] = (
+                    log_preds[f"{ssl_phase}_{name_target}_{stage}/_pred"] = (
                         create_masked_image(
                             input_img,
                             pred_msk,
-                            num_classes,
+                            target.num_classes,
                         )
                     )
                     logits = rearrange(logits, "b 1 1 h w -> (b h w)")
