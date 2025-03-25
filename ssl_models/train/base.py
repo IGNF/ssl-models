@@ -1,13 +1,15 @@
 """Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
 
+from abc import ABC, abstractmethod
 from typing import Literal
 
 import torch
 from pytorch_lightning import LightningModule
 from torch import Tensor
-from ssl_models.ssl.mae import MAE
+
 from conf.datasets import DatasetsConfig
-from abc import ABC, abstractmethod
+from ssl_models.ssl.mae import MAE
+
 
 class BaseModule(LightningModule, ABC):
     """Lightning module skeleton."""
@@ -23,7 +25,7 @@ class BaseModule(LightningModule, ABC):
         self.datasets = datasets
         self.model = model
         self.loss = loss
-        
+
     def configure_optimizers(self) -> dict:
         """Configure optimizer."""
         total_steps = self.trainer.estimated_stepping_batches
@@ -94,12 +96,12 @@ class BaseModule(LightningModule, ABC):
                 "name": f"{self.trainer.ssl_phase}_AdamW_lr",
             },
         }
-    
+
     @abstractmethod
     def probe_or_finetune_step(self):
         """Probing/finetuning step."""
         return
-    
+
     def log_metric(
         self,
         name: str,
@@ -135,4 +137,3 @@ class BaseModule(LightningModule, ABC):
             logger=True,
             sync_dist=True,
         )
-   

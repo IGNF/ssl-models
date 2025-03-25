@@ -3,7 +3,6 @@ import copy
 from typing import Literal
 
 import torch
-from torch import Tensor
 from torch.nn import functional as F  # noqa: N812
 
 from conf.datasets import DatasetsConfig
@@ -36,30 +35,13 @@ class BaselineModule(BaseModule):
     ) -> None:
         super().__init__(datasets, model, loss)
 
-        match loss:
-            case "l1":
-                norm_pix_loss = False
-                loss_fn = torch.abs
-            case "l2":
-                norm_pix_loss = False
-                loss_fn = torch.square
-            case "l1_norm":
-                norm_pix_loss = True
-                loss_fn = torch.abs
-            case "l2_norm":
-                norm_pix_loss = True
-                loss_fn = torch.square
-            case _:
-                msg = f"Invalid loss {loss}."
-                raise ValueError(msg)
-
         match model:
             case "dinov2":
                 unpool_dim = None
 
                 if len(datasets.filter_finetune)>1:
                     raise NotImplementedError("Too many datasets given.")
-                
+
                 model_args = {
                     "datasets": datasets,
                     "type_head": type_head,
@@ -79,7 +61,7 @@ class BaselineModule(BaseModule):
 
                 if len(datasets.filter_finetune)>1:
                     raise NotImplementedError("Too many datasets given.")
-                
+
                 model_args = {
                     "datasets": datasets,
                     "type_head": type_head,
@@ -119,7 +101,10 @@ class BaselineModule(BaseModule):
                 grouped_params = self.model.parameters()
                 max_lr = lr
             case _:
-                grouped_params = self.model.grouped_parameters(lr, rate_decay=self.trainer.lw_decay)
+                grouped_params = self.model.grouped_parameters(
+                    lr, rate_decay=self.trainer.lw_decay
+                )
+
                 max_lr = [param["lr"] for param in grouped_params]
 
         optimizer = torch.optim.AdamW(
@@ -201,7 +186,7 @@ class BaselineModule(BaseModule):
                     " Expected 'finetune'"
                 )
                 raise ValueError(msg)
-            
+
     def on_train_epoch_end(self) -> None:
         if self.ema_model is not None:
             self.update_ema()

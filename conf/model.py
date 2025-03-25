@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from hydra_zen import store
 
+
 @dataclass
 class ModelConfig:  # noqa: D101
     multimodal: str = "group"
@@ -24,7 +25,7 @@ class ModelConfig:  # noqa: D101
 @dataclass
 class BaselineConfig:  # noqa: D101
     multimodal: str = "shared"
-    model: str = "dinov2" 
+    model: str = "dinov2"
     model_size: str = "small"
     type_head: str = "linear"
     loss: str = "l2_norm"
