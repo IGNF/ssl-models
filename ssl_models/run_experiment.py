@@ -7,14 +7,14 @@ from clearml import Task
 from conf.data import DataConfig
 from conf.datasets import DatasetsConfig
 from conf.mask import MaskConfig
-from conf.model import ModelConfig, BaselineConfig
+from conf.model import BaselineConfig, ModelConfig
 from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
 from conf.run import RunConfig
 from conf.trainer import TrainerConfig
 from ssl_models import LOGGER
+from ssl_models.train.baseline import BaselineModule
 from ssl_models.train.data import SSLDataModule
 from ssl_models.train.model import SSLModule
-from ssl_models.train.baseline import BaselineModule
 from ssl_models.train.trainer import SSLTrainer
 
 
