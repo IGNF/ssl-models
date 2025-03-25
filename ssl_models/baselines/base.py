@@ -21,7 +21,7 @@ from ssl_models.ssl.utils import (
 )
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
-BANDS_RGB = 3
+RGB_BANDS = 3
 
 class BaseModule(Module, ABC):
     def __init__(
@@ -233,7 +233,7 @@ class BaseModule(Module, ABC):
                 input_img = batch[next(input_keys)][
                     0,
                     0,
-                ][:BANDS_RGB]
+                ][:RGB_BANDS]
                 log_inputs[f"{ssl_phase}_{name_target}_{stage}/_input"] = input_img
                 num_classes = target.num_classes
                 target_msk = get_target_mask_from_batch(
@@ -269,7 +269,7 @@ class BaseModule(Module, ABC):
                     log_inputs[f"{ssl_phase}_{name_target}_{stage}/_image_1"] = (
                         log_inputs.pop(f"{ssl_phase}_{name_target}_{stage}/_input")
                     )
-                    input_img = batch[next(input_keys)][0, 0][:BANDS_RGB]
+                    input_img = batch[next(input_keys)][0, 0][:RGB_BANDS]
                     pred_msk = get_cd_mask_from_logits(logits)
                     log_preds[f"{ssl_phase}_{name_target}_{stage}/_image_2_pred"] = (
                         create_masked_image(
