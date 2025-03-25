@@ -11,7 +11,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from torch import Tensor
 
-BANDS_RGB = 3
+RGB_BANDS = 3
 
 
 class TensorBoardLogger(TensorBoardLogger):
@@ -55,7 +55,7 @@ class ImageLogger(Callback):
         x_npy = x.detach().cpu().numpy().astype(np.float32)
         return (
             x_npy[:3]
-            if x_npy.shape[0] >= BANDS_RGB
+            if x_npy.shape[0] >= RGB_BANDS
             else x_npy.mean(axis=0, keepdims=True)
         )
 
