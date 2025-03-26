@@ -33,6 +33,7 @@ class BaselineConfig:  # noqa: D101
     weight_source: str = "imagenat"
     pretrained_path: str = None
     keep_norm: bool = True
+    add_date_enc: bool = True
 
 
 model_store = store(group="model")
