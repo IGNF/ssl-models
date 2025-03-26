@@ -32,6 +32,7 @@ class BaseModule(Module, ABC):
         unpool_dim: int,
         type_head: str = "linear",
         multimodal: str = "shared",
+        add_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -44,7 +45,8 @@ class BaseModule(Module, ABC):
         self.patch_size = patch_size
         self.multimodal = multimodal
         self.keep_norm = keep_norm
-
+        self.add_date_enc = add_date_enc
+        
         self.num_bands = {
             name_mod: (
                 [mod.bands] if isinstance(mod.bands, int) else list(map(len, mod.bands))
