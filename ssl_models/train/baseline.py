@@ -32,6 +32,7 @@ class BaselineModule(BaseModule):
         use_ema: bool = False,
         multimodal: str = "shared",
         keep_norm: bool = True,
+        add_date_enc: bool = True,
     ) -> None:
         super().__init__(datasets, model, loss)
 
@@ -51,7 +52,8 @@ class BaselineModule(BaseModule):
                     "pretrained_path": pretrained_path,
                     "freeze": freeze,
                     "multimodal": multimodal,
-                    "keep_norm": keep_norm
+                    "keep_norm": keep_norm,
+                    "add_date_enc": add_date_enc
                 }
 
                 self.model = Dinov2Baseline(**model_args)
@@ -70,7 +72,8 @@ class BaselineModule(BaseModule):
                     "freeze": freeze,
                     "pretrained_path": pretrained_path,
                     "multimodal": multimodal,
-                    "keep_norm": keep_norm
+                    "keep_norm": keep_norm,
+                    "add_date_enc": add_date_enc
                 }
 
                 self.model = DOFABaseline(**model_args)
