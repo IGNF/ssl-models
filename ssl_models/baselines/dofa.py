@@ -23,6 +23,7 @@ class DOFABaseline(BaseModule, ABC):
         freeze: bool = False,
         type_head: List[str] = "linear",
         multimodal: str = "shared",
+        add_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -66,6 +67,7 @@ class DOFABaseline(BaseModule, ABC):
         self.type_head = type_head
         self.multimodal = multimodal
         self.unpool_dim = unpool_dim
+        self.add_date_enc = add_date_enc
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
         self.keep_norm = keep_norm
@@ -295,9 +297,10 @@ class DOFABaseline(BaseModule, ABC):
 
             x[name_mod] = x_enc[:, 1:]
             dates[name_mod] = batch[f"{name_mod}_dates"]
-
-        ref_date = batch["ref_date"]
-        x = self._add_date_encodings(x, dates, ref_date)
+        
+        if self.add_date_enc:
+            ref_date = batch["ref_date"]
+            x = self._add_date_encodings(x, dates, ref_date)
 
         loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
             x,

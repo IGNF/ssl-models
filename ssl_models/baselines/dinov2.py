@@ -29,6 +29,7 @@ class Dinov2Baseline(BaseModule):
         multimodal: str = "shared",
         weight_source: str = "imagenat",
         pretrained_path: str = None,
+        add_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -65,6 +66,7 @@ class Dinov2Baseline(BaseModule):
         self.std = 0.01
         self.keep_norm = keep_norm
         self.unpool_dim = unpool_dim
+        self.add_date_enc = add_date_enc
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
 
@@ -339,9 +341,10 @@ class Dinov2Baseline(BaseModule):
 
             x[name_mod] = x_enc
             dates[name_mod] = batch[f"{name_mod}_dates"]
-
-        ref_date = batch["ref_date"]
-        x = self._add_date_encodings(x, dates, ref_date)
+        
+        if self.add_date_enc:
+            ref_date = batch["ref_date"]
+            x = self._add_date_encodings(x, dates, ref_date)
 
         loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
             x,
