@@ -1,16 +1,18 @@
 from collections import OrderedDict
+from typing import Literal
 
 import torch
 from huggingface_hub import hf_hub_download
+from torch import Tensor
 
 
-def replace_if_needed(k, dict_association):
+def replace_if_needed(k: str, dict_association: dict[str, str]) -> str:
     if k in dict_association:
         return dict_association[k]
     else:
         return k
 
-def rename_weights(ckpt):
+def rename_weights(ckpt: dict[str, Tensor]) -> OrderedDict[str, Tensor]:
     dict_association = {
         "cls_token": "embeddings.cls_token",
         "mask_token": "embeddings.mask_token",
@@ -65,7 +67,7 @@ def rename_weights(ckpt):
 
     return OrderedDict(backbone_ckpt)
 
-def load_and_dequantize(path_compressed):
+def load_and_dequantize(path_compressed: str) -> OrderedDict[str, Tensor]:
     state_dict = torch.load(path_compressed, weights_only=True)
     deq_state_dict = []
 
@@ -83,7 +85,7 @@ def load_and_dequantize(path_compressed):
 
     return OrderedDict(deq_state_dict)
 
-def get_sat_dinov2_state_dict(pretrained_path):
+def get_sat_dinov2_state_dict(pretrained_path: str) -> dict[str, Tensor]:
         """
         Load weights from the paper
             "Very high resolution sat height maps from RGB imagery"
@@ -109,7 +111,9 @@ def get_sat_dinov2_state_dict(pretrained_path):
 
         return state_dict
 
-def get_imagenat_dinov2_state_dict(model_size="large"):
+def get_imagenat_dinov2_state_dict(
+        model_size: Literal["small", "base", "large", "huge"] = "large"
+    ) -> dict[str, Tensor]:
     """Récupère le state_dict brut sans initialiser le modèle complet"""
     # Déterminer le nom du repo selon la taille
     repo_id = f"facebook/dinov2-{model_size}"
@@ -128,6 +132,6 @@ def get_imagenat_dinov2_state_dict(model_size="large"):
     except Exception as e:
         raise ValueError(f"Erreur de chargement pour {repo_id}: {str(e)}")
 
-def filter_dict(dictionnary, head):
+def filter_dict(dictionnary: dict, head: str) -> dict:
     prefix = f"{head}."
     return {k[len(prefix):]: v for k, v in dictionnary.items() if k.startswith(prefix)}
