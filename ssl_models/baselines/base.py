@@ -1,43 +1,39 @@
-from torch.nn import Module, ModuleDict
-import torch.nn.functional as F  # noqa: N812
-from torch import Tensor
-from torchmetrics import MeanMetric
-import torch
-
 from abc import ABC, abstractmethod
+from functools import partial
+from typing import Literal
+
+import torch
+import torch.nn.functional as F  # noqa: N812
+from einops import rearrange
+from torch import Tensor
+from torch.nn import Module, ModuleDict
+from torchmetrics import MeanMetric
+
 from conf.dataset.utils import RasterConfig
 from conf.datasets import DatasetsConfig
-
 from ssl_models.layers.head import ClassificationHead, PixelifyHead
-from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
-from ssl_models.layers.utils import (
-    group_mods,
-    ungroup_mods,
-    encode_dates
-)
+from ssl_models.layers.utils import encode_dates, group_mods, ungroup_mods
 from ssl_models.ssl.utils import (
     create_masked_image,
     get_cd_mask_from_logits,
     get_segment_mask_from_logits,
     get_target_mask_from_batch,
 )
+from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
-from functools import partial
-from einops import rearrange 
-from typing import Literal
-
-BANDS_RGB = 3
+RGB_BANDS = 3
 
 class BaseModule(Module, ABC):
     def __init__(
-        self, 
-        datasets: DatasetsConfig, 
-        patch_size: int, 
-        embed_dim: int, 
-        unpool_dim: int, 
-        type_head: str = "linear", 
-        multimodal: str = "shared", 
-        fac_date_enc: float = 1.0, 
+        self,
+        datasets: DatasetsConfig,
+        patch_size: int,
+        embed_dim: int,
+        unpool_dim: int,
+        type_head: Literal["linear", "attentive"] = "linear",
+        multimodal: Literal["shared", "monotemp"] = "shared",
+        add_date_enc: bool = True,
+        fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
         **kwargs
@@ -45,11 +41,12 @@ class BaseModule(Module, ABC):
         super().__init__(**kwargs)
 
         self.dataset = datasets.dataset
-        self.type_head = type_head 
+        self.type_head = type_head
         self.patch_size = patch_size
         self.multimodal = multimodal
-        self.keep_norm = keep_norm 
-        
+        self.keep_norm = keep_norm
+        self.add_date_enc = add_date_enc
+
         self.num_bands = {
             name_mod: (
                 [mod.bands] if isinstance(mod.bands, int) else list(map(len, mod.bands))
@@ -161,15 +158,15 @@ class BaseModule(Module, ABC):
     @abstractmethod
     def _build_backbone(self):
         return
-    
+
     @abstractmethod
     def _freeze_backbone(self):
         return
-    
+
     @abstractmethod
     def grouped_parameters(self, base_lr, rate_decay=0.75):
         return
-    
+
     def _add_date_encodings(
         self,
         x_enc: dict[str, Tensor],
@@ -238,7 +235,7 @@ class BaseModule(Module, ABC):
                 input_img = batch[next(input_keys)][
                     0,
                     0,
-                ][:BANDS_RGB]
+                ][:RGB_BANDS]
                 log_inputs[f"{ssl_phase}_{name_target}_{stage}/_input"] = input_img
                 num_classes = target.num_classes
                 target_msk = get_target_mask_from_batch(
@@ -274,7 +271,7 @@ class BaseModule(Module, ABC):
                     log_inputs[f"{ssl_phase}_{name_target}_{stage}/_image_1"] = (
                         log_inputs.pop(f"{ssl_phase}_{name_target}_{stage}/_input")
                     )
-                    input_img = batch[next(input_keys)][0, 0][:BANDS_RGB]
+                    input_img = batch[next(input_keys)][0, 0][:RGB_BANDS]
                     pred_msk = get_cd_mask_from_logits(logits)
                     log_preds[f"{ssl_phase}_{name_target}_{stage}/_image_2_pred"] = (
                         create_masked_image(
@@ -322,4 +319,3 @@ class BaseModule(Module, ABC):
             )
         return loss_pred, log_inputs, log_preds, log_targets
 
-    
