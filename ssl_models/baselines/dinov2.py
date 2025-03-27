@@ -84,7 +84,7 @@ class Dinov2Baseline(BaseModule):
         }
 
         self.embed_dim = self.embed_dim_by_size[self.backbone_size]
-        self.depth = self.depth_by_size[self.depth]
+        self.depth = self.depth_by_size[self.backbone_size]
 
         assert (
             self.weight_source in ["imagenat", "random"] \
@@ -107,6 +107,7 @@ class Dinov2Baseline(BaseModule):
             self.unpool_dim,
             self.type_head,
             self.multimodal,
+            self.add_date_enc,
             self.fac_date_enc,
             self.date_dim,
             self.keep_norm,
