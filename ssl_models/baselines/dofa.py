@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 from timm.models.vision_transformer import Block
 from torch import Tensor, nn
-from torch.nn import Identity, ModuleDict, Parameter, ParameterDict, init
+from torch.nn import Identity, Module, ModuleDict, Parameter, ParameterDict, init
 from torchgeo.models import DOFABase16_Weights, DOFALarge16_Weights
 
 from ssl_models.baselines.base import BaseModule
@@ -21,8 +21,8 @@ class DOFABaseline(BaseModule, ABC):
         unpool_dim: int,
         pretrained_path: str = None,
         freeze: bool = False,
-        type_head: List[str] = "linear",
-        multimodal: str = "shared",
+        type_head: Literal["linear", "attentive"] = "linear",
+        multimodal: Literal["shared", "monotemp"] = "shared",
         add_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
@@ -121,7 +121,10 @@ class DOFABaseline(BaseModule, ABC):
         else:
             self.layernorm = Identity()
 
-    def _build_patch_and_pos_embed(self, embed_dim, state_dict=None):
+    def _build_patch_and_pos_embed(self,
+        embed_dim: int,
+        state_dict: dict[str, Tensor] = None
+    ) -> tuple[ModuleDict, ParameterDict]:
         patch_embed = ModuleDict()
         pos_embed = ParameterDict()
 
@@ -143,7 +146,10 @@ class DOFABaseline(BaseModule, ABC):
 
         return patch_embed, pos_embed
 
-    def _build_cls_token(self, embed_dim, state_dict):
+    def _build_cls_token(self,
+        embed_dim: int,
+        state_dict: dict[str, Tensor]
+    ) -> Parameter:
         cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
 
         if state_dict is not None:
@@ -153,13 +159,13 @@ class DOFABaseline(BaseModule, ABC):
 
     def _build_encoder(
             self,
-            depth,
-            embed_dim,
-            num_heads,
-            mlp_ratio,
-            norm_layer,
-            state_dict=None
-    ):
+            depth: int,
+            embed_dim: int,
+            num_heads: int,
+            mlp_ratio: float,
+            norm_layer: Module,
+            state_dict: dict[str, Tensor] = None
+    ) -> ModuleDict:
         encoder = ModuleDict()
 
         model_names = self.dataset.inputs if self.multimodal != "shared" else ["shared"]
@@ -183,7 +189,11 @@ class DOFABaseline(BaseModule, ABC):
 
         return encoder
 
-    def _build_layernorm(self, embed_dim, norm_layer, state_dict=None):
+    def _build_layernorm(self,
+        embed_dim: int,
+        norm_layer: Module,
+        state_dict: dict[str, Tensor]=None
+    ) -> Module:
         layernorm = norm_layer(embed_dim)
 
         if state_dict is not None:
@@ -191,10 +201,14 @@ class DOFABaseline(BaseModule, ABC):
 
         return layernorm
 
-    def _transfer(self, state_dict, module, headname):
+    def _transfer(self,
+        state_dict: dict[str, Tensor],
+        module: Module,
+        headname: str
+    ) -> None:
         module.load_state_dict(filter_dict(state_dict, headname), strict=False)
 
-    def _freeze_backbone(self):
+    def _freeze_backbone(self) -> None:
         """
         Freeze the backbone's parameters (self.dofa).
 
@@ -216,7 +230,10 @@ class DOFABaseline(BaseModule, ABC):
         for param in self.layernorm.parameters():
             param.requires_grad = False
 
-    def grouped_parameters(self, base_lr, rate_decay=0.75):
+    def grouped_parameters(self,
+        base_lr: float,
+        rate_decay: float =0.75
+    ) -> list[dict]:
         """
         Return the grouped parameters dictionnary with layerwise learning rate.
 
@@ -298,7 +315,7 @@ class DOFABaseline(BaseModule, ABC):
 
             x[name_mod] = x_enc[:, 1:]
             dates[name_mod] = batch[f"{name_mod}_dates"]
-        
+
         if self.add_date_enc:
             ref_date = batch["ref_date"]
             x = self._add_date_encodings(x, dates, ref_date)

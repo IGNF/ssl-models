@@ -2,7 +2,7 @@ from typing import Literal
 
 import torch
 from torch import Tensor
-from torch.nn import LayerNorm, ModuleDict
+from torch.nn import LayerNorm, Module, ModuleDict
 from transformers import AutoConfig, Dinov2Config
 from transformers.models.dinov2.modeling_dinov2 import Dinov2Embeddings, Dinov2Encoder
 
@@ -17,7 +17,7 @@ from ssl_models.baselines.utils import (
 RGB_BANDS=3
 
 class Dinov2Baseline(BaseModule):
-    """Semantic Segmentation model based on DinoV2."""
+    """Baseline model based on DinoV2."""
 
     def __init__(
         self,
@@ -25,9 +25,9 @@ class Dinov2Baseline(BaseModule):
         backbone_size: str,
         unpool_dim: int,
         freeze: bool = False,
-        type_head: str = "linear",
-        multimodal: str = "shared",
-        weight_source: str = "imagenat",
+        type_head: Literal["linear", "attentive"] = "linear",
+        multimodal: Literal["shared", "monotemp"] = "shared",
+        weight_source: Literal["imagenat", "sat"] = "imagenat",
         pretrained_path: str = None,
         add_date_enc: bool = True,
         fac_date_enc: float = 1.0,
@@ -124,7 +124,7 @@ class Dinov2Baseline(BaseModule):
                 self.len_bands[name_mod] <= RGB_BANDS for name_mod in self.len_bands
         }
 
-    def _get_base_config(self, backbone_size):
+    def _get_base_config(self, backbone_size: str) -> dict[str, Tensor]:
         original_config = AutoConfig.from_pretrained(f"facebook/dinov2-{backbone_size}")
         config_dict = original_config.to_dict()
         config_dict["patch_size"] = self.patch_size
@@ -132,7 +132,10 @@ class Dinov2Baseline(BaseModule):
 
         return config_dict
 
-    def _build_patch_embed(self, config_dict, state_dict=None):
+    def _build_patch_embed(self,
+        config_dict: dict[str, Tensor],
+        state_dict: dict[str, Tensor] = None
+    ) -> ModuleDict:
         patch_embed = ModuleDict()
 
         for name_mod in self.dataset.inputs:
@@ -151,7 +154,10 @@ class Dinov2Baseline(BaseModule):
 
         return patch_embed
 
-    def _build_encoder(self, config_dict, state_dict=None):
+    def _build_encoder(self, 
+        config_dict: dict[str, Tensor],
+        state_dict: dict[str, Tensor] = None
+    ) -> ModuleDict:
         encoder = ModuleDict()
 
         model_names = self.dataset.inputs if self.multimodal != "shared" else ["shared"]
@@ -167,7 +173,10 @@ class Dinov2Baseline(BaseModule):
 
         return encoder
 
-    def _build_layer_norm(self, config_dict, state_dict=None):
+    def _build_layer_norm(self,
+        config_dict: dict[str, Tensor],
+        state_dict: dict[str, Tensor] = None
+    ) -> LayerNorm:
         layernorm = LayerNorm(
             config_dict["hidden_size"], eps=config_dict["layer_norm_eps"]
         )
@@ -177,7 +186,12 @@ class Dinov2Baseline(BaseModule):
 
         return layernorm
 
-    def _transfer(self, state_dict, module, num_channels, headname):
+    def _transfer(self,
+        state_dict: dict[str, Tensor],
+        module: Module,
+        num_channels: int,
+        headname: str
+    ) -> None:
         if num_channels>RGB_BANDS:
             adapted_state_dict = self._transfer_patch_embedding_to_more_channels(
                 state_dict,
@@ -190,7 +204,10 @@ class Dinov2Baseline(BaseModule):
         else:
             module.load_state_dict(filter_dict(state_dict, headname), strict=False)
 
-    def _build_backbone(self, backbone_size, weight_source):
+    def _build_backbone(self,
+        backbone_size: Literal["small", "base", "large", "huge"],
+        weight_source: Literal["imagenat", "sat", "random"]
+    ) -> None:
         #config dict
         config_dict = self._get_base_config(backbone_size)
 
@@ -210,7 +227,11 @@ class Dinov2Baseline(BaseModule):
         if self.keep_norm:
             self.layernorm = self._build_layer_norm(config_dict, state_dict=state_dict)
 
-    def _transfer_patch_embedding_to_more_channels(self, state_dict, num_channels, std):
+    def _transfer_patch_embedding_to_more_channels(self,
+        state_dict: dict[str, Tensor],
+        num_channels: int,
+        std: float
+    ) -> dict[str, Tensor]:
         weight_key = "embeddings.patch_embeddings.projection.weight"
 
         with torch.no_grad():
@@ -227,7 +248,7 @@ class Dinov2Baseline(BaseModule):
 
         return new_state_dict
 
-    def _freeze_backbone(self):
+    def _freeze_backbone(self) -> None:
         """
         Freeze the backbone's parameters (self.dino).
 
@@ -249,7 +270,10 @@ class Dinov2Baseline(BaseModule):
         for param in self.layernorm.parameters():
             param.requires_grad = False
 
-    def grouped_parameters(self, base_lr, rate_decay=0.75):
+    def grouped_parameters(self,
+        base_lr: float,
+        rate_decay: float = 0.75
+    ) -> list[dict]:
         """
         Return the grouped parameters dictionnary with layerwise learning rate.
 
@@ -342,7 +366,7 @@ class Dinov2Baseline(BaseModule):
 
             x[name_mod] = x_enc
             dates[name_mod] = batch[f"{name_mod}_dates"]
-        
+
         if self.add_date_enc:
             ref_date = batch["ref_date"]
             x = self._add_date_encodings(x, dates, ref_date)
