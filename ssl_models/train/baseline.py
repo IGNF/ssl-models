@@ -3,7 +3,6 @@ import copy
 from typing import Literal
 
 import torch
-from torch.nn import functional as F  # noqa: N812
 
 from conf.datasets import DatasetsConfig
 from ssl_models.baselines.dinov2 import Dinov2Baseline
@@ -132,85 +131,4 @@ class BaselineModule(BaseModule):
                 "name": f"{self.trainer.ssl_phase}_AdamW_lr",
             },
         }
-
-    def probe_or_finetune_step(
-        self,
-        batch: dict[str, torch.Tensor],
-        stage: Literal["train", "val", "test"],
-    ) -> dict[str, torch.Tensor]:
-        """Probing/finetuning step."""
-        if stage == "train" or self.ema_model is None:
-            model = self.model
-        else:
-            model = self.ema_model
-
-        _, log_inputs, log_preds, log_targets, loss_pred = model(
-            batch,
-            stage=stage,
-            ssl_phase=self.trainer.ssl_phase,
-        )
-
-        return {
-            "loss": loss_pred,
-            "log_inputs": log_inputs,
-            "log_preds": log_preds,
-            "log_targets": log_targets,
-        }
-
-    def shared_step(
-        self,
-        batch: dict[str, torch.Tensor],
-        stage: Literal["train", "val", "test"],
-    ) -> dict[str, torch.Tensor]:
-        """Shared step for training/validation."""
-        # resize
-        for name_mod, mod in self.dataset.inputs.items():
-            batch[name_mod] = F.interpolate(
-                batch[name_mod].flatten(0, 1),
-                size=(mod.image_size,) * 2,
-                mode="nearest",
-            ).unflatten(0, (-1, mod.num_dates))
-            batch[f"{name_mod}_dates"] = (
-                F.interpolate(
-                    batch[f"{name_mod}_dates"].float().flatten(0, 1),
-                    size=(mod.image_size,) * 2,
-                    mode="nearest",
-                ).unflatten(0, (-1, mod.num_dates))
-                if batch[f"{name_mod}_dates"].ndim == NDIM_RASTER
-                else batch[f"{name_mod}_dates"].float()
-            )
-
-        match self.trainer.ssl_phase:
-            case "finetune":
-                return self.probe_or_finetune_step(batch, stage)
-            case _:
-                msg = (
-                    f"Invalid ssl phase {self.trainer.ssl_phase}."
-                    " Expected 'finetune'"
-                )
-                raise ValueError(msg)
-
-    def on_train_epoch_end(self) -> None:
-        if self.ema_model is not None:
-            self.update_ema()
-
-    def training_step(
-        self,
-        batch: dict[str, torch.Tensor],
-        batch_idx: int,  # noqa: ARG002
-    ) -> dict[str, torch.Tensor]:
-        return self.shared_step(batch, stage="train")
-
-    def validation_step(
-        self,
-        batch: dict[str, torch.Tensor],
-        batch_idx: int,  # noqa: ARG002
-    ) -> dict[str, torch.Tensor]:
-        return self.shared_step(batch, stage="val")
-
-    def test_step(
-        self,
-        batch: dict[str, torch.Tensor],
-        batch_idx: int,  # noqa: ARG002
-    ) -> dict[str, torch.Tensor]:
-        return self.shared_step(batch, stage="test")
+    

@@ -79,6 +79,7 @@ class DOFABaseline(BaseModule, ABC):
             self.unpool_dim,
             self.type_head,
             self.multimodal,
+            self.add_date_enc,
             self.fac_date_enc,
             self.date_dim,
             self.keep_norm,
