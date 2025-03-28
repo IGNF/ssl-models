@@ -160,7 +160,7 @@ class BaseModule(Module, ABC):
         return
 
     @abstractmethod
-    def _freeze_backbone(self):
+    def freeze_backbone(self):
         return
 
     @abstractmethod
