@@ -41,20 +41,32 @@ class Dinov2Baseline(BaseModule):
 
         Parameters
         ----------
+        datasets: DatasetsConfig
+            The dataset config used in the probing/finetuning phase.
         backbone_size: str
-            Defines the backbone to use. To choose in "small", "base", "large", "huge"
-        num_classes: int
-            Number of classes.
+            Defines the backbone to use. To choose in "small", "base", "large", "huge".
+        unpool_dim: int
+            Parameter given to the pixelify head.
         freeze: bool
             To freeze or not to freeze the DinoV2 backbone.
         type_head: str
            Segmentation head to use. Either "linear" (default) or "attentive".
+        multimodal: str
+           Multimodal strategy. Either "shared" (default) or "monotemp" (default).
         weight_source: str
-           Either "random", "imagenat" or "sat". Default is "imagenat"
-        hidden_dim: int
-           Used if "seg_head" is set to "progressive".
+           Either "random", "imagenat" (default) or "sat".
+        pretrained_path: str
+           Path to the location of the pretrained weights.
+        add_date_enc: bool
+           Whether to add the date encodings to the embeddings.
+        fac_date_enc: float
+           Factor used to compute the date encodings.
+        date_dim: int
+           Dimension of the date embeddings.
+        keep_norm: bool
+           Choose to keep the final layernorm layer.
         kwargs:
-            Arguments to pass to `BaseModel` constructor.
+           Arguments to pass to `BaseModel` constructor.
         """
 
         self.dataset = datasets.dataset
@@ -117,7 +129,7 @@ class Dinov2Baseline(BaseModule):
         self._build_backbone(backbone_size, weight_source)
 
         if freeze:
-            self._freeze_backbone()
+            self.freeze_backbone()
 
         self.rgb = {
             name_mod:
@@ -154,7 +166,7 @@ class Dinov2Baseline(BaseModule):
 
         return patch_embed
 
-    def _build_encoder(self, 
+    def _build_encoder(self,
         config_dict: dict[str, Tensor],
         state_dict: dict[str, Tensor] = None
     ) -> ModuleDict:
@@ -248,27 +260,34 @@ class Dinov2Baseline(BaseModule):
 
         return new_state_dict
 
-    def _freeze_backbone(self) -> None:
+    def freeze_backbone(self,
+        ssl_phase: Literal["probe", "finetune"] = "finetune"
+    ) -> None:
         """
-        Freeze the backbone's parameters (self.dino).
+        Freeze the backbone's parameters.
 
         Parameters
         ----------
+        ssl_phase: str
+            SSL phase (pretrain, probe, finetune). Only probing and finetuning
+            are needed for baselines.
         Returns
         -------
         """
-        for name_mod in self.patch_embed.keys():
-            # Necessary to unfreeze patchify layer if there are more than 3 channels
-            if self.rgb[name_mod]:
-                for param in self.patch_embed[name_mod].parameters():
-                    param.requires_grad = False
+        if ssl_phase == "finetune":
+            for name_mod in self.patch_embed.keys():
+                # Necessary to unfreeze patchify layer if there are more than 3 channels
+                if self.rgb[name_mod]:
+                    for param in self.patch_embed[name_mod].parameters():
+                        param.requires_grad = False
 
         for name_mod in self.encoder.keys():
             for param in self.encoder[name_mod].parameters():
                 param.requires_grad = False
 
-        for param in self.layernorm.parameters():
-            param.requires_grad = False
+        if self.keep_norm:
+            for param in self.layernorm.parameters():
+                param.requires_grad = False
 
     def grouped_parameters(self,
         base_lr: float,
@@ -329,7 +348,7 @@ class Dinov2Baseline(BaseModule):
 
     def forward(self,
         batch: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["probe", "finetune"],
         stage: Literal["train", "val", "test"],
     ):
         """
@@ -339,8 +358,11 @@ class Dinov2Baseline(BaseModule):
         ----------
         batch: dict
             Dictionary containing the data.
-        key: str
-            Input's key.
+        ssl_phase: str
+            SSL phase (pretrain, probe, finetune). Only probing and finetuning
+            are needed for baselines.
+        stage: str
+            Learning stage: train, val, test.
 
         Returns
         -------
