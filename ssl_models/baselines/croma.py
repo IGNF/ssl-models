@@ -1,13 +1,14 @@
-from torch import nn, einsum
-from einops import rearrange
-import math
 import itertools
-import torch
+import math
 import warnings
+from typing import Literal
+
+import torch
+from einops import rearrange
+from torch import Tensor, einsum, nn
 
 from ssl_models.baselines.base import BaseModule
-from torch import Tensor
-from typing import Literal, List
+
 
 class CROMABaseline(BaseModule):
     def __init__(
@@ -17,7 +18,7 @@ class CROMABaseline(BaseModule):
         unpool_dim: int,
         pretrained_path: str = None,
         freeze: bool = False,
-        type_head: List[str] = 'linear',
+        type_head: list[str] = 'linear',
         multimodal: str = 'shared',
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
@@ -49,7 +50,7 @@ class CROMABaseline(BaseModule):
             self.patch_size = 8
 
         super().__init__(datasets, self.patch_size, self.encoder_dim, self.unpool_dim, self.type_head, self.multimodal, self.fac_date_enc, self.date_dim, self.keep_norm, **kwargs)
-        
+
         self.image_size = self._check_image_size()
 
         self._build_backbone()
@@ -65,9 +66,9 @@ class CROMABaseline(BaseModule):
             self.croma_modality = 'SAR'
         else:
             raise NotImplementedError
-        
+
         self.encoder = PretrainedCROMA(pretrained_path = self.pretrained_path, size = self.backbone_size, modality=self.croma_modality, image_resolution=self.image_size)
-    
+
     def _check_image_size(self):
         all_image_size = None
 
@@ -78,34 +79,34 @@ class CROMABaseline(BaseModule):
                 all_image_size = mod_image_size
             else:
                 assert mod_image_size == all_image_size, "All modalities should have the same image size."
-        
+
         return all_image_size
-    
+
     def _freeze_backbone(self):
        for param in self.encoder.parameters():
            param.requires_grad = False
 
     def grouped_parameters(self, base_lr, rate_decay=0.75):
         pass
-    
+
     def expand_channels(self, input, channels_to_copy):
        s = input[:, channels_to_copy, :, :]
        return torch.cat((input, s), dim=1)
-    
-    def forward(self, batch: dict[str, Tensor],         
+
+    def forward(self, batch: dict[str, Tensor],
                 ssl_phase: Literal["pretrain", "probe", "finetune"],
                 stage: Literal["train", "val", "test"],
     ):
-        
+
         input = self.group(batch)
-        
+
         sar_input = input['s1_asc']
         optical_input = self.expand_channels(input['s2'], [0,1])
 
         output_croma = self.encoder(SAR_images=sar_input, optical_images=optical_input)
-        
+
         x = {}
-        
+
         if self.croma_modality in ['both', 'optical']:
             x['s2'] = output_croma['optical_encodings']
         if self.croma_modality in ['both', 'SAR']:
@@ -171,13 +172,12 @@ class PretrainedCROMA(nn.Module):
                     nn.GELU(),  # (BSZ, num_patches, inner_dim)
                     nn.Linear(int(4*self.encoder_dim), self.encoder_dim)  # (BSZ, num_patches, dim)
                 )
-            
+
             # load weights
             self.s1_encoder.load_state_dict(torch.load(pretrained_path)['s1_encoder'])
             self.GAP_FFN_s1.load_state_dict(torch.load(pretrained_path)['s1_GAP_FFN'])
 
         if modality in ['optical', 'both']:
-            print(f'Initializing optical encoder')
             self.s2_encoder = ViT(dim=self.encoder_dim, depth=self.encoder_depth, in_channels=self.s2_channels)
             self.GAP_FFN_s2 = nn.Sequential(
                     nn.LayerNorm(self.encoder_dim),
@@ -185,18 +185,17 @@ class PretrainedCROMA(nn.Module):
                     nn.GELU(),  # (BSZ, num_patches, inner_dim)
                     nn.Linear(int(4*self.encoder_dim), self.encoder_dim)  # (BSZ, num_patches, dim)
                 )
-            
+
             # load weights
             self.s2_encoder.load_state_dict(torch.load(pretrained_path)['s2_encoder'])
             self.GAP_FFN_s2.load_state_dict(torch.load(pretrained_path)['s2_GAP_FFN'])
 
         if modality == 'both':
-            print(f'Initializing joint SAR-optical encoder')
             self.cross_encoder = BaseTransformerCrossAttn(dim=self.encoder_dim,
                                                         depth=int(self.encoder_depth/2),
                                                         num_heads=self.num_heads,
                                                         )
-            
+
             # load weights
             self.cross_encoder.load_state_dict(torch.load(pretrained_path)['joint_encoder'])
 
