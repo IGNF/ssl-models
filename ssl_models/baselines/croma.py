@@ -6,6 +6,7 @@ from typing import Literal
 import torch
 from einops import rearrange
 from torch import Tensor, einsum, nn
+from torch.nn import Module
 
 from ssl_models.baselines.base import BaseModule
 
@@ -18,8 +19,8 @@ class CROMABaseline(BaseModule):
         unpool_dim: int,
         pretrained_path: str = None,
         freeze: bool = False,
-        type_head: list[str] = 'linear',
-        multimodal: str = 'shared',
+        type_head: Literal["linear", "attentive"] = "linear",
+        multimodal: str = "shared",
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -33,6 +34,7 @@ class CROMABaseline(BaseModule):
 
         self.unpool_dim = unpool_dim
         self.pretrained_path = pretrained_path
+        self.add_date_enc = False
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
         self.keep_norm = keep_norm
@@ -49,25 +51,42 @@ class CROMABaseline(BaseModule):
             self.num_heads = 16
             self.patch_size = 8
 
-        super().__init__(datasets, self.patch_size, self.encoder_dim, self.unpool_dim, self.type_head, self.multimodal, self.fac_date_enc, self.date_dim, self.keep_norm, **kwargs)
+        super().__init__(
+            datasets,
+            self.patch_size,
+            self.encoder_dim,
+            self.unpool_dim,
+            self.type_head,
+            self.multimodal,
+            self.add_date_enc,
+            self.fac_date_enc,
+            self.date_dim,
+            self.keep_norm,
+            **kwargs
+        )
 
         self.image_size = self._check_image_size()
 
         self._build_backbone()
 
-    def _build_backbone(self):
+    def _build_backbone(self) -> Module:
         modalities = self.dataset.inputs.keys()
 
-        if 's2' in modalities and 's1_asc' in modalities:
-            self.croma_modality = 'both'
-        elif 's2' in modalities:
-            self.croma_modality = 'optical'
-        elif 's1_asc' in modalities:
-            self.croma_modality = 'SAR'
+        if "s2" in modalities and "s1_asc" in modalities:
+            self.croma_modality = "both"
+        elif "s2" in modalities:
+            self.croma_modality = "optical"
+        elif "s1_asc" in modalities:
+            self.croma_modality = "SAR"
         else:
             raise NotImplementedError
 
-        self.encoder = PretrainedCROMA(pretrained_path = self.pretrained_path, size = self.backbone_size, modality=self.croma_modality, image_resolution=self.image_size)
+        self.encoder = PretrainedCROMA(
+            pretrained_path = self.pretrained_path,
+            size = self.backbone_size,
+            modality = self.croma_modality,
+            image_resolution=self.image_size
+        )
 
     def _check_image_size(self):
         all_image_size = None
@@ -78,7 +97,11 @@ class CROMABaseline(BaseModule):
             if all_image_size is None:
                 all_image_size = mod_image_size
             else:
-                assert mod_image_size == all_image_size, "All modalities should have the same image size."
+                assert (
+                    mod_image_size == all_image_size
+                ) , (
+                    "All modalities should have the same image size."
+                )
 
         return all_image_size
 
@@ -86,10 +109,10 @@ class CROMABaseline(BaseModule):
        for param in self.encoder.parameters():
            param.requires_grad = False
 
-    def grouped_parameters(self, base_lr, rate_decay=0.75):
+    def grouped_parameters(self, base_lr: float, rate_decay: float = 0.75):
         pass
 
-    def expand_channels(self, input, channels_to_copy):
+    def expand_channels(self, input: Tensor, channels_to_copy: list[int]):
        s = input[:, channels_to_copy, :, :]
        return torch.cat((input, s), dim=1)
 
@@ -164,7 +187,7 @@ class PretrainedCROMA(nn.Module):
         self.attn_bias = get_2dalibi(num_heads=self.num_heads, num_patches=self.num_patches)
 
         if modality in ['SAR', 'both']:
-            print(f'Initializing SAR encoder')
+            print('Initializing SAR encoder')
             self.s1_encoder = ViT(dim=self.encoder_dim, depth=int(self.encoder_depth/2), in_channels=self.s1_channels)
             self.GAP_FFN_s1 = nn.Sequential(
                     nn.LayerNorm(self.encoder_dim),

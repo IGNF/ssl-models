@@ -17,8 +17,8 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     balance_pretrain: bool = True
     val_pretrain: bool = False
     crop_meters: float = 60.0
-    
-    ref_input: str | None = "aerial"
+
+    ref_input: str | None = None
     log_inputs: list[str] = field(
         default_factory=lambda: ["aerial"],
     )  # logged input modalities
