@@ -117,13 +117,14 @@ class CircaDataset(GenericDataset):
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
         inputs["ref_date"] = np.expand_dims(ref_date, axis=0)
 
-        inputs["s2_cloud_mask_global"] = cloud_mask_correction(
-            inputs["s2_cloud_mask_global"],
-        )
-        inputs["s2_cloud_mask_zoom"] = cloud_mask_correction(
-            inputs["s2_cloud_mask_zoom"],
-        )
-
+        if "s2_cloud_mask_global" in inputs:
+            inputs["s2_cloud_mask_global"] = cloud_mask_correction(
+                inputs["s2_cloud_mask_global"],
+            )
+        if "s2_cloud_mask_zoom" in inputs:
+            inputs["s2_cloud_mask_zoom"] = cloud_mask_correction(
+                inputs["s2_cloud_mask_zoom"],
+            )
         return self.transform_rasters(inputs)
 
     def __len__(self) -> int:

@@ -18,9 +18,8 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     balance_pretrain: bool = False
     val_pretrain: bool = False
     filter_percent: int | None = None
-    repeats: int = 8
+    repeats: int = 88
     crop_meters: float = 256
-    zoom_size: int | None = None
 
     ref_input: str | None = "s1_asc_zoom"  # defines grid for raster targets
     log_inputs: list[str] = field(
@@ -88,6 +87,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
             image_size=25,
             patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=4,
+            num_dates=4,
             norm_fac=1.0,
             name_group="sen1_zoom",
         ),
@@ -97,6 +97,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
             image_size=25,
             patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=4,
+            num_dates=4,
             norm_fac=1.0,
             name_group="sen1_zoom",
         ),
@@ -106,6 +107,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
             image_size=25,
             patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=10,
+            num_dates=4,
             norm_bands=[4, 6],
             mask_threshold=0.0,
             norm_fac=5000.0,
@@ -116,6 +118,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
             image_size=25,
             patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=[[11]],
+            num_dates=4,
             mask_threshold=0.0,
         ),
     )
@@ -123,7 +126,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = CircaDataset
-        self.total_meters = 22487.04
+        self.total_meters = 22446.08
 
         super().__post_init__(
             resolutions_meters={

@@ -112,7 +112,6 @@ class GenericDataset(Dataset, ABC):
         # read raster slices
         inputs = {}
         for name_mod, mod in self.dataset.rasters.items():
-            zoom_size = self.dataset.zoom_size if "zoom" in name_mod else None
             input_mod, dates_mod = self.preprocess_raster(
                 meta[f"{name_mod}_path"],
                 meta[f"{name_mod}_dates"],
@@ -120,7 +119,7 @@ class GenericDataset(Dataset, ABC):
                 meta.get(f"{name_mod}_h5_name", None),
                 meta.get(f"{name_mod}_h5_mask", None),
                 meta.get("ref_date"),
-                zoom_size,
+                bool("zoom" in name_mod),
                 start[name_mod],
                 end[name_mod],
                 **vars(mod),
@@ -138,7 +137,7 @@ class GenericDataset(Dataset, ABC):
         h5_name: str | None,
         h5_mask: str | None,
         ref_date: np.array,
-        zoom_size: int | None,
+        zoom_size: bool,
         start: tuple[int],
         end: tuple[int],
         bands: int | list[list[int]],
@@ -211,7 +210,7 @@ class GenericDataset(Dataset, ABC):
                     )
                     for x in dates_mod
                 ],
-            )[:zoom_size]
+            )[:num_dates]
             dates_mod = np.take(dates_mod, np.sort(zoom_dates_idx), axis=0)
             dates_mod = np.expand_dims(dates_mod, axis=(2, 3))
             input_mod = np.take(input_mod, np.sort(zoom_dates_idx), axis=0)
