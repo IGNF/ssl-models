@@ -131,4 +131,3 @@ class BaselineModule(BaseModule):
                 "name": f"{self.trainer.ssl_phase}_AdamW_lr",
             },
         }
-    

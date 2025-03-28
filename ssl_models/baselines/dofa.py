@@ -29,6 +29,37 @@ class DOFABaseline(BaseModule, ABC):
         keep_norm: bool = True,
         **kwargs,
     ) -> None:
+        """Constructor.
+
+        Create the DOFA encoder model using transformers.
+
+        Parameters
+        ----------
+        datasets: DatasetsConfig
+            The dataset config used in the probing/finetuning phase.
+        backbone_size: str
+            Defines the backbone to use. To choose in "small", "base", "large", "huge".
+        unpool_dim: int
+            Parameter given to the pixelify head.
+        pretrained_path: str
+           Path to the location of the pretrained weights.
+        freeze: bool
+            To freeze or not to freeze the DinoV2 backbone.
+        type_head: str
+           Segmentation head to use. Either "linear" (default) or "attentive".
+        multimodal: str
+           Multimodal strategy. Either "shared" (default) or "monotemp" (default).
+        add_date_enc: bool
+           Whether to add the date encodings to the embeddings.
+        fac_date_enc: float
+           Factor used to compute the date encodings.
+        date_dim: int
+           Dimension of the date embeddings.
+        keep_norm: bool
+           Choose to keep the final layernorm layer.
+        kwargs:
+           Arguments to pass to `BaseModel` constructor.
+        """
 
         self.backbone_size = backbone_size
         self.freeze = freeze
@@ -95,6 +126,9 @@ class DOFABaseline(BaseModule, ABC):
         }
 
         self._build_backbone()
+
+        if self.freeze:
+            self.freeze_backbone()
 
     def _build_backbone(self):
         #layers
@@ -208,9 +242,9 @@ class DOFABaseline(BaseModule, ABC):
     ) -> None:
         module.load_state_dict(filter_dict(state_dict, headname), strict=False)
 
-    def _freeze_backbone(self) -> None:
+    def freeze_backbone(self) -> None:
         """
-        Freeze the backbone's parameters (self.dofa).
+        Freeze the backbone's parameters.
 
         Parameters
         ----------
