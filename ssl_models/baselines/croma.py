@@ -21,6 +21,7 @@ class CROMABaseline(BaseModule):
         freeze: bool = False,
         type_head: Literal["linear", "attentive"] = "linear",
         multimodal: str = "shared",
+        add_date_enc: bool = False,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -34,6 +35,7 @@ class CROMABaseline(BaseModule):
 
         self.unpool_dim = unpool_dim
         self.pretrained_path = pretrained_path
+        self.add_date_enc = add_date_enc
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
         self.keep_norm = keep_norm
@@ -57,6 +59,7 @@ class CROMABaseline(BaseModule):
             self.unpool_dim,
             self.type_head,
             self.multimodal,
+            self.add_date_enc,
             self.fac_date_enc,
             self.date_dim,
             self.keep_norm,
@@ -114,14 +117,26 @@ class CROMABaseline(BaseModule):
        s = input[:, channels_to_copy, :, :]
        return torch.cat((input, s), dim=1)
 
+    def _ungroup_s1(self, outputs):
+        n_asc, n_des = self.num_dates['s1_asc'], self.num_dates['s1_des']
+        outputs = outputs.unflatten(
+            0, (-1, n_asc+n_des)
+        )
+        x_s1 = {}
+        x_s1['s1_asc'] = outputs[:,:n_asc]
+        x_s1['s1_des'] = outputs[:,n_asc:n_asc+n_des]
+        x_s1 = self.group(x_s1)
+
+        return x_s1['s1_asc'], x_s1['s1_des']
+
     def forward(self, batch: dict[str, Tensor],
                 ssl_phase: Literal["pretrain", "probe", "finetune"],
                 stage: Literal["train", "val", "test"],
     ):
-
+        batch['s1'] = torch.concat((batch['s1_asc'],batch['s1_des']), dim=1)
         input = self.group(batch)
 
-        sar_input = input['s1_asc']
+        sar_input = input['s1']
         optical_input = self.expand_channels(input['s2'], [0,1])
 
         output_croma = self.encoder(SAR_images=sar_input, optical_images=optical_input)
@@ -131,7 +146,8 @@ class CROMABaseline(BaseModule):
         if self.croma_modality in ['both', 'optical']:
             x['s2'] = output_croma['optical_encodings']
         if self.croma_modality in ['both', 'SAR']:
-            x['s1_asc'] = output_croma['SAR_encodings']
+            s1_outputs = output_croma['SAR_encodings']
+            x['s1_asc'], x['s1_des'] = self._ungroup_s1(s1_outputs)
 
         loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
             x,

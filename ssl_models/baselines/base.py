@@ -62,6 +62,10 @@ class BaseModule(Module, ABC):
         for name_mod, mod in self.dataset.inputs.items():
             self.grid_size[name_mod] = mod.image_size // self.patch_size
 
+        self.num_dates = {
+            name_mod: mod.num_dates * self.len_bands[name_mod]
+            for name_mod, mod in self.dataset.inputs.items()
+        }
         # heads
         self.heads = ModuleDict()
         for name_target, target in self.dataset.targets.items():
@@ -136,10 +140,7 @@ class BaseModule(Module, ABC):
             ungroup_mods,
             multimodal=self.multimodal,
             groups=self.dataset.groups,
-            num_dates={
-                name_mod: mod.num_dates * self.len_bands[name_mod]
-                for name_mod, mod in self.dataset.inputs.items()
-            },
+            num_dates=self.num_dates,
             grid_size=self.grid_size,
         )
 
