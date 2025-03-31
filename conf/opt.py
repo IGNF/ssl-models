@@ -36,13 +36,20 @@ probe_store(OptProbeConfig, name="default_probe")
 
 
 @dataclass
-class OptFinetuneConfig(OptConfig):  # noqa: D101
+class OptFinetuneConfig(OptConfig):
+    """Finetuning optimizer config.
+
+    Use:
+        - monitor=pastis_seg/average_iou_val for PASTIS-HD
+        - monitor=cosia/average_iou_val for FLAIR
+    """
+
     base_lr: float = 1e-5
     epochs: int = 20
     batch_size: int = 32
     lw_decay: float | None = None
     final_factor: float = 2
-    monitor: str | None = None
+    monitor: str | None = "treesat_mlc_thresh/weighted_f1_val"
 
 
 finetune_store = store(group="opt_finetune")

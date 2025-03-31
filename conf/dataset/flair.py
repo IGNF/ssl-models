@@ -34,7 +34,6 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: [
             "aerial",
             "dem",
-            "spot",
             "s2",
             "s1_asc",
             "s1_des",

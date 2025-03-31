@@ -452,7 +452,6 @@ class BaseMIM(nn.Module, ABC):
         losses_rec = []
         weights = []
         for name_mod in pixels_rec:
-            G = self.len_bands[name_mod]  # noqa: N806
             D = batch[name_mod].shape[1]  # noqa: N806
             H, W = (  # noqa: N806
                 self.out_grid_size[name_mod],
@@ -486,7 +485,7 @@ class BaseMIM(nn.Module, ABC):
                 p2=P,
             )
 
-            weight = G * D * H * W
+            weight = D * H * W
             weights.append(weight)
             loss_rec = self.loss_fn(target - pixels_rec[name_mod])
             loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod]).mean()
