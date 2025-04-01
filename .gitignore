@@ -138,5 +138,3 @@ dmypy.json
 config/conf.yaml
 
 *.sh
-
-poetry.lock
