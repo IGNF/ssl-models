@@ -79,6 +79,7 @@ class CircaDataset(GenericDataset):
         with Path(s1_dir / "dates_ASC.json").open() as f:
             meta["s1_asc_global_dates"] = strs_datetimes(json.load(f), fmt="%Y%m%d")
             meta["s1_asc_zoom_dates"] = meta["s1_asc_global_dates"]
+            meta["s1_asc_zoom_window"] = True
 
         meta["s1_des_global_path"] = (
             s1_dir / f"bands_stacked_MGRS25-{zone_id}_{row_col_id}_DESC.tif"
@@ -89,6 +90,7 @@ class CircaDataset(GenericDataset):
         with Path(s1_dir / "dates_DESC.json").open() as f:
             meta["s1_des_global_dates"] = strs_datetimes(json.load(f), fmt="%Y%m%d")
             meta["s1_des_zoom_dates"] = meta["s1_des_global_dates"]
+            meta["s1_des_zoom_window"] = True
 
         s2_dir = (
             self.root_dir
@@ -101,6 +103,9 @@ class CircaDataset(GenericDataset):
         with Path(s2_dir / "dates.json").open() as f:
             meta["s2_global_dates"] = strs_datetimes(json.load(f), fmt="%Y%m%d")
             meta["s2_zoom_dates"] = meta["s2_global_dates"]
+            meta["s2_zoom_window"] = True
+        meta["s2_global_mask"] = meta["s2_global_path"]
+        meta["s2_global_mask_bands"] = [10, 11]
 
         meta["s2_cloud_mask_global_path"] = (
             s2_dir / f"bands_stacked_{zone_id}_{row_col_id}.tif"
@@ -125,6 +130,7 @@ class CircaDataset(GenericDataset):
             inputs["s2_cloud_mask_zoom"] = cloud_mask_correction(
                 inputs["s2_cloud_mask_zoom"],
             )
+
         return self.transform_rasters(inputs)
 
     def __len__(self) -> int:
