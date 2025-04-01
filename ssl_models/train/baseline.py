@@ -26,7 +26,7 @@ class BaselineModule(BaseModule):
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         weight_source: str = "imagenat",
-        pretrained_path: str = None,
+        pretrained_path: str | None = None,
         freeze: bool = False,
         use_ema: bool = False,
         multimodal: str = "shared",
@@ -40,7 +40,8 @@ class BaselineModule(BaseModule):
                 unpool_dim = None
 
                 if len(datasets.filter_finetune)>1:
-                    raise NotImplementedError("Too many datasets given.")
+                    msg = "Too many datasets given."
+                    raise NotImplementedError(msg)
 
                 model_args = {
                     "datasets": datasets,
@@ -52,7 +53,7 @@ class BaselineModule(BaseModule):
                     "freeze": freeze,
                     "multimodal": multimodal,
                     "keep_norm": keep_norm,
-                    "add_date_enc": add_date_enc
+                    "add_date_enc": add_date_enc,
                 }
 
                 self.model = Dinov2Baseline(**model_args)
@@ -61,7 +62,8 @@ class BaselineModule(BaseModule):
                 unpool_dim = None
 
                 if len(datasets.filter_finetune)>1:
-                    raise NotImplementedError("Too many datasets given.")
+                    msg = "Too many datasets given."
+                    raise NotImplementedError(msg)
 
                 model_args = {
                     "datasets": datasets,
@@ -72,7 +74,7 @@ class BaselineModule(BaseModule):
                     "pretrained_path": pretrained_path,
                     "multimodal": multimodal,
                     "keep_norm": keep_norm,
-                    "add_date_enc": add_date_enc
+                    "add_date_enc": add_date_enc,
                 }
 
                 self.model = DOFABaseline(**model_args)
@@ -104,7 +106,7 @@ class BaselineModule(BaseModule):
                 max_lr = lr
             case _:
                 grouped_params = self.model.grouped_parameters(
-                    lr, rate_decay=self.trainer.lw_decay
+                    lr, rate_decay=self.trainer.lw_decay,
                 )
 
                 max_lr = [param["lr"] for param in grouped_params]

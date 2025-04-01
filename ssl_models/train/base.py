@@ -1,12 +1,13 @@
 """Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Literal
-from torch.nn import functional as F  # noqa: N812
 
 import torch
 from pytorch_lightning import LightningModule
 from torch import Tensor
+from torch.nn import Module
+from torch.nn import functional as F  # noqa: N812
 
 from conf.datasets import DatasetsConfig
 from ssl_models.ssl.mae import MAE
@@ -20,9 +21,9 @@ class BaseModule(LightningModule, ABC):
         self,
         # shared args
         datasets: DatasetsConfig,
-        model,
-        loss
-    ):
+        model: Module,
+        loss: Module,
+    ) -> None:
         super().__init__()
         self.datasets = datasets
         self.model = model

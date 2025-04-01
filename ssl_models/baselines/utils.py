@@ -1,3 +1,4 @@
+"""Some utils functions (mainly about state dict loading) for baselines."""
 from collections import OrderedDict
 from typing import Literal
 
@@ -7,12 +8,17 @@ from torch import Tensor
 
 
 def replace_if_needed(k: str, dict_association: dict[str, str]) -> str:
+    """If k is a key in dict_association, then return the corresponding value.
+
+    Otherwise, return k.
+    """
     if k in dict_association:
         return dict_association[k]
-    else:
-        return k
+
+    return k
 
 def rename_weights(ckpt: dict[str, Tensor]) -> OrderedDict[str, Tensor]:
+    """Rename weight names in the checkout."""
     dict_association = {
         "cls_token": "embeddings.cls_token",
         "mask_token": "embeddings.mask_token",
@@ -24,7 +30,7 @@ def rename_weights(ckpt: dict[str, Tensor]) -> OrderedDict[str, Tensor]:
         "ls2": "layer_scale2",
         "attn": "attention",
         "qkv": "attention.qkv",
-        "gamma": "lambda1"
+        "gamma": "lambda1",
     }
 
     backbone_ckpt = {}
@@ -68,6 +74,7 @@ def rename_weights(ckpt: dict[str, Tensor]) -> OrderedDict[str, Tensor]:
     return OrderedDict(backbone_ckpt)
 
 def load_and_dequantize(path_compressed: str) -> OrderedDict[str, Tensor]:
+    """Load the compressed state dict located at path_compressed and dequantize it."""
     state_dict = torch.load(path_compressed, weights_only=True)
     deq_state_dict = []
 
@@ -86,8 +93,8 @@ def load_and_dequantize(path_compressed: str) -> OrderedDict[str, Tensor]:
     return OrderedDict(deq_state_dict)
 
 def get_sat_dinov2_state_dict(pretrained_path: str) -> dict[str, Tensor]:
-        """
-        Load weights from the paper
+        """Load weights from the paper.
+
             "Very high resolution sat height maps from RGB imagery"
         (https://arxiv.org/abs/2304.07213)
 
@@ -97,8 +104,6 @@ def get_sat_dinov2_state_dict(pretrained_path: str) -> dict[str, Tensor]:
             Path to the weights.
         num_channels: int
             Number of input channels.
-        Returns
-        -------
 
         """
         if "compressed" in pretrained_path:
@@ -107,31 +112,26 @@ def get_sat_dinov2_state_dict(pretrained_path: str) -> dict[str, Tensor]:
             state_dict = torch.load(pretrained_path, weights_only=True)
 
         #Rename and load
-        state_dict = rename_weights(state_dict)
-
-        return state_dict
+        return rename_weights(state_dict)
 
 def get_imagenat_dinov2_state_dict(
-        model_size: Literal["small", "base", "large", "huge"] = "large"
+        model_size: Literal["small", "base", "large", "huge"] = "large",
     ) -> dict[str, Tensor]:
-    """Récupère le state_dict brut sans initialiser le modèle complet"""
+    """Load the raw state_dict without initializing the whole model."""
     # Déterminer le nom du repo selon la taille
     repo_id = f"facebook/dinov2-{model_size}"
 
-    try:
-        # Télécharger le fichier de poids directement
-        model_path = hf_hub_download(
-            repo_id=repo_id,
-            filename="pytorch_model.bin",
-            cache_dir="./cache"
-        )
+    # Télécharger le fichier de poids directement
+    model_path = hf_hub_download(
+        repo_id=repo_id,
+        filename="pytorch_model.bin",
+        cache_dir="./cache",
+    )
 
-        # Charger le state_dict
-        return torch.load(model_path, weights_only=True)
-
-    except Exception as e:
-        raise ValueError(f"Erreur de chargement pour {repo_id}: {str(e)}")
+    # Charger le state_dict
+    return torch.load(model_path, weights_only=True)
 
 def filter_dict(dictionnary: dict, head: str) -> dict:
+    """Filter dictionnary by selecting keys beginning with head."""
     prefix = f"{head}."
     return {k[len(prefix):]: v for k, v in dictionnary.items() if k.startswith(prefix)}

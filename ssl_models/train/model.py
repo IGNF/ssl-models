@@ -5,7 +5,6 @@ from typing import Literal
 
 import torch
 from pytorch_lightning import LightningModule
-from torch.nn import functional as F  # noqa: N812
 
 from conf.datasets import DatasetsConfig
 from conf.mask import MaskConfig
