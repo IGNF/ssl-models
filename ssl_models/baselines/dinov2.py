@@ -102,15 +102,13 @@ class Dinov2Baseline(BaseModule):
         self.embed_dim = self.embed_dim_by_size[self.backbone_size]
         self.depth = self.depth_by_size[self.backbone_size]
 
-        if (self.weight_source in ["imagenat", "random"] or \
-            (self.weight_source == "sat" and backbone_size in ["large"])
-        ):
+        if self.weight_source == "sat" and backbone_size not in ["large"]:
             msg = f"Weight source {weight_source} is not compatible \
                 with backbone_size {backbone_size}"
 
             raise ValueError(msg)
 
-        if self.pretrained_path is not None or self.weight_source == "imagenat":
+        if self.weight_source == "sat" and self.pretrained_path is None:
             msg = "A weight path should be given."
 
             raise ValueError(msg)
