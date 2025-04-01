@@ -33,6 +33,7 @@ albumentations = "1.4.0"
 pyogrio = "0.10.0"
 pyarrow = "18.1.0"
 matplotlib = "^3.10.0"
+odeon = {git = "https://github.com/IGNF/odeon"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.1.1"
