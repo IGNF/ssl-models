@@ -2337,6 +2337,32 @@ files = [
 ]
 
 [[package]]
+name = "odeon"
+version = "0.5.2"
+description = "odeon is a framework for development of machine learning pipeline in remote sensing"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+markers = "python_version <= \"3.11\" and (sys_platform == \"darwin\" or sys_platform == \"linux\" or sys_platform == \"win32\" or sys_platform != \"linux\" and sys_platform != \"win32\" and sys_platform != \"darwin\")"
+files = []
+develop = false
+
+[package.dependencies]
+geopandas = ">=0.10"
+jsonargparse = "*"
+omegaconf = "*"
+pandas = "*"
+pytorch-lightning = ">=2.1"
+rasterio = ">=1.1.5"
+torch = ">=1.6"
+
+[package.source]
+type = "git"
+url = "https://github.com/IGNF/odeon"
+reference = "HEAD"
+resolved_reference = "c7d1fc396c04c8a26263570689c858059f2ee9e0"
+
+[[package]]
 name = "omegaconf"
 version = "2.3.0"
 description = "A flexible configuration library"
@@ -4885,4 +4911,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.12"
-content-hash = "3f0568d943d80f928dfc8172a0cecd3fd71167a151b66d5458820cb8379843c3"
+content-hash = "cc75539c82b109681cab9a2c56b6ce1d5d0d4eda6497e9265e4dbce07f57539d"
