@@ -4,6 +4,7 @@ The DinoV2 framework: https://arxiv.org/abs/2304.07193
 Pretrained weights('sat' in the code below) from an adaptation
 on high resolution satellite images: https://arxiv.org/abs/2304.07213
 """
+
 from typing import Literal
 
 import torch
@@ -20,7 +21,8 @@ from ssl_models.baselines.utils import (
     get_sat_dinov2_state_dict,
 )
 
-RGB_BANDS=3
+RGB_BANDS = 3
+
 
 class Dinov2Baseline(BaseModule):
     """Baseline model based on DinoV2."""
@@ -39,7 +41,7 @@ class Dinov2Baseline(BaseModule):
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
-        **kwargs, # noqa: ANN003
+        **kwargs,  # noqa: ANN003
     ) -> None:
         """Create the dinov2 encoder model using transformers.
 
@@ -92,11 +94,17 @@ class Dinov2Baseline(BaseModule):
             self.patch_size = 16
 
         self.embed_dim_by_size = {
-            "small": 384, "base": 768, "large": 1024, "huge": 1280,
+            "small": 384,
+            "base": 768,
+            "large": 1024,
+            "huge": 1280,
         }
 
         self.depth_by_size = {
-            "small": 12, "base": 12, "large": 24, "huge": 32,
+            "small": 12,
+            "base": 12,
+            "large": 24,
+            "huge": 32,
         }
 
         self.embed_dim = self.embed_dim_by_size[self.backbone_size]
@@ -133,19 +141,20 @@ class Dinov2Baseline(BaseModule):
             self.freeze_backbone()
 
         self.rgb = {
-            name_mod:
-                self.len_bands[name_mod] <= RGB_BANDS for name_mod in self.len_bands
+            name_mod: self.len_bands[name_mod] <= RGB_BANDS
+            for name_mod in self.len_bands
         }
 
     def _get_base_config(self, backbone_size: str) -> dict[str, Tensor]:
         original_config = AutoConfig.from_pretrained(f"facebook/dinov2-{backbone_size}")
         config_dict = original_config.to_dict()
         config_dict["patch_size"] = self.patch_size
-        config_dict["image_size"] = 224 if self.weight_source=="sat" else 518
+        config_dict["image_size"] = 224 if self.weight_source == "sat" else 518
 
         return config_dict
 
-    def _build_patch_embed(self,
+    def _build_patch_embed(
+        self,
         config_dict: dict[str, Tensor],
         state_dict: dict[str, Tensor] | None = None,
     ) -> ModuleDict:
@@ -167,7 +176,8 @@ class Dinov2Baseline(BaseModule):
 
         return patch_embed
 
-    def _build_encoder(self,
+    def _build_encoder(
+        self,
         config_dict: dict[str, Tensor],
         state_dict: dict[str, Tensor] | None = None,
     ) -> ModuleDict:
@@ -186,12 +196,14 @@ class Dinov2Baseline(BaseModule):
 
         return encoder
 
-    def _build_layer_norm(self,
+    def _build_layer_norm(
+        self,
         config_dict: dict[str, Tensor],
         state_dict: dict[str, Tensor] | None = None,
     ) -> LayerNorm:
         layernorm = LayerNorm(
-            config_dict["hidden_size"], eps=config_dict["layer_norm_eps"],
+            config_dict["hidden_size"],
+            eps=config_dict["layer_norm_eps"],
         )
 
         if state_dict is not None:
@@ -199,48 +211,52 @@ class Dinov2Baseline(BaseModule):
 
         return layernorm
 
-    def _transfer(self,
+    def _transfer(
+        self,
         state_dict: dict[str, Tensor],
         module: Module,
         num_channels: int,
         headname: str,
     ) -> None:
-        if num_channels>RGB_BANDS:
+        if num_channels > RGB_BANDS:
             adapted_state_dict = self._transfer_patch_embedding_to_more_channels(
                 state_dict,
                 num_channels,
                 self.std,
             )
             module.load_state_dict(
-                filter_dict(adapted_state_dict, headname), strict=False,
+                filter_dict(adapted_state_dict, headname),
+                strict=False,
             )
         else:
             module.load_state_dict(filter_dict(state_dict, headname), strict=False)
 
-    def _build_backbone(self,
+    def _build_backbone(
+        self,
         backbone_size: Literal["small", "base", "large", "huge"],
         weight_source: Literal["imagenat", "sat", "random"],
     ) -> None:
-        #config dict
+        # config dict
         config_dict = self._get_base_config(backbone_size)
 
-        #state dict
+        # state dict
         if weight_source == "imagenat":
             state_dict = get_imagenat_dinov2_state_dict(backbone_size)
         elif weight_source == "sat":
             state_dict = get_sat_dinov2_state_dict(self.pretrained_path)
-        else: #random initialization
+        else:  # random initialization
             state_dict = None
 
-        #patch embedding layers (per modality)
+        # patch embedding layers (per modality)
         self.patch_embed = self._build_patch_embed(config_dict, state_dict=state_dict)
-        #encoder
+        # encoder
         self.encoder = self._build_encoder(config_dict, state_dict=state_dict)
-        #layer norm
+        # layer norm
         if self.keep_norm:
             self.layernorm = self._build_layer_norm(config_dict, state_dict=state_dict)
 
-    def _transfer_patch_embedding_to_more_channels(self,
+    def _transfer_patch_embedding_to_more_channels(
+        self,
         state_dict: dict[str, Tensor],
         num_channels: int,
         std: float,
@@ -252,8 +268,8 @@ class Dinov2Baseline(BaseModule):
             old_weights = new_state_dict[weight_key]
             bs, _, hs, ws = old_weights.shape
 
-            means = torch.zeros((bs, num_channels-RGB_BANDS, hs, ws))
-            stds = torch.ones((bs, num_channels-RGB_BANDS, hs, ws))*std
+            means = torch.zeros((bs, num_channels - RGB_BANDS, hs, ws))
+            stds = torch.ones((bs, num_channels - RGB_BANDS, hs, ws)) * std
 
             pad_tensor = torch.normal(means, stds)
             new_weights = torch.cat((old_weights, pad_tensor), dim=1)
@@ -261,7 +277,8 @@ class Dinov2Baseline(BaseModule):
 
         return new_state_dict
 
-    def freeze_backbone(self,
+    def freeze_backbone(
+        self,
         ssl_phase: Literal["probe", "finetune"] = "finetune",
     ) -> None:
         """Freeze the backbone's parameters.
@@ -292,7 +309,8 @@ class Dinov2Baseline(BaseModule):
             for param in self.layernorm.parameters():
                 param.requires_grad = False
 
-    def grouped_parameters(self,
+    def grouped_parameters(
+        self,
         base_lr: float,
         rate_decay: float = 0.75,
     ) -> list[dict]:
@@ -314,30 +332,34 @@ class Dinov2Baseline(BaseModule):
         lr_map = {}
 
         for name_mod in self.patch_embed:
-            if self.rgb[name_mod]: #RGB
-                lr_map[f"patch_embed.{name_mod}"] = base_lr * rate_decay**(self.depth+1)
+            if self.rgb[name_mod]:  # RGB
+                lr_map[f"patch_embed.{name_mod}"] = base_lr * rate_decay ** (
+                    self.depth + 1
+                )
             else:
                 lr_map[f"patch_embed.{name_mod}"] = base_lr
 
         for name_mod in self.encoder:
             for i in range(self.depth):
-                lr_map[f"encoder.{name_mod}.{i}"] = base_lr * rate_decay**(self.depth-i)
+                lr_map[f"encoder.{name_mod}.{i}"] = base_lr * rate_decay ** (
+                    self.depth - i
+                )
 
         lr_map["heads"] = base_lr
 
         params_dict = {}
 
         for name_mod in self.patch_embed:
-            params_dict[
-                f"patch_embed.{name_mod}"
-            ] = self.patch_embed[name_mod].parameters()
+            params_dict[f"patch_embed.{name_mod}"] = self.patch_embed[
+                name_mod
+            ].parameters()
 
         for i in range(self.depth):
             params_dict[f"encoder.layer.{i}"] = self.encoder.layer[i].parameters()
 
         if self.keep_norm:
             lr_map["layernorm"] = base_lr
-            params_dict["layernorm"] =self.layernorm.parameters()
+            params_dict["layernorm"] = self.layernorm.parameters()
 
         params_dict["heads"] = self.heads.parameters()
 
@@ -347,7 +369,8 @@ class Dinov2Baseline(BaseModule):
 
         return grouped_parameters
 
-    def forward(self,
+    def forward(
+        self,
         batch: dict[str, Tensor],
         ssl_phase: Literal["probe", "finetune"],
         stage: Literal["train", "val", "test"],

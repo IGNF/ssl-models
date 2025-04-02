@@ -1,4 +1,5 @@
 """Base module for foundation model baselines."""
+
 from abc import ABC, abstractmethod
 from functools import partial
 from typing import Literal
@@ -24,10 +25,11 @@ from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
 RGB_BANDS = 3
 
+
 class BaseModule(Module, ABC):
     """Base Module for baselines."""
 
-    def __init__( # noqa: C901
+    def __init__(  # noqa: C901
         self,
         datasets: DatasetsConfig,
         patch_size: int,
@@ -39,7 +41,7 @@ class BaseModule(Module, ABC):
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
-        **kwargs, # noqa: ANN003
+        **kwargs,  # noqa: ANN003
     ) -> None:
         super().__init__(**kwargs)
 
@@ -167,7 +169,7 @@ class BaseModule(Module, ABC):
         return
 
     @abstractmethod
-    def grouped_parameters(self, base_lr: float, rate_decay: float =0.75) -> None:
+    def grouped_parameters(self, base_lr: float, rate_decay: float = 0.75) -> None:
         return
 
     def _add_date_encodings(
@@ -321,4 +323,3 @@ class BaseModule(Module, ABC):
                 targets_selected,
             )
         return loss_pred, log_inputs, log_preds, log_targets
-

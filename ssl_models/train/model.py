@@ -247,4 +247,3 @@ class SSLModule(LightningModule):
             "log_preds": log_preds,
             "log_targets": log_targets,
         }
-

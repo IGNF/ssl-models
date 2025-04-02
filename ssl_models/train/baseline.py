@@ -1,4 +1,5 @@
 """Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
+
 import copy
 from typing import Literal
 
@@ -39,7 +40,7 @@ class BaselineModule(BaseModule):
             case "dinov2":
                 unpool_dim = None
 
-                if len(datasets.filter_finetune)>1:
+                if len(datasets.filter_finetune) > 1:
                     msg = "Too many datasets given."
                     raise NotImplementedError(msg)
 
@@ -61,7 +62,7 @@ class BaselineModule(BaseModule):
             case "dofa":
                 unpool_dim = None
 
-                if len(datasets.filter_finetune)>1:
+                if len(datasets.filter_finetune) > 1:
                     msg = "Too many datasets given."
                     raise NotImplementedError(msg)
 
@@ -106,7 +107,8 @@ class BaselineModule(BaseModule):
                 max_lr = lr
             case _:
                 grouped_params = self.model.grouped_parameters(
-                    lr, rate_decay=self.trainer.lw_decay,
+                    lr,
+                    rate_decay=self.trainer.lw_decay,
                 )
 
                 max_lr = [param["lr"] for param in grouped_params]

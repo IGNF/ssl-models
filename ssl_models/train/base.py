@@ -14,6 +14,7 @@ from ssl_models.ssl.mae import MAE
 
 NDIM_RASTER = 5  # (batch, dates, channels, height, width)
 
+
 class BaseModule(LightningModule, ABC):
     """Lightning module skeleton."""
 

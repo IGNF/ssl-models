@@ -22,6 +22,7 @@ class ModelConfig:  # noqa: D101
     batch_repeats: int | None = None
     use_ema: bool = False
 
+
 @dataclass
 class BaselineConfig:  # noqa: D101
     multimodal: str = "shared"

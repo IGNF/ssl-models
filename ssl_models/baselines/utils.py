@@ -1,4 +1,5 @@
 """Some utils functions (mainly about state dict loading) for baselines."""
+
 from collections import OrderedDict
 from typing import Literal
 
@@ -17,6 +18,7 @@ def replace_if_needed(k: str, dict_association: dict[str, str]) -> str:
 
     return k
 
+
 def rename_weights(ckpt: dict[str, Tensor]) -> OrderedDict[str, Tensor]:
     """Rename weight names in the checkout."""
     dict_association = {
@@ -24,8 +26,8 @@ def rename_weights(ckpt: dict[str, Tensor]) -> OrderedDict[str, Tensor]:
         "mask_token": "embeddings.mask_token",
         "patch_embed": "embeddings.patch_embeddings",
         "pos_embed": "embeddings.position_embeddings",
-        "proj":"projection",
-        "blocks":"encoder.layer",
+        "proj": "projection",
+        "blocks": "encoder.layer",
         "ls1": "layer_scale1",
         "ls2": "layer_scale2",
         "attn": "attention",
@@ -34,7 +36,7 @@ def rename_weights(ckpt: dict[str, Tensor]) -> OrderedDict[str, Tensor]:
     }
 
     backbone_ckpt = {}
-    for k,v in ckpt.items():
+    for k, v in ckpt.items():
         if "backbone" in k:
             modules = k.split(".")[1:]
             modules = [replace_if_needed(m, dict_association) for m in modules]
@@ -42,26 +44,26 @@ def rename_weights(ckpt: dict[str, Tensor]) -> OrderedDict[str, Tensor]:
             new_k = new_k.replace("attention.projection", "attention.output.dense")
 
             if "qkv.weight" in new_k:
-                new_size = v.shape[0]//3
+                new_size = v.shape[0] // 3
                 k_query = new_k.replace("qkv.weight", "query.weight")
-                backbone_ckpt[k_query] = v[:new_size,:]
+                backbone_ckpt[k_query] = v[:new_size, :]
 
                 k_key = new_k.replace("qkv.weight", "key.weight")
-                backbone_ckpt[k_key] = v[new_size:2*new_size,:]
+                backbone_ckpt[k_key] = v[new_size : 2 * new_size, :]
 
                 k_value = new_k.replace("qkv.weight", "value.weight")
-                backbone_ckpt[k_value] = v[2*new_size:3*new_size,:]
+                backbone_ckpt[k_value] = v[2 * new_size : 3 * new_size, :]
 
             elif "qkv.bias" in new_k:
-                new_size = v.shape[0]//3
+                new_size = v.shape[0] // 3
                 k_query = new_k.replace("qkv.bias", "query.bias")
                 backbone_ckpt[k_query] = v[:new_size]
 
                 k_key = new_k.replace("qkv.bias", "key.bias")
-                backbone_ckpt[k_key] = v[new_size:2*new_size]
+                backbone_ckpt[k_key] = v[new_size : 2 * new_size]
 
                 k_value = new_k.replace("qkv.bias", "value.bias")
-                backbone_ckpt[k_value] = v[2*new_size:3*new_size]
+                backbone_ckpt[k_value] = v[2 * new_size : 3 * new_size]
 
             elif ".scale" in new_k or ".zero_point" in new_k:
                 continue
@@ -72,6 +74,7 @@ def rename_weights(ckpt: dict[str, Tensor]) -> OrderedDict[str, Tensor]:
                 backbone_ckpt[new_k] = v
 
     return OrderedDict(backbone_ckpt)
+
 
 def load_and_dequantize(path_compressed: str) -> OrderedDict[str, Tensor]:
     """Load the compressed state dict located at path_compressed and dequantize it."""
@@ -92,31 +95,33 @@ def load_and_dequantize(path_compressed: str) -> OrderedDict[str, Tensor]:
 
     return OrderedDict(deq_state_dict)
 
+
 def get_sat_dinov2_state_dict(pretrained_path: str) -> dict[str, Tensor]:
-        """Load weights from the paper.
+    """Load weights from the paper.
 
-            "Very high resolution sat height maps from RGB imagery"
-        (https://arxiv.org/abs/2304.07213)
+        "Very high resolution sat height maps from RGB imagery"
+    (https://arxiv.org/abs/2304.07213)
 
-        Parameters
-        ----------
-        pretrained_path: str
-            Path to the weights.
-        num_channels: int
-            Number of input channels.
+    Parameters
+    ----------
+    pretrained_path: str
+        Path to the weights.
+    num_channels: int
+        Number of input channels.
 
-        """
-        if "compressed" in pretrained_path:
-            state_dict = load_and_dequantize(pretrained_path)
-        else:
-            state_dict = torch.load(pretrained_path, weights_only=True)
+    """
+    if "compressed" in pretrained_path:
+        state_dict = load_and_dequantize(pretrained_path)
+    else:
+        state_dict = torch.load(pretrained_path, weights_only=True)
 
-        #Rename and load
-        return rename_weights(state_dict)
+    # Rename and load
+    return rename_weights(state_dict)
+
 
 def get_imagenat_dinov2_state_dict(
-        model_size: Literal["small", "base", "large", "huge"] = "large",
-    ) -> dict[str, Tensor]:
+    model_size: Literal["small", "base", "large", "huge"] = "large",
+) -> dict[str, Tensor]:
     """Load the raw state_dict without initializing the whole model."""
     # Déterminer le nom du repo selon la taille
     repo_id = f"facebook/dinov2-{model_size}"
@@ -131,7 +136,8 @@ def get_imagenat_dinov2_state_dict(
     # Charger le state_dict
     return torch.load(model_path, weights_only=True)
 
+
 def filter_dict(dictionnary: dict, head: str) -> dict:
     """Filter dictionnary by selecting keys beginning with head."""
     prefix = f"{head}."
-    return {k[len(prefix):]: v for k, v in dictionnary.items() if k.startswith(prefix)}
+    return {k[len(prefix) :]: v for k, v in dictionnary.items() if k.startswith(prefix)}
