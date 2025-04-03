@@ -129,7 +129,7 @@ class GenericDataset(Dataset, ABC):
 
         return inputs
 
-    def preprocess_raster(  # noqa: PLR0915, C901
+    def preprocess_raster(  # noqa: PLR0915, C901, PLR0913
         self,
         path_mod: Path,
         dates_mod: np.ndarray,
@@ -165,13 +165,14 @@ class GenericDataset(Dataset, ABC):
         match path_mod.suffix:
             case ".tif" | ".png" | ".jpg" | ".jpeg":
                 with rasterio.open(path_mod) as src:
-                    window = Window(
-                        start[1],
-                        start[0],
-                        end[1] - start[1],
-                        end[0] - start[0],
+                    input_mod = src.read(
+                        window=Window(
+                            start[1],
+                            start[0],
+                            end[1] - start[1],
+                            end[0] - start[0],
+                        ),
                     )
-                    input_mod = src.read(window=window)
                     input_mod = self.unflatten(input_mod, 0, (len(dates_mod), -1))
                     input_mod = input_mod[:, bands]
                 if use_mask and mask is not None:
