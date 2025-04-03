@@ -5,9 +5,9 @@ from typing import Literal
 import torch
 
 from conf.datasets import DatasetsConfig
+from ssl_models.baselines.croma import CROMABaseline
 from ssl_models.baselines.dinov2 import Dinov2Baseline
 from ssl_models.baselines.dofa import DOFABaseline
-from ssl_models.baselines.croma import CROMABaseline
 from ssl_models.train.base import BaseModule
 
 torch.set_float32_matmul_precision(precision="medium")
@@ -27,7 +27,7 @@ class BaselineModule(BaseModule):
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         weight_source: str = "imagenat",
-        pretrained_path: str = None,
+        pretrained_path: str | None = None,
         freeze: bool = False,
         use_ema: bool = False,
         multimodal: str = "shared",
@@ -40,8 +40,9 @@ class BaselineModule(BaseModule):
             case "dinov2":
                 unpool_dim = None
 
-                if len(datasets.filter_finetune)>1:
-                    raise NotImplementedError("Too many datasets given.")
+                if len(datasets.filter_finetune) > 1:
+                    msg = "Too many datasets given."
+                    raise NotImplementedError(msg)
 
                 model_args = {
                     "datasets": datasets,
@@ -53,7 +54,7 @@ class BaselineModule(BaseModule):
                     "freeze": freeze,
                     "multimodal": multimodal,
                     "keep_norm": keep_norm,
-                    "add_date_enc": add_date_enc
+                    "add_date_enc": add_date_enc,
                 }
 
                 self.model = Dinov2Baseline(**model_args)
@@ -107,7 +108,8 @@ class BaselineModule(BaseModule):
                 max_lr = lr
             case _:
                 grouped_params = self.model.grouped_parameters(
-                    lr, rate_decay=self.trainer.lw_decay
+                    lr,
+                    rate_decay=self.trainer.lw_decay,
                 )
 
                 max_lr = [param["lr"] for param in grouped_params]
@@ -134,4 +136,3 @@ class BaselineModule(BaseModule):
                 "name": f"{self.trainer.ssl_phase}_AdamW_lr",
             },
         }
-    

@@ -85,10 +85,20 @@ class MonoLabelMetric(Metric):
 
         per_class_f1 = (2 * true_pos) / (2 * true_pos + false_pos + false_neg)
         per_class_iou = true_pos / (true_pos + false_pos + false_neg)
+
+        valid_classes_inds = (true_pos + false_neg).nonzero().squeeze(dim=1)
         metrics = {
             "overall_accuracy": overall_acc,
-            "average_f1": per_class_f1.nanmean(),
-            "average_iou": per_class_iou.nanmean(),
+            "average_f1": torch.index_select(
+                per_class_f1,
+                dim=0,
+                index=valid_classes_inds,
+            ).mean(),
+            "average_iou": torch.index_select(
+                per_class_iou,
+                dim=0,
+                index=valid_classes_inds,
+            ).mean(),
             "confusion_matrix": self.cm,
         }
         return {
