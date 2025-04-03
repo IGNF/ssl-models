@@ -4,7 +4,6 @@ import copy
 from typing import Literal
 
 import torch
-from pytorch_lightning import LightningModule
 
 from conf.datasets import DatasetsConfig
 from conf.mask import MaskConfig
@@ -16,13 +15,14 @@ from ssl_models.ssl.mixmae import (
     mixmae_small,
     mixmae_tiny,
 )
+from ssl_models.train.base import BaseModule
 
 torch.set_float32_matmul_precision(precision="medium")
 
 NDIM_RASTER = 5  # (batch, dates, channels, height, width)
 
 
-class SSLModule(LightningModule):
+class SSLModule(BaseModule):
     """SSL module."""
 
     def __init__(  # noqa: PLR0913
@@ -46,7 +46,7 @@ class SSLModule(LightningModule):
         v2_attn: bool = True,
         swin_abs_enc: bool = False,
     ) -> None:
-        super().__init__()
+        super().__init__(datasets, model, loss)
 
         match loss:
             case "l1":

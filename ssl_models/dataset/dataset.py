@@ -129,7 +129,7 @@ class GenericDataset(Dataset, ABC):
 
         return inputs
 
-    def preprocess_raster(  # noqa: PLR0915, C901
+    def preprocess_raster(  # noqa: PLR0915, C901, PLR0913
         self,
         path_mod: Path,
         dates_mod: np.ndarray,
@@ -145,6 +145,7 @@ class GenericDataset(Dataset, ABC):
         num_dates: int,
         mask_threshold: float,  # threshold on mask percentage cover
         norm_fac: float | None,
+        log_scale: bool,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> tuple[np.ndarray, np.ndarray]:
         """Read raster modality."""
@@ -164,13 +165,14 @@ class GenericDataset(Dataset, ABC):
         match path_mod.suffix:
             case ".tif" | ".png" | ".jpg" | ".jpeg":
                 with rasterio.open(path_mod) as src:
-                    window = Window(
-                        start[1],
-                        start[0],
-                        end[1] - start[1],
-                        end[0] - start[0],
+                    input_mod = src.read(
+                        window=Window(
+                            start[1],
+                            start[0],
+                            end[1] - start[1],
+                            end[0] - start[0],
+                        ),
                     )
-                    input_mod = src.read(window=window)
                     input_mod = self.unflatten(input_mod, 0, (len(dates_mod), -1))
                     input_mod = input_mod[:, bands]
                 if use_mask and mask is not None:
@@ -235,6 +237,9 @@ class GenericDataset(Dataset, ABC):
             dates_mod = np.take_along_axis(dates_mod, median_inds, axis=1).squeeze(1)
 
         input_mod = input_mod.astype(np.float32)
+        if log_scale:
+            input_mod = np.log(np.maximum(input_mod, 1e-10))
+
         if norm_fac is not None:
             input_mod /= norm_fac
 

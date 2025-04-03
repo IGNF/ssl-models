@@ -2,11 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from conf.dataset.utils import (
-    DatasetConfig,
-    InputRasterConfig,
-    PatchSizeConfig,
-)
+from conf.dataset.utils import DatasetConfig, InputRasterConfig, PatchSizeConfig
 from ssl_models.dataset.circa import CircaDataset
 
 
