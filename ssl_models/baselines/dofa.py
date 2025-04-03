@@ -386,10 +386,12 @@ class DOFABaseline(BaseModule, ABC):
         self.metrics[f"loss_pred_{stage}"].update(loss_pred)
         return None, log_input, log_pred, log_target, loss_pred
 
+
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
 """Dynamic One-For-All (DOFA) models."""
+
 
 def position_embedding(embed_dim: int, pos: Tensor) -> Tensor:
     """Compute the 1D sine/cosine position embedding.

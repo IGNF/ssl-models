@@ -24,6 +24,7 @@ class PatchSizeConfig:
     dofa: int = 16
     croma: int = 8
 
+
 @dataclass
 class RasterConfig:
     """Generic raster modality config."""

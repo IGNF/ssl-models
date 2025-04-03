@@ -1,4 +1,5 @@
 """Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
+
 import copy
 from typing import Literal
 
@@ -62,7 +63,7 @@ class BaselineModule(BaseModule):
             case "dofa" | "croma":
                 unpool_dim = None
 
-                if len(datasets.filter_finetune)>1:
+                if len(datasets.filter_finetune) > 1:
                     raise NotImplementedError("Too many datasets given.")
 
                 model_args = {
@@ -74,7 +75,7 @@ class BaselineModule(BaseModule):
                     "pretrained_path": pretrained_path,
                     "multimodal": multimodal,
                     "keep_norm": keep_norm,
-                    "add_date_enc": add_date_enc if model=="dofa" else False
+                    "add_date_enc": add_date_enc if model == "dofa" else False,
                 }
 
                 model_dict = {"dofa": DOFABaseline, "croma": CROMABaseline}
