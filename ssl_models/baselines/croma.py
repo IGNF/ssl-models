@@ -104,14 +104,14 @@ class CROMABaseline(BaseModule):
 
         return all_image_size
 
-    def _freeze_backbone(self):
+    def freeze_backbone(self):
         for param in self.encoder.parameters():
             param.requires_grad = False
 
     def grouped_parameters(self, base_lr: float, rate_decay: float = 0.75):
         pass
 
-    def expand_channels(self, input: Tensor, channels_to_copy: list[int]):
+    def _expand_channels(self, input: Tensor, channels_to_copy: list[int]):
         s = input[:, channels_to_copy, :, :]
         return torch.cat((input, s), dim=1)
 
@@ -135,7 +135,7 @@ class CROMABaseline(BaseModule):
         input = self.group(batch)
 
         sar_input = input["s1"]
-        optical_input = self.expand_channels(input["s2"], [0, 1])
+        optical_input = self._expand_channels(input["s2"], [9, 9])
 
         output_croma = self.encoder(SAR_images=sar_input, optical_images=optical_input)
 
@@ -146,6 +146,14 @@ class CROMABaseline(BaseModule):
         if self.croma_modality in ["both", "SAR"]:
             s1_outputs = output_croma["SAR_encodings"]
             x["s1_asc"], x["s1_des"] = self._ungroup_s1(s1_outputs)
+
+        if self.add_date_enc:
+            dates = {}
+            for name_mod in self.dataset.inputs:
+                dates[name_mod] = batch[f"{name_mod}_dates"]
+
+            ref_date = batch["ref_date"]
+            x = self._add_date_encodings(x, dates, ref_date)
 
         loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
             x,
