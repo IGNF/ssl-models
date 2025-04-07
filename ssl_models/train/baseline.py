@@ -75,7 +75,7 @@ class BaselineModule(BaseModule):
                     "keep_norm": keep_norm,
                     "add_date_enc": add_date_enc
                 }
-                
+
                 model_dict = {"dofa": DOFABaseline, "croma": CROMABaseline}
                 self.model = model_dict[model](**model_args)
 

@@ -21,6 +21,7 @@ class CROMABaseline(BaseModule):
         freeze: bool = False,
         type_head: Literal["linear", "attentive"] = "linear",
         multimodal: str = "shared",
+        add_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -34,7 +35,7 @@ class CROMABaseline(BaseModule):
 
         self.unpool_dim = unpool_dim
         self.pretrained_path = pretrained_path
-        self.add_date_enc = False
+        self.add_date_enc = add_date_enc
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
         self.keep_norm = keep_norm
