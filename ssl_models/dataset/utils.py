@@ -103,3 +103,19 @@ def read_csv(
             for stage in stages
         ],
     )
+
+
+def cloud_mask_correction(input_mask: np.ndarray, threshold: int = 50) -> np.ndarray:
+    """Corrects cloud masks by identifying and removing inconsistent pixels based on temporal statistics."""  # noqa: E501
+
+    def compute_persistence_mask(array: np.ndarray) -> np.ndarray:
+        """Binarizes the input array (non-zero values become 1) and sums along the time axis."""  # noqa: E501
+        binary_array = (array != 0).astype(int)  # Binarization
+        return binary_array.sum(axis=0)
+
+    cloud_masks = input_mask.copy()
+    persistence_mask = compute_persistence_mask(cloud_masks)  # Temporal stationarity
+    pixel_threshold = np.percentile(persistence_mask, threshold)
+    error_indexes = np.where(persistence_mask > pixel_threshold)
+    cloud_masks[:, error_indexes[0], error_indexes[1]] = 0
+    return np.stack(cloud_masks, axis=0)

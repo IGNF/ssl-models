@@ -14,8 +14,8 @@ from ssl_models.dataset.treesatai_ts import TreeSatAITSDataset
 @dataclass
 class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "TreeSatAI-TS"
-    balance_pretrain: bool = True
-    val_pretrain: bool = False
+    balance_pretrain: bool = False
+    val_pretrain: bool = True
     crop_meters: float = 60.0
 
     ref_input: str | None = None
@@ -26,7 +26,7 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["aerial", "s2", "s1_asc", "s1_des"],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["treesat_mlc", "treesat_mlc_thresh"],
+        default_factory=lambda: ["treesat_mlc_thresh"],
     )  # selected target modalities
 
     aerial: InputRasterConfig = field(
@@ -43,7 +43,7 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
             image_size=6,
             patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=10,
-            norm_bands=[4, 6],
+            norm_bands=[4, 4, 2],
             num_dates=16,
             mask_threshold=0.0,
             norm_fac=5000.0,
@@ -54,8 +54,10 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
             image_size=6,
             patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=2,
+            norm_bands=[1, 1],
             num_dates=4,
-            norm_fac=0.25,
+            norm_fac=5.0,
+            log_scale=True,
             name_group="sen1",
         ),
     )
@@ -64,8 +66,10 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
             image_size=6,
             patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=2,
+            norm_bands=[1, 1],
             num_dates=4,
-            norm_fac=0.25,
+            norm_fac=5.0,
+            log_scale=True,
             name_group="sen1",
         ),
     )

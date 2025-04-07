@@ -1,3 +1,5 @@
+"""Base module for foundation model baselines."""
+
 from abc import ABC, abstractmethod
 from functools import partial
 from typing import Literal
@@ -12,19 +14,22 @@ from torchmetrics import MeanMetric
 from conf.dataset.utils import RasterConfig
 from conf.datasets import DatasetsConfig
 from ssl_models.layers.head import ClassificationHead, PixelifyHead
-from ssl_models.layers.utils import encode_dates, group_mods, ungroup_mods
-from ssl_models.ssl.utils import (
+from ssl_models.layers.mask import (
     create_masked_image,
     get_cd_mask_from_logits,
     get_segment_mask_from_logits,
     get_target_mask_from_batch,
 )
+from ssl_models.layers.utils import encode_dates, group_mods, ungroup_mods
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
 RGB_BANDS = 3
 
+
 class BaseModule(Module, ABC):
-    def __init__(
+    """Base Module for baselines."""
+
+    def __init__(  # noqa: C901
         self,
         datasets: DatasetsConfig,
         patch_size: int,
@@ -36,7 +41,7 @@ class BaseModule(Module, ABC):
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
-        **kwargs
+        **kwargs,  # noqa: ANN003
     ) -> None:
         super().__init__(**kwargs)
 
@@ -62,6 +67,10 @@ class BaseModule(Module, ABC):
         for name_mod, mod in self.dataset.inputs.items():
             self.grid_size[name_mod] = mod.image_size // self.patch_size
 
+        self.num_dates = {
+            name_mod: mod.num_dates * self.len_bands[name_mod]
+            for name_mod, mod in self.dataset.inputs.items()
+        }
         # heads
         self.heads = ModuleDict()
         for name_target, target in self.dataset.targets.items():
@@ -136,10 +145,7 @@ class BaseModule(Module, ABC):
             ungroup_mods,
             multimodal=self.multimodal,
             groups=self.dataset.groups,
-            num_dates={
-                name_mod: mod.num_dates * self.len_bands[name_mod]
-                for name_mod, mod in self.dataset.inputs.items()
-            },
+            num_dates=self.num_dates,
             grid_size=self.grid_size,
         )
 
@@ -156,15 +162,15 @@ class BaseModule(Module, ABC):
         }
 
     @abstractmethod
-    def _build_backbone(self):
+    def _build_backbone(self) -> None:
         return
 
     @abstractmethod
-    def _freeze_backbone(self):
+    def freeze_backbone(self) -> None:
         return
 
     @abstractmethod
-    def grouped_parameters(self, base_lr, rate_decay=0.75):
+    def grouped_parameters(self, base_lr: float, rate_decay: float = 0.75) -> None:
         return
 
     def _add_date_encodings(
@@ -318,4 +324,3 @@ class BaseModule(Module, ABC):
                 targets_selected,
             )
         return loss_pred, log_inputs, log_preds, log_targets
-

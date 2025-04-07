@@ -36,14 +36,17 @@ class SSLTrainer(pl.Trainer):
         self.exp_name = run.exp_name
         self.exp_version = get_hydra_timestamp()
 
-        self.monitor = run.monitor
         self.logged_images_per_epoch = run.logged_images_per_epoch
 
         self.base_lr = opt.base_lr
-        self.lw_decay = opt.lw_decay if isinstance(opt, OptFinetuneConfig) else None
-        self.final_factor = (
-            opt.final_factor if isinstance(opt, OptFinetuneConfig) else 1e7
-        )
+        if isinstance(opt, OptFinetuneConfig):
+            self.lw_decay = opt.lw_decay
+            self.final_factor = opt.final_factor
+            self.monitor = opt.monitor
+        else:
+            self.lw_decay = None
+            self.final_factor = 1e7
+            self.monitor = None
 
         self.wd = opt.wd
         self.b1 = opt.b1
@@ -78,25 +81,22 @@ class SSLTrainer(pl.Trainer):
         """Configure callbacks."""
         callbacks = []
         callbacks.append(TQDMProgressBar(refresh_rate=10))
+        callbacks.append(ImageLogger())
+        callbacks.append(MetricsLogger())
         callbacks.append(
             LearningRateMonitor(
                 logging_interval="step",
             ),
         )
-        callbacks.append(
-            ModelCheckpoint(
-                filename=self.ssl_phase + "-{epoch}",
-                monitor=(
-                    None
-                    if self.ssl_phase == "pretrain" or self.monitor is None
-                    else f"{self.ssl_phase}_{self.monitor}"
+        if self.monitor is not None:
+            callbacks.append(
+                ModelCheckpoint(
+                    filename=self.ssl_phase + "-{epoch}",
+                    monitor=f"{self.ssl_phase}_{self.monitor}",
+                    mode="max",
+                    save_weights_only=True,
                 ),
-                mode="max",
-                save_weights_only=True,
-            ),
-        )
-        callbacks.append(ImageLogger())
-        callbacks.append(MetricsLogger())
+            )
         return callbacks
 
     def fit_and_test(
