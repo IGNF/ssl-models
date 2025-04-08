@@ -109,7 +109,59 @@ class CROMABaseline(BaseModule):
             param.requires_grad = False
 
     def grouped_parameters(self, base_lr: float, rate_decay: float = 0.75):
-        pass
+        lr_map = {}
+        params_dict = {}
+
+        s2_depth = self.encoder_depth
+        s1_depth = s2_depth // 2
+
+        lr_0 = base_lr * rate_decay ** (s2_depth + 1)
+        lr_map["s1_encoder.linear_input"] = lr_0
+        lr_map["s2_encoder.linear_input"] = lr_0
+
+        params_dict[
+            "s1_encoder.linear_input"
+        ] = self.encoder.s1_encoder.linear_input.parameters()
+
+        params_dict[
+            "s2_encoder.linear_input"
+        ] = self.encoder.s2_encoder.linear_input.parameters()
+
+        for i in range(s1_depth):
+            s1_key = f"s1_encoder.base_transformer.{i}"
+
+            lr_i = base_lr * rate_decay ** (s2_depth - i)
+            lr_map[s1_key] = lr_i
+
+            params_dict[
+                s1_key
+            ] = self.encoder.s1_encoder.transformer.layers[i].parameters()
+
+        for i in range(s2_depth):
+            s2_key = f"s2_encoder.base_transformer.{i}"
+
+            lr_i = base_lr * rate_decay ** (s2_depth - i)
+            lr_map[s2_key] = lr_i
+
+            params_dict[
+                s2_key
+            ] = self.encoder.s2_encoder.transformer.layers[i].parameters()
+
+        for i in range(s1_depth):
+            ce_key = f"cross_encoder.{i}"
+            lr_i = base_lr * rate_decay ** (s1_depth - i)
+
+            lr_map[ce_key] = lr_i
+            params_dict[ce_key] = self.encoder.cross_encoder.layers[i].parameters()
+
+        lr_map["heads"] = base_lr
+        params_dict["heads"] = self.heads.parameters()
+
+        grouped_parameters = []
+        for k, lr in lr_map.items():
+            grouped_parameters.append({"params": params_dict[k], "lr": lr, "name": k})
+            print(f'{k}:{lr}')
+        return grouped_parameters
 
     def _expand_channels(self, input: Tensor, channels_to_copy: list[int]):
         s = input[:, channels_to_copy, :, :]
