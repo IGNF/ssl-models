@@ -17,16 +17,47 @@ class CROMABaseline(BaseModule):
         datasets,
         backbone_size: str,
         unpool_dim: int,
-        pretrained_path: str = None,
         freeze: bool = False,
         type_head: Literal["linear", "attentive"] = "linear",
         multimodal: str = "shared",
+        pretrained_path: str = None,
         add_date_enc: bool = False,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
         **kwargs,
     ) -> None:
+        """Create the CROMA encoder model.
+
+        Parameters
+        ----------
+        datasets: DatasetsConfig
+            The dataset config used in the probing/finetuning phase.
+        backbone_size: str
+            Defines the backbone to use. To choose in "small", "base", "large", "huge".
+        unpool_dim: int
+            Parameter given to the pixelify head.
+        freeze: bool
+            To freeze or not to freeze the DinoV2 backbone.
+        type_head: str
+           Segmentation head to use. Either "linear" (default) or "attentive".
+        multimodal: str
+           Multimodal strategy. Either "shared" (default) or "monotemp" (default).
+        pretrained_path: str
+           Path to the location of the pretrained weights.
+        add_date_enc: bool
+           Whether to add the date encodings to the embeddings.
+        fac_date_enc: float
+           Factor used to compute the date encodings.
+        date_dim: int
+           Dimension of the date embeddings.
+        keep_norm: bool
+           Choose to keep the final layernorm layer.
+        kwargs:
+           Arguments to pass to `BaseModel` constructor.
+
+        """
+
         self.datasets = datasets
         self.backbone_size = backbone_size
         self.freeze = freeze
@@ -70,6 +101,9 @@ class CROMABaseline(BaseModule):
 
         self._build_backbone()
 
+        if self.freeze:
+            self.freeze_backbone()
+
     def _build_backbone(self) -> Module:
         modalities = self.dataset.inputs.keys()
 
@@ -105,10 +139,26 @@ class CROMABaseline(BaseModule):
         return all_image_size
 
     def freeze_backbone(self):
+        """Freeze the backbone's parameters."""
+
         for param in self.encoder.parameters():
             param.requires_grad = False
 
     def grouped_parameters(self, base_lr: float, rate_decay: float = 0.75):
+        """Return the grouped parameters dictionnary with layerwise learning rate.
+
+        Parameters
+        ----------
+        base_lr: float
+            Base learning rate.
+        rate_decay: float
+            Input's key.
+
+        Returns
+        -------
+        List: A list of dictionnaries, containing "params" and "lr" keys, in which
+        parameters are grouped.
+        """
         lr_map = {}
         params_dict = {}
 
@@ -119,13 +169,13 @@ class CROMABaseline(BaseModule):
         lr_map["s1_encoder.linear_input"] = lr_0
         lr_map["s2_encoder.linear_input"] = lr_0
 
-        params_dict[
-            "s1_encoder.linear_input"
-        ] = self.encoder.s1_encoder.linear_input.parameters()
+        params_dict["s1_encoder.linear_input"] = (
+            self.encoder.s1_encoder.linear_input.parameters()
+        )
 
-        params_dict[
-            "s2_encoder.linear_input"
-        ] = self.encoder.s2_encoder.linear_input.parameters()
+        params_dict["s2_encoder.linear_input"] = (
+            self.encoder.s2_encoder.linear_input.parameters()
+        )
 
         for i in range(s1_depth):
             s1_key = f"s1_encoder.base_transformer.{i}"
@@ -133,9 +183,9 @@ class CROMABaseline(BaseModule):
             lr_i = base_lr * rate_decay ** (s2_depth - i)
             lr_map[s1_key] = lr_i
 
-            params_dict[
-                s1_key
-            ] = self.encoder.s1_encoder.transformer.layers[i].parameters()
+            params_dict[s1_key] = self.encoder.s1_encoder.transformer.layers[
+                i
+            ].parameters()
 
         for i in range(s2_depth):
             s2_key = f"s2_encoder.base_transformer.{i}"
@@ -143,9 +193,9 @@ class CROMABaseline(BaseModule):
             lr_i = base_lr * rate_decay ** (s2_depth - i)
             lr_map[s2_key] = lr_i
 
-            params_dict[
-                s2_key
-            ] = self.encoder.s2_encoder.transformer.layers[i].parameters()
+            params_dict[s2_key] = self.encoder.s2_encoder.transformer.layers[
+                i
+            ].parameters()
 
         for i in range(s1_depth):
             ce_key = f"cross_encoder.{i}"
@@ -160,7 +210,7 @@ class CROMABaseline(BaseModule):
         grouped_parameters = []
         for k, lr in lr_map.items():
             grouped_parameters.append({"params": params_dict[k], "lr": lr, "name": k})
-            print(f'{k}:{lr}')
+
         return grouped_parameters
 
     def _expand_channels(self, input: Tensor, channels_to_copy: list[int]):
@@ -183,6 +233,23 @@ class CROMABaseline(BaseModule):
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
     ):
+        """Dinov2 forward pass.
+
+        Parameters
+        ----------
+        batch: dict
+            Dictionary containing the data.
+        ssl_phase: str
+            SSL phase (pretrain, probe, finetune). Only probing and finetuning
+            are needed for baselines.
+        stage: str
+            Learning stage: train, val, test.
+
+        Returns
+        -------
+        tuple: CROMA's outputs.
+
+        """
         batch["s1"] = torch.concat((batch["s1_asc"], batch["s1_des"]), dim=1)
         input = self.group(batch)
 
