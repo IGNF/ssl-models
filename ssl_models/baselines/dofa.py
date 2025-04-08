@@ -302,6 +302,7 @@ class DOFABaseline(BaseModule, ABC):
         -------
         List: A list of dictionnaries, containing 'params' and 'lr' keys, in which
         parameters are grouped.
+
         """
         lr_map = {}
 
@@ -448,6 +449,7 @@ class TransformerWeightGenerator(nn.Module):
             embed_dim: Embedding dimensions.
             num_heads: Number of heads.
             num_layers: Number of layers.
+
         """
         super().__init__()
 

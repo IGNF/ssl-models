@@ -327,6 +327,7 @@ class Dinov2Baseline(BaseModule):
         -------
         List: A list of dictionnaries, containing "params" and "lr" keys, in which
         parameters are grouped.
+
         """
         lr_map = {}
 

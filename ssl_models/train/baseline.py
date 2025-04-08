@@ -64,7 +64,8 @@ class BaselineModule(BaseModule):
                 unpool_dim = None
 
                 if len(datasets.filter_finetune) > 1:
-                    raise NotImplementedError("Too many datasets given.")
+                    msg = "Too many datasets given."
+                    raise NotImplementedError(msg)
 
                 model_args = {
                     "datasets": datasets,

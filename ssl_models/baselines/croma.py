@@ -1,3 +1,8 @@
+"""CROMA Module.
+
+Model from https://papers.neurips.cc/paper_files/paper/2023/file/11822e84689e631615199db3b75cd0e4-Paper-Conference.pdf
+"""
+
 import itertools
 import math
 import warnings
@@ -8,24 +13,27 @@ from einops import rearrange
 from torch import Tensor, einsum, nn
 from torch.nn import Module
 
+from conf.datasets import DatasetsConfig
 from ssl_models.baselines.base import BaseModule
 
 
 class CROMABaseline(BaseModule):
+    """Baseline model based on CROMA."""
+
     def __init__(
         self,
-        datasets,
+        datasets: DatasetsConfig,
         backbone_size: str,
         unpool_dim: int,
         freeze: bool = False,
         type_head: Literal["linear", "attentive"] = "linear",
         multimodal: str = "shared",
-        pretrained_path: str = None,
+        pretrained_path: str | None = None,
         add_date_enc: bool = False,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
-        **kwargs,
+        **kwargs, # noqa: ANN003
     ) -> None:
         """Create the CROMA encoder model.
 
@@ -57,7 +65,6 @@ class CROMABaseline(BaseModule):
            Arguments to pass to `BaseModel` constructor.
 
         """
-
         self.datasets = datasets
         self.backbone_size = backbone_size
         self.freeze = freeze
@@ -123,7 +130,7 @@ class CROMABaseline(BaseModule):
             image_resolution=self.image_size,
         )
 
-    def _check_image_size(self):
+    def _check_image_size(self) -> int:
         all_image_size = None
 
         for name_mod in self.dataset.inputs:
@@ -140,7 +147,6 @@ class CROMABaseline(BaseModule):
 
     def freeze_backbone(self):
         """Freeze the backbone's parameters."""
-
         for param in self.encoder.parameters():
             param.requires_grad = False
 
@@ -158,6 +164,7 @@ class CROMABaseline(BaseModule):
         -------
         List: A list of dictionnaries, containing "params" and "lr" keys, in which
         parameters are grouped.
+
         """
         lr_map = {}
         params_dict = {}
@@ -292,25 +299,24 @@ class PretrainedCROMA(nn.Module):
         modality="both",
         image_resolution=120,
     ):
-        """
-        NOTE: image_resolution is not the spatial, spectral, or temporal resolution. It
+        """NOTE: image_resolution is not the spatial, spectral, or temporal resolution. It
         is the height and width of the image, in pixels. E.g., CROMA was pretrained on
         120x120px images, hence image_resolution is 120 by default
         """
         super().__init__()
         # check types
         assert isinstance(
-            pretrained_path, str
+            pretrained_path, str,
         ), f"pretrained_path must be a string, not {type(pretrained_path)}"
 
         assert isinstance(size, str), f"size must be a string, not {type(size)}"
 
         assert isinstance(
-            modality, str
+            modality, str,
         ), f"modality must be a string, not {type(modality)}"
 
         assert isinstance(
-            image_resolution, int
+            image_resolution, int,
         ), f"image_resolution must be an int, not {type(image_resolution)}"
 
         # check values
@@ -332,11 +338,11 @@ class PretrainedCROMA(nn.Module):
         # warn the user if the path contains a different size than the size parameter
         if size == "base" and "large" in pretrained_path:
             warnings.warn(
-                "The size is set to base, but 'large' appears in the pretrained path!"
+                "The size is set to base, but 'large' appears in the pretrained path!",
             )
         elif size == "large" and "base" in pretrained_path:
             warnings.warn(
-                "The size is set to large, but 'base' appears in the pretrained path!"
+                "The size is set to large, but 'base' appears in the pretrained path!",
             )
 
         if size == "base":
@@ -356,7 +362,7 @@ class PretrainedCROMA(nn.Module):
         self.s1_channels = 2  # fixed at 2 SAR backscatter channels
         self.s2_channels = 12  # fixed at 12 multispectral optical channels
         self.attn_bias = get_2dalibi(
-            num_heads=self.num_heads, num_patches=self.num_patches
+            num_heads=self.num_heads, num_patches=self.num_patches,
         )
 
         if modality in ["SAR", "both"]:
@@ -405,7 +411,7 @@ class PretrainedCROMA(nn.Module):
 
             # load weights
             self.cross_encoder.load_state_dict(
-                torch.load(pretrained_path)["joint_encoder"]
+                torch.load(pretrained_path)["joint_encoder"],
             )
 
     def forward(self, SAR_images=None, optical_images=None):
@@ -416,7 +422,7 @@ class PretrainedCROMA(nn.Module):
             ), f"Modality is set to {self.modality}, but SAR_images are None"
 
             SAR_encodings = self.s1_encoder(
-                imgs=SAR_images, attn_bias=self.attn_bias.to(SAR_images.device)
+                imgs=SAR_images, attn_bias=self.attn_bias.to(SAR_images.device),
             )  # (bsz, num_patches, encoder_dim)
             SAR_GAP = self.GAP_FFN_s1(SAR_encodings.mean(dim=1))  # (bsz, encoder_dim)
             return_dict["SAR_encodings"] = SAR_encodings
@@ -427,7 +433,7 @@ class PretrainedCROMA(nn.Module):
                 optical_images is not None
             ), f"Modality is set to {self.modality}, but optical_images are None"
             optical_encodings = self.s2_encoder(
-                imgs=optical_images, attn_bias=self.attn_bias.to(optical_images.device)
+                imgs=optical_images, attn_bias=self.attn_bias.to(optical_images.device),
             )  # (bsz, num_patches, encoder_dim)
 
             # (bsz, encoder_dim)
@@ -453,8 +459,8 @@ def get_2dalibi(num_heads, num_patches):
     # inspired by: https://github.com/ofirpress/attention_with_linear_biases
     points = list(
         itertools.product(
-            range(int(math.sqrt(num_patches))), range(int(math.sqrt(num_patches)))
-        )
+            range(int(math.sqrt(num_patches))), range(int(math.sqrt(num_patches))),
+        ),
     )
 
     def get_slopes(n):
@@ -527,7 +533,7 @@ class Attention(nn.Module):
         x = self.input_norm(x)  # (BSZ, num_patches, dim)
         q, k, v = self.to_qkv(x).chunk(3, dim=-1)  # (BSZ, num_patches, dim)
         q, k, v = map(
-            lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.num_heads), (q, k, v)
+            lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.num_heads), (q, k, v),
         )  # (BSZ, num_heads, num_patches, dim_head)
 
         # (BSZ, num_heads, num_patches, num_patches)
@@ -576,7 +582,7 @@ class CrossAttention(nn.Module):
 
         # (BSZ, num_heads, num_patches, dim_head)
         q, k, v = map(
-            lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.num_heads), (q, k, v)
+            lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.num_heads), (q, k, v),
         )
 
         # (BSZ, num_heads, num_patches, num_patches)
@@ -614,8 +620,8 @@ class BaseTransformer(nn.Module):
                     [
                         Attention(dim=dim, num_heads=num_heads, dropout=attn_dropout),
                         FFN(dim=dim, mult=ff_mult, dropout=ff_dropout),
-                    ]
-                )
+                    ],
+                ),
             )
 
         if self.final_norm:
@@ -650,11 +656,11 @@ class BaseTransformerCrossAttn(nn.Module):
                     [
                         Attention(dim=dim, num_heads=num_heads, dropout=attn_dropout),
                         CrossAttention(
-                            dim=dim, num_heads=num_heads, dropout=attn_dropout
+                            dim=dim, num_heads=num_heads, dropout=attn_dropout,
                         ),
                         FFN(dim=dim, mult=ff_mult, dropout=ff_dropout),
-                    ]
-                )
+                    ],
+                ),
             )
 
         self.norm_out = nn.LayerNorm(dim)
@@ -697,5 +703,5 @@ class ViT(nn.Module):
         # x is shape -> (bsz,num_patches,self.channels*self.patch_size*self.patch_size)
 
         x = self.linear_input(x)  # (bsz, num_patches, dim)
-        x = self.transformer(x, relative_position_bias=attn_bias)
-        return x
+
+        return self.transformer(x, relative_position_bias=attn_bias)
