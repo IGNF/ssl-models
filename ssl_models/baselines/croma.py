@@ -33,7 +33,7 @@ class CROMABaseline(BaseModule):
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
-        **kwargs, # noqa: ANN003
+        **kwargs,  # noqa: ANN003
     ) -> None:
         """Create the CROMA encoder model.
 
@@ -138,19 +138,23 @@ class CROMABaseline(BaseModule):
 
             if all_image_size is None:
                 all_image_size = mod_image_size
-            else:
-                assert (
-                    mod_image_size == all_image_size
-                ), "All modalities should have the same image size."
+
+            if mod_image_size != all_image_size:
+                msg = "All modalities should have the same image size."
+                raise ValueError(msg)
 
         return all_image_size
 
-    def freeze_backbone(self):
+    def freeze_backbone(self) -> None:
         """Freeze the backbone's parameters."""
         for param in self.encoder.parameters():
             param.requires_grad = False
 
-    def grouped_parameters(self, base_lr: float, rate_decay: float = 0.75):
+    def grouped_parameters(
+        self,
+        base_lr: float,
+        rate_decay: float = 0.75,
+    ) -> list[dict]:
         """Return the grouped parameters dictionnary with layerwise learning rate.
 
         Parameters
@@ -220,11 +224,15 @@ class CROMABaseline(BaseModule):
 
         return grouped_parameters
 
-    def _expand_channels(self, input: Tensor, channels_to_copy: list[int]):
-        s = input[:, channels_to_copy, :, :]
-        return torch.cat((input, s), dim=1)
+    def _expand_channels(
+        self,
+        tensor_to_expand: Tensor,
+        channels_to_copy: list[int],
+    ) -> Tensor:
+        s = tensor_to_expand[:, channels_to_copy, :, :]
+        return torch.cat((tensor_to_expand, s), dim=1)
 
-    def _ungroup_s1(self, outputs):
+    def _ungroup_s1(self, outputs: Tensor) -> tuple[Tensor, Tensor]:
         n_asc, n_des = self.num_dates["s1_asc"], self.num_dates["s1_des"]
         outputs = outputs.unflatten(0, (-1, n_asc + n_des))
         x_s1 = {}
@@ -239,7 +247,7 @@ class CROMABaseline(BaseModule):
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
-    ):
+    ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         """Dinov2 forward pass.
 
         Parameters
@@ -258,12 +266,12 @@ class CROMABaseline(BaseModule):
 
         """
         batch["s1"] = torch.concat((batch["s1_asc"], batch["s1_des"]), dim=1)
-        input = self.group(batch)
+        group_batch = self.group(batch)
 
-        sar_input = input["s1"]
-        optical_input = self._expand_channels(input["s2"], [9, 9])
+        sar_input = group_batch["s1"]
+        optical_input = self._expand_channels(group_batch["s2"], [9, 9])
 
-        output_croma = self.encoder(SAR_images=sar_input, optical_images=optical_input)
+        output_croma = self.encoder(sar_images=sar_input, optical_images=optical_input)
 
         x = {}
 
@@ -291,58 +299,64 @@ class CROMABaseline(BaseModule):
         return None, log_input, log_pred, log_target, loss_pred
 
 
+# The following lines are adapted from https://github.com/antofuller/CROMA
 class PretrainedCROMA(nn.Module):
-    def __init__(
+    """PretrainedCROMA class."""
+
+    def __init__(  # noqa: C901, PLR0912, PLR0915
         self,
-        pretrained_path="CROMA_base.pt",
-        size="base",
-        modality="both",
-        image_resolution=120,
-    ):
-        """NOTE: image_resolution is not the spatial, spectral, or temporal resolution. It
-        is the height and width of the image, in pixels. E.g., CROMA was pretrained on
-        120x120px images, hence image_resolution is 120 by default
+        pretrained_path: str = "CROMA_base.pt",
+        size: str = "base",
+        modality: str = "both",
+        image_resolution: int = 120,
+    ) -> None:
+        """Create the PretrainedCROMA model.
+
+        NOTE: image_resolution is not the spatial, spectral, or temporal resolution.
+        It is the height and width of the image, in pixels. E.g., CROMA was pretrained
+        on 120x120px images, hence image_resolution is 120 by default
         """
         super().__init__()
         # check types
-        assert isinstance(
-            pretrained_path, str,
-        ), f"pretrained_path must be a string, not {type(pretrained_path)}"
+        if not isinstance(pretrained_path, str):
+            msg = f"pretrained_path must be a string, not {type(pretrained_path)}"
+            raise TypeError(msg)
 
-        assert isinstance(size, str), f"size must be a string, not {type(size)}"
+        if not isinstance(size, str):
+            msg = f"size must be a string, not {type(size)}"
+            raise TypeError(msg)
 
-        assert isinstance(
-            modality, str,
-        ), f"modality must be a string, not {type(modality)}"
+        if not isinstance(modality, str):
+            msg = f"modality must be a string, not {type(modality)}"
+            raise TypeError(msg)
 
-        assert isinstance(
-            image_resolution, int,
-        ), f"image_resolution must be an int, not {type(image_resolution)}"
+        if not isinstance(image_resolution, int):
+            msg = f"image_resolution must be an int, not {type(image_resolution)}"
+            raise TypeError(msg)
 
         # check values
-        assert size in [
-            "base",
-            "large",
-        ], f"size must be either base or large, not {size}"
+        if size not in ["base", "large"]:
+            msg = f"size must be either base or large, not {size}"
+            raise ValueError(msg)
 
-        assert (
-            image_resolution % 8 == 0
-        ), f"image_resolution must be a multiple of 8, not {image_resolution}"
+        if image_resolution % 8 != 0:
+            msg = f"image_resolution must be a multiple of 8, not {image_resolution}"
+            raise ValueError(msg)
 
-        assert modality in [
-            "both",
-            "SAR",
-            "optical",
-        ], f"modality must be either both, SAR, or optical, not {modality}"
+        if modality not in ["both", "SAR", "optical"]:
+            msg = f"modality must be either both, SAR, or optical, not {modality}"
+            raise ValueError(msg)
 
         # warn the user if the path contains a different size than the size parameter
         if size == "base" and "large" in pretrained_path:
             warnings.warn(
                 "The size is set to base, but 'large' appears in the pretrained path!",
+                stacklevel=2,
             )
         elif size == "large" and "base" in pretrained_path:
             warnings.warn(
                 "The size is set to large, but 'base' appears in the pretrained path!",
+                stacklevel=2,
             )
 
         if size == "base":
@@ -362,7 +376,8 @@ class PretrainedCROMA(nn.Module):
         self.s1_channels = 2  # fixed at 2 SAR backscatter channels
         self.s2_channels = 12  # fixed at 12 multispectral optical channels
         self.attn_bias = get_2dalibi(
-            num_heads=self.num_heads, num_patches=self.num_patches,
+            num_heads=self.num_heads,
+            num_patches=self.num_patches,
         )
 
         if modality in ["SAR", "both"]:
@@ -374,8 +389,9 @@ class PretrainedCROMA(nn.Module):
 
             self.GAP_FFN_s1 = nn.Sequential(
                 nn.LayerNorm(self.encoder_dim),
-                # (BSZ, inner_dim)
-                nn.Linear(self.encoder_dim, int(4 * self.encoder_dim)),
+                nn.Linear(
+                    self.encoder_dim, int(4 * self.encoder_dim)
+                ),  # (BSZ, inner_dim)
                 nn.GELU(),  # (BSZ, inner_dim)
                 nn.Linear(int(4 * self.encoder_dim), self.encoder_dim),  # (BSZ, dim)
             )
@@ -392,8 +408,9 @@ class PretrainedCROMA(nn.Module):
             )
             self.GAP_FFN_s2 = nn.Sequential(
                 nn.LayerNorm(self.encoder_dim),
-                # (BSZ, inner_dim)
-                nn.Linear(self.encoder_dim, int(4 * self.encoder_dim)),
+                nn.Linear(
+                    self.encoder_dim, int(4 * self.encoder_dim)
+                ),  # (BSZ, inner_dim)
                 nn.GELU(),  # (BSZ, inner_dim)
                 nn.Linear(int(4 * self.encoder_dim), self.encoder_dim),  # (BSZ, dim)
             )
@@ -414,69 +431,78 @@ class PretrainedCROMA(nn.Module):
                 torch.load(pretrained_path)["joint_encoder"],
             )
 
-    def forward(self, SAR_images=None, optical_images=None):
+    def forward(
+        self,
+        sar_images: Tensor | None = None,
+        optical_images: Tensor | None = None,
+    ) -> dict[str, Tensor]:
         return_dict = {}
         if self.modality in ["SAR", "both"]:
-            assert (
-                SAR_images is not None
-            ), f"Modality is set to {self.modality}, but SAR_images are None"
+            if sar_images is None:
+                msg = f"Modality is set to {self.modality}, but sar_images are None"
+                raise ValueError(msg)
 
-            SAR_encodings = self.s1_encoder(
-                imgs=SAR_images, attn_bias=self.attn_bias.to(SAR_images.device),
+            sar_encodings = self.s1_encoder(
+                imgs=sar_images,
+                attn_bias=self.attn_bias.to(sar_images.device),
             )  # (bsz, num_patches, encoder_dim)
-            SAR_GAP = self.GAP_FFN_s1(SAR_encodings.mean(dim=1))  # (bsz, encoder_dim)
-            return_dict["SAR_encodings"] = SAR_encodings
-            return_dict["SAR_GAP"] = SAR_GAP
+            sar_gap = self.GAP_FFN_s1(sar_encodings.mean(dim=1))  # (bsz, encoder_dim)
+            return_dict["SAR_encodings"] = sar_encodings
+            return_dict["SAR_GAP"] = sar_gap
 
         if self.modality in ["optical", "both"]:
-            assert (
-                optical_images is not None
-            ), f"Modality is set to {self.modality}, but optical_images are None"
+            if optical_images is None:
+                msg = f"Modality is set to {self.modality}, but optical_images are None"
+                raise ValueError(msg)
+
             optical_encodings = self.s2_encoder(
-                imgs=optical_images, attn_bias=self.attn_bias.to(optical_images.device),
+                imgs=optical_images,
+                attn_bias=self.attn_bias.to(optical_images.device),
             )  # (bsz, num_patches, encoder_dim)
 
-            # (bsz, encoder_dim)
-            optical_GAP = self.GAP_FFN_s2(optical_encodings.mean(dim=1))
+            optical_gap = self.GAP_FFN_s2(
+                optical_encodings.mean(dim=1),
+            )  # (bsz, encoder_dim)
             return_dict["optical_encodings"] = optical_encodings
-            return_dict["optical_GAP"] = optical_GAP
+            return_dict["optical_GAP"] = optical_gap
 
         if self.modality == "both":
             joint_encodings = self.cross_encoder(
-                x=SAR_encodings,
+                x=sar_encodings,
                 context=optical_encodings,
                 relative_position_bias=self.attn_bias.to(optical_images.device),
             )  # (bsz, num_patches, encoder_dim)
 
-            joint_GAP = joint_encodings.mean(dim=1)  # (bsz, encoder_dim)
+            joint_gap = joint_encodings.mean(dim=1)  # (bsz, encoder_dim)
             return_dict["joint_encodings"] = joint_encodings
-            return_dict["joint_GAP"] = joint_GAP
+            return_dict["joint_GAP"] = joint_gap
 
         return return_dict
 
 
-def get_2dalibi(num_heads, num_patches):
-    # inspired by: https://github.com/ofirpress/attention_with_linear_biases
+def get_2dalibi(num_heads: int, num_patches: int) -> Tensor:
+    """Inspired by: https://github.com/ofirpress/attention_with_linear_biases."""
     points = list(
         itertools.product(
-            range(int(math.sqrt(num_patches))), range(int(math.sqrt(num_patches))),
+            range(int(math.sqrt(num_patches))),
+            range(int(math.sqrt(num_patches))),
         ),
     )
 
-    def get_slopes(n):
-        def get_slopes_power_of_2(n):
+    def get_slopes(n: int) -> list[float]:
+        def get_slopes_power_of_2(n: int) -> list[float]:
             start = 2 ** (-(2 ** -(math.log2(n) - 3)))
             ratio = start
             return [start * ratio**i for i in range(n)]
 
         if math.log2(n).is_integer():
             return get_slopes_power_of_2(n)
-        else:
-            closest_power_of_2 = 2 ** math.floor(math.log2(n))
-            return (
-                get_slopes_power_of_2(closest_power_of_2)
-                + get_slopes(2 * closest_power_of_2)[0::2][: n - closest_power_of_2]
-            )
+
+        closest_power_of_2 = 2 ** math.floor(math.log2(n))
+        return (
+            get_slopes_power_of_2(closest_power_of_2)
+            + get_slopes(2 * closest_power_of_2)[0::2][: n - closest_power_of_2]
+        )
 
     slopes = torch.Tensor(get_slopes(num_heads)).unsqueeze(1)
     idxs = []
@@ -489,12 +515,14 @@ def get_2dalibi(num_heads, num_patches):
 
 
 class FFN(nn.Module):
+    """Implement a feedforward neural network."""
+
     def __init__(
         self,
-        dim,
-        mult=4,
-        dropout=0.0,
-    ):
+        dim: int,
+        mult: int = 4,
+        dropout: float = 0.0,
+    ) -> None:
         super().__init__()
         inner_dim = int(dim * mult)
 
@@ -506,21 +534,26 @@ class FFN(nn.Module):
         )
         self.input_norm = nn.LayerNorm(dim)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         x = self.input_norm(x)  # (BSZ, num_patches, dim)
         return self.net(x)  # (BSZ, num_patches, dim)
 
 
 class Attention(nn.Module):
+    """Implement a Self-Attention layer."""
+
     def __init__(
         self,
-        dim,
-        num_heads=8,
-        dropout=0.0,
-    ):
+        dim: int,
+        num_heads: int = 8,
+        dropout: float = 0.0,
+    ) -> None:
         super().__init__()
         self.num_heads = num_heads
-        assert dim % num_heads == 0, "dim must be evenly divisible by num_heads"
+        if dim % num_heads != 0:
+            msg = "dim must be evenly divisible by num_heads"
+            raise ValueError(msg)
+
         dim_head = int(dim / num_heads)
         self.scale = dim_head**-0.5
 
@@ -529,38 +562,52 @@ class Attention(nn.Module):
         self.input_norm = nn.LayerNorm(dim)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, relative_position_bias):
+    def forward(self, x: Tensor, relative_position_bias: Tensor) -> Tensor:
         x = self.input_norm(x)  # (BSZ, num_patches, dim)
         q, k, v = self.to_qkv(x).chunk(3, dim=-1)  # (BSZ, num_patches, dim)
-        q, k, v = map(
-            lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.num_heads), (q, k, v),
+        q, k, v = (
+            rearrange(t, "b n (h d) -> b h n d", h=self.num_heads) for t in (q, k, v)
         )  # (BSZ, num_heads, num_patches, dim_head)
 
-        # (BSZ, num_heads, num_patches, num_patches)
-        attention_scores = einsum("b h i d, b h j d -> b h i j", q, k) * self.scale
-        # (BSZ, num_heads, num_patches, num_patches)
+        attention_scores = (
+            einsum(
+                "b h i d, b h j d -> b h i j",
+                q,
+                k,
+            )
+            * self.scale
+        )  # (BSZ, num_heads, num_patches, num_patches)
+
         attention_scores = attention_scores + relative_position_bias
 
-        # (BSZ, num_heads, num_patches, num_patches)
         attn = attention_scores.softmax(dim=-1)
         attn = self.dropout(attn)  # (BSZ, num_heads, num_patches, num_patches)
 
-        # (BSZ, num_heads, num_patches, dim_head)
-        out = einsum("b h i j, b h j d -> b h i d", attn, v)
+        out = einsum(
+            "b h i j, b h j d -> b h i d",
+            attn,
+            v,
+        )  # (BSZ, num_heads, num_patches, dim_head)
+
         out = rearrange(out, "b h n d -> b n (h d)")  # (BSZ, num_patches, dim)
         return self.to_out(out)  # (BSZ, num_patches, dim)
 
 
 class CrossAttention(nn.Module):
+    """Implement a Cross-Attention layer."""
+
     def __init__(
         self,
-        dim,
-        num_heads=8,
-        dropout=0.0,
-    ):
+        dim: int,
+        num_heads: int = 8,
+        dropout: float = 0.0,
+    ) -> None:
         super().__init__()
         self.num_heads = num_heads
-        assert dim % num_heads == 0, "dim must be evenly divisible by num_heads"
+        if dim % num_heads != 0:
+            msg = "dim must be evenly divisible by num_heads"
+            raise ValueError(msg)
+
         dim_head = int(dim / num_heads)
         self.scale = dim_head**-0.5
 
@@ -572,7 +619,12 @@ class CrossAttention(nn.Module):
         self.input_norm = nn.LayerNorm(dim)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, context, relative_position_bias):
+    def forward(
+        self,
+        x: Tensor,
+        context: Tensor,
+        relative_position_bias: Tensor,
+    ) -> Tensor:
         x = self.input_norm(x)  # (BSZ, num_patches, dim)
         context = self.input_norm(context)  # (BSZ, num_patches, dim)
 
@@ -580,37 +632,47 @@ class CrossAttention(nn.Module):
         k = self.to_k(context)  # (BSZ, num_patches, dim)
         v = self.to_v(context)  # (BSZ, num_patches, dim)
 
-        # (BSZ, num_heads, num_patches, dim_head)
-        q, k, v = map(
-            lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.num_heads), (q, k, v),
-        )
+        q, k, v = (
+            rearrange(t, "b n (h d) -> b h n d", h=self.num_heads) for t in (q, k, v)
+        )  # (BSZ, num_heads, num_patches, dim_head)
 
-        # (BSZ, num_heads, num_patches, num_patches)
-        attention_scores = einsum("b h i d, b h j d -> b h i j", q, k) * self.scale
-        # (BSZ, num_heads, num_patches, num_patches)
+        attention_scores = (
+            einsum(
+                "b h i d, b h j d -> b h i j",
+                q,
+                k,
+            )
+            * self.scale
+        )  # (BSZ, num_heads, num_patches, num_patches)
+
         attention_scores = attention_scores + relative_position_bias
 
-        # (BSZ, num_heads, num_patches, num_patches)
         attn = attention_scores.softmax(dim=-1)
         attn = self.dropout(attn)  # (BSZ, num_heads, num_patches, num_patches)
 
-        # (BSZ, num_heads, num_patches, dim_head)
-        out = einsum("b h i j, b h j d -> b h i d", attn, v)
+        out = einsum(
+            "b h i j, b h j d -> b h i d",
+            attn,
+            v,
+        )  # (BSZ, num_heads, num_patches, dim_head)
+
         out = rearrange(out, "b h n d -> b n (h d)")  # (BSZ, num_patches, dim)
         return self.to_out(out)  # (BSZ, num_patches, dim)
 
 
 class BaseTransformer(nn.Module):
+    """Implement a Transformer architecture."""
+
     def __init__(
         self,
-        dim,
-        depth,
-        num_heads=8,
-        attn_dropout=0.0,
-        ff_dropout=0.0,
-        ff_mult=4,
-        final_norm=True,
-    ):
+        dim: int,
+        depth: int,
+        num_heads: int = 8,
+        attn_dropout: float = 0.0,
+        ff_dropout: float = 0.0,
+        ff_mult: int = 4,
+        final_norm: bool = True,
+    ) -> None:
         super().__init__()
         self.final_norm = final_norm
         self.layers = nn.ModuleList([])
@@ -627,27 +689,29 @@ class BaseTransformer(nn.Module):
         if self.final_norm:
             self.norm_out = nn.LayerNorm(dim)
 
-    def forward(self, x, relative_position_bias=False):
+    def forward(self, x: Tensor, relative_position_bias: Tensor) -> Tensor:
         for self_attn, ffn in self.layers:
             x = self_attn(x, relative_position_bias) + x  # (BSZ, num_patches, dim)
             x = ffn(x) + x  # (BSZ, num_patches, dim)
 
         if self.final_norm:
             return self.norm_out(x)
-        else:
-            return x
+
+        return x
 
 
 class BaseTransformerCrossAttn(nn.Module):
+    """Implement a Transformer architecture with cross-attention."""
+
     def __init__(
         self,
-        dim,
-        depth,
-        num_heads=8,
-        attn_dropout=0.0,
-        ff_dropout=0.0,
-        ff_mult=4,
-    ):
+        dim: int,
+        depth: int,
+        num_heads: int = 8,
+        attn_dropout: float = 0.0,
+        ff_dropout: float = 0.0,
+        ff_mult: int = 4,
+    ) -> None:
         super().__init__()
         self.layers = nn.ModuleList([])
         for _ in range(depth):
@@ -656,7 +720,9 @@ class BaseTransformerCrossAttn(nn.Module):
                     [
                         Attention(dim=dim, num_heads=num_heads, dropout=attn_dropout),
                         CrossAttention(
-                            dim=dim, num_heads=num_heads, dropout=attn_dropout,
+                            dim=dim,
+                            num_heads=num_heads,
+                            dropout=attn_dropout,
                         ),
                         FFN(dim=dim, mult=ff_mult, dropout=ff_dropout),
                     ],
@@ -665,19 +731,24 @@ class BaseTransformerCrossAttn(nn.Module):
 
         self.norm_out = nn.LayerNorm(dim)
 
-    def forward(self, x, context, relative_position_bias):
+    def forward(
+        self,
+        x: Tensor,
+        context: Tensor,
+        relative_position_bias: Tensor,
+    ) -> Tensor:
         for self_attn, cross_attn, ffn in self.layers:
             x = self_attn(x, relative_position_bias) + x  # (BSZ, num_patches, dim)
-            # (BSZ, num_patches, dim)
             x = cross_attn(x, context, relative_position_bias) + x
             x = ffn(x) + x  # (BSZ, num_patches, dim)
 
-        x = self.norm_out(x)
-        return x  # (BSZ, num_patches, dim)
+        return self.norm_out(x)  # (BSZ, num_patches, dim)
 
 
 class ViT(nn.Module):
-    def __init__(self, dim, depth, in_channels):
+    """Implement a Vision Transformer."""
+
+    def __init__(self, dim: int, depth: int, in_channels: int) -> None:
         super().__init__()
         self.depth = depth
         self.in_channels = in_channels
@@ -693,7 +764,7 @@ class ViT(nn.Module):
             num_heads=self.num_heads,
         )
 
-    def forward(self, imgs, attn_bias):
+    def forward(self, imgs: Tensor, attn_bias: Tensor) -> Tensor:
         x = rearrange(
             imgs,
             "b c (h i) (w j) -> b (h w) (c i j)",
