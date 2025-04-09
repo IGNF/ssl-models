@@ -390,7 +390,7 @@ class PretrainedCROMA(nn.Module):
             self.GAP_FFN_s1 = nn.Sequential(
                 nn.LayerNorm(self.encoder_dim),
                 nn.Linear(
-                    self.encoder_dim, int(4 * self.encoder_dim)
+                    self.encoder_dim, int(4 * self.encoder_dim),
                 ),  # (BSZ, inner_dim)
                 nn.GELU(),  # (BSZ, inner_dim)
                 nn.Linear(int(4 * self.encoder_dim), self.encoder_dim),  # (BSZ, dim)
@@ -409,7 +409,7 @@ class PretrainedCROMA(nn.Module):
             self.GAP_FFN_s2 = nn.Sequential(
                 nn.LayerNorm(self.encoder_dim),
                 nn.Linear(
-                    self.encoder_dim, int(4 * self.encoder_dim)
+                    self.encoder_dim, int(4 * self.encoder_dim),
                 ),  # (BSZ, inner_dim)
                 nn.GELU(),  # (BSZ, inner_dim)
                 nn.Linear(int(4 * self.encoder_dim), self.encoder_dim),  # (BSZ, dim)
