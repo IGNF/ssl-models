@@ -354,9 +354,9 @@ class Dinov2Baseline(BaseModule):
 
         for name_mod in self.encoder:
             for i in range(self.depth):
-                params_dict[f"encoder.{name_mod}.{i}"] = self.encoder[name_mod].layer[
-                    i
-                ].parameters()
+                params_dict[f"encoder.{name_mod}.{i}"] = (
+                    self.encoder[name_mod].layer[i].parameters()
+                )
 
         if self.keep_norm:
             lr_map["layernorm"] = base_lr
