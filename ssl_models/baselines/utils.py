@@ -4,6 +4,8 @@ from collections import OrderedDict
 from typing import Literal
 
 import torch
+import torch.nn.functional as F  # noqa: N812
+from einops import rearrange
 from huggingface_hub import hf_hub_download
 from torch import Tensor
 
@@ -141,3 +143,54 @@ def filter_dict(dictionnary: dict, head: str) -> dict:
     """Filter dictionnary by selecting keys beginning with head."""
     prefix = f"{head}."
     return {k[len(prefix) :]: v for k, v in dictionnary.items() if k.startswith(prefix)}
+
+
+def interpolate_pos_encoding(
+    pretrained_pos_embeddings: torch.Tensor,
+    height: int,
+    width: int,
+    patch_size: int,
+) -> torch.Tensor:
+    """Allow to interpolate the pre-trained position encodings.
+
+    Position encodings interpolation allows to be able to use the model on higher resolution images.
+    This method is also adapted to support torch.jit tracing and interpolation at torch.float32 precision.
+
+    Adapted from:
+    - https://github.com/facebookresearch/dino/blob/de9ee3df6cf39fac952ab558447af1fa1365362a/vision_transformer.py#L174-L194, and
+    - https://github.com/facebookresearch/dinov2/blob/e1277af2ba9496fbadf7aec6eba56e8d882d1e35/dinov2/models/vision_transformer.py#L179-L211
+    """  # noqa: E501
+    grid_height = height // patch_size
+    grid_width = width // patch_size
+
+    num_patches = grid_height * grid_width
+    num_positions = pretrained_pos_embeddings.shape[1] - 1
+
+    # always interpolate when tracing to ensure the exported model works
+    # for dynamic input shapes
+    if not torch.jit.is_tracing() and num_patches == num_positions and height == width:
+        return pretrained_pos_embeddings
+
+    class_pos_embed = pretrained_pos_embeddings[:, :1]
+    patch_pos_embed = pretrained_pos_embeddings[:, 1:]
+
+    sqrt_num_positions = int(num_positions**0.5)
+    patch_pos_embed = rearrange(
+        patch_pos_embed,
+        "b (pw ph) d -> b d pw ph",
+        pw=sqrt_num_positions,
+    )
+
+    target_dtype = patch_pos_embed.dtype
+    patch_pos_embed = F.interpolate(
+        patch_pos_embed.to(torch.float32),
+        size=(grid_height, grid_width),
+        mode="bicubic",
+        align_corners=False,
+    ).to(dtype=target_dtype)
+
+    patch_pos_embed = rearrange(
+        patch_pos_embed,
+        "b d gw gh -> b (gw gh) d",
+    )
+    return class_pos_embed, patch_pos_embed

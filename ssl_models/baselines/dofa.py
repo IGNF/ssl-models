@@ -16,7 +16,7 @@ from torchgeo.models import DOFABase16_Weights, DOFALarge16_Weights
 
 from conf.datasets import DatasetsConfig
 from ssl_models.baselines.base import BaseModule
-from ssl_models.baselines.utils import filter_dict
+from ssl_models.baselines.utils import filter_dict, interpolate_pos_encoding
 
 
 class DOFABaseline(BaseModule, ABC):
@@ -107,6 +107,7 @@ class DOFABaseline(BaseModule, ABC):
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
         self.keep_norm = keep_norm
+        self.pretrain_image_size = 224
 
         super().__init__(
             datasets,
@@ -189,17 +190,16 @@ class DOFABaseline(BaseModule, ABC):
                 embed_dim=embed_dim,
             )
 
-            num_patches = (
-                self.dataset.inputs[name_mod].image_size // self.patch_size
-            ) ** 2
+            num_patches = (self.pretrain_image_size // self.patch_size) ** 2
 
             pos_embed[name_mod] = Parameter(  # fixed sin-cos embedding
                 torch.zeros(1, num_patches + 1, embed_dim),
-                requires_grad=False,
+                requires_grad=True,
             )
 
             if state_dict is not None:
                 self._transfer(state_dict, patch_embed[name_mod], "patch_embed")
+                pos_embed[name_mod].data = state_dict["pos_embed"]
 
         return patch_embed, pos_embed
 
@@ -267,7 +267,7 @@ class DOFABaseline(BaseModule, ABC):
         module: Module,
         headname: str,
     ) -> None:
-        module.load_state_dict(filter_dict(state_dict, headname), strict=False)
+        module.load_state_dict(filter_dict(state_dict, headname), strict=True)
 
     def freeze_backbone(self) -> None:
         """Freeze the backbone's parameters."""
@@ -353,6 +353,7 @@ class DOFABaseline(BaseModule, ABC):
 
         for name_mod in self.dataset.inputs:
             input_mod = group_batch[name_mod]
+            _, _, height, width = input_mod.shape
 
             waves_mod = torch.tensor(
                 self.wavelengths[name_mod],
@@ -360,8 +361,16 @@ class DOFABaseline(BaseModule, ABC):
             ).float()
 
             x_tokenized, _ = self.patch_embed[name_mod](input_mod, waves_mod)
-            x_tokenized = x_tokenized + self.pos_embed[name_mod][:, 1:, :]
-            cls_token = self.cls_token + self.pos_embed[name_mod][:, :1, :]
+
+            cls_pos_embed, patch_pos_embed = interpolate_pos_encoding(
+                self.pos_embed[name_mod],
+                height,
+                width,
+                self.patch_size,
+            )
+
+            x_tokenized = x_tokenized + patch_pos_embed
+            cls_token = self.cls_token + cls_pos_embed
             cls_tokens = cls_token.expand(x_tokenized.shape[0], -1, -1)
             x_enc = torch.cat((cls_tokens, x_tokenized), dim=1)
 
