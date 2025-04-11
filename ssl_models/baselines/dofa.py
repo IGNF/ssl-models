@@ -194,7 +194,7 @@ class DOFABaseline(BaseModule, ABC):
 
             pos_embed[name_mod] = Parameter(  # fixed sin-cos embedding
                 torch.zeros(1, num_patches + 1, embed_dim),
-                requires_grad=True,
+                requires_grad=False,
             )
 
             if state_dict is not None:
@@ -378,7 +378,8 @@ class DOFABaseline(BaseModule, ABC):
             for block in self.encoder[encoder_mod]:
                 x_enc = block(x_enc)
 
-            x_enc = self.layernorm(x_enc)  # ??
+            if self.keep_norm:
+                x_enc = self.layernorm(x_enc)
 
             x[name_mod] = x_enc[:, 1:]
             dates[name_mod] = batch[f"{name_mod}_dates"]
