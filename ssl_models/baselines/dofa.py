@@ -139,7 +139,8 @@ class DOFABaseline(BaseModule, ABC):
                 1.610,
                 2.190,
             ],
-            "s1": [5.405, 5.405],
+            "s1_asc": [5.405, 5.405],
+            "s1_des": [5.405, 5.405],
         }
 
         self._build_backbone()

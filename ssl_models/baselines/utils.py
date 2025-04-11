@@ -146,7 +146,7 @@ def filter_dict(dictionnary: dict, head: str) -> dict:
 
 
 def interpolate_pos_encoding(
-    pretrained_pos_embeddings: torch.Tensor,
+    pretrained_pos_encoding: torch.Tensor,
     height: int,
     width: int,
     patch_size: int,
@@ -164,33 +164,33 @@ def interpolate_pos_encoding(
     grid_width = width // patch_size
 
     num_patches = grid_height * grid_width
-    num_positions = pretrained_pos_embeddings.shape[1] - 1
+    num_positions = pretrained_pos_encoding.shape[1] - 1
 
     # always interpolate when tracing to ensure the exported model works
     # for dynamic input shapes
     if not torch.jit.is_tracing() and num_patches == num_positions and height == width:
-        return pretrained_pos_embeddings
+        return pretrained_pos_encoding
 
-    class_pos_embed = pretrained_pos_embeddings[:, :1]
-    patch_pos_embed = pretrained_pos_embeddings[:, 1:]
+    class_pos_enc = pretrained_pos_encoding[:, :1]
+    patch_pos_enc = pretrained_pos_encoding[:, 1:]
 
     sqrt_num_positions = int(num_positions**0.5)
-    patch_pos_embed = rearrange(
-        patch_pos_embed,
+    patch_pos_enc = rearrange(
+        patch_pos_enc,
         "b (pw ph) d -> b d pw ph",
         pw=sqrt_num_positions,
     )
 
-    target_dtype = patch_pos_embed.dtype
-    patch_pos_embed = F.interpolate(
-        patch_pos_embed.to(torch.float32),
+    target_dtype = patch_pos_enc.dtype
+    patch_pos_enc = F.interpolate(
+        patch_pos_enc.to(torch.float32),
         size=(grid_height, grid_width),
         mode="bicubic",
         align_corners=False,
     ).to(dtype=target_dtype)
 
-    patch_pos_embed = rearrange(
-        patch_pos_embed,
+    patch_pos_enc = rearrange(
+        patch_pos_enc,
         "b d gw gh -> b (gw gh) d",
     )
-    return class_pos_embed, patch_pos_embed
+    return class_pos_enc, patch_pos_enc
