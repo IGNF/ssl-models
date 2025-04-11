@@ -40,6 +40,7 @@ class OptFinetuneConfig(OptConfig):
     """Finetuning optimizer config.
 
     Use:
+        - monitor=treesat_mlc_thresh/weighted_f1_val for TreeSatAI-TS
         - monitor=pastis_seg/average_iou_val for PASTIS-HD
         - monitor=cosia/average_iou_val for FLAIR
     """
@@ -49,7 +50,7 @@ class OptFinetuneConfig(OptConfig):
     batch_size: int = 32
     lw_decay: float | None = None
     final_factor: float = 2
-    monitor: str | None = "treesat_mlc_thresh/weighted_f1_val"
+    monitor: str | None = None
 
 
 finetune_store = store(group="opt_finetune")
