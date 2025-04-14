@@ -6,6 +6,7 @@ from typing import Literal
 import torch
 
 from conf.datasets import DatasetsConfig
+from ssl_models.baselines.croma import CROMABaseline
 from ssl_models.baselines.dinov2 import Dinov2Baseline
 from ssl_models.baselines.dofa import DOFABaseline
 from ssl_models.train.base import BaseModule
@@ -59,7 +60,7 @@ class BaselineModule(BaseModule):
 
                 self.model = Dinov2Baseline(**model_args)
 
-            case "dofa":
+            case "dofa" | "croma":
                 unpool_dim = None
 
                 if len(datasets.filter_finetune) > 1:
@@ -78,7 +79,9 @@ class BaselineModule(BaseModule):
                     "add_date_enc": add_date_enc,
                 }
 
-                self.model = DOFABaseline(**model_args)
+                model_dict = {"dofa": DOFABaseline, "croma": CROMABaseline}
+                self.model = model_dict[model](**model_args)
+
             case _:
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)

@@ -187,12 +187,10 @@ class Dinov2Baseline(BaseModule):
         model_config = Dinov2Config(**config_dict)
 
         for name_mod in model_names:
-            encoder_mod = Dinov2Encoder(model_config)
+            encoder[name_mod] = Dinov2Encoder(model_config)
 
             if state_dict is not None:
-                self._transfer(state_dict, encoder, RGB_BANDS, "encoder")
-
-            encoder[name_mod] = encoder_mod
+                self._transfer(state_dict, encoder[name_mod], RGB_BANDS, "encoder")
 
         return encoder
 
@@ -354,8 +352,11 @@ class Dinov2Baseline(BaseModule):
                 name_mod
             ].parameters()
 
-        for i in range(self.depth):
-            params_dict[f"encoder.layer.{i}"] = self.encoder.layer[i].parameters()
+        for name_mod in self.encoder:
+            for i in range(self.depth):
+                params_dict[f"encoder.{name_mod}.{i}"] = (
+                    self.encoder[name_mod].layer[i].parameters()
+                )
 
         if self.keep_norm:
             lr_map["layernorm"] = base_lr
