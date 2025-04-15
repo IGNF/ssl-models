@@ -35,7 +35,7 @@ class BaselineConfig:  # noqa: D101
     pretrained_path: str = None
     keep_norm: bool = True
     add_date_enc: bool = True
-
+    use_ema: bool = True
 
 model_store = store(group="model")
 model_store(ModelConfig, name="default_model")
