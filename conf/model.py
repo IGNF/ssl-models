@@ -37,6 +37,7 @@ class BaselineConfig:  # noqa: D101
     add_date_enc: bool = True
     use_ema: bool = True
 
+
 model_store = store(group="model")
 model_store(ModelConfig, name="default_model")
 model_store(BaselineConfig, name="baseline_model")
