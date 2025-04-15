@@ -76,7 +76,7 @@ class BaselineModule(BaseModule):
                     "pretrained_path": pretrained_path,
                     "multimodal": multimodal,
                     "keep_norm": keep_norm,
-                    "add_date_enc": add_date_enc if model == "dofa" else False,
+                    "add_date_enc": add_date_enc,
                 }
 
                 model_dict = {"dofa": DOFABaseline, "croma": CROMABaseline}
