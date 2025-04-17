@@ -53,7 +53,7 @@ class DatasetsConfig:
             for name_dataset in self.filter_finetune
         }
 
-        # temporary restriction to single datasets with single modality and single date
+        # temporary restriction to single datasets
         names_dataset = self.filter_pretrain
         name_dataset = self.filter_pretrain[0]
         dataset = self.pretrain[name_dataset]
