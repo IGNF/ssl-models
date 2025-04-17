@@ -145,6 +145,8 @@ class SSLModule(BaseModule):
             self.trainer.train_dataloader.batch_size
             * self.trainer.accumulate_grad_batches
             * self.trainer.num_nodes
+            * self.trainer.num_devices
+            / 3.0  # remain iso with existing runs on Jean Zellou
         )
         lr = (
             # use sqrt scaling rule with Adam
