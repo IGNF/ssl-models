@@ -72,6 +72,7 @@ class MAE(BaseMIM):
             num_dates_mod[name_mod] += num_dates
             num_dates_group[name_group] += num_dates
 
+        self.mae_mask_value = mask.mae_mask_value
         (
             self.mask_ratio,
             self.mask_mod,
@@ -267,6 +268,31 @@ class MAE(BaseMIM):
 
         return x_enc, mask_token, None, mask_rec
 
+    def custom_mask_seq(
+        self,
+        x: Tensor,
+        mask_token: Tensor,
+        mask: Tensor,
+    ) -> tuple[Tensor, Tensor, None, Tensor]:
+        """Mask sequence."""
+        if torch.is_tensor(mask):
+            mask_rec = (1 - (mask * (mask != self.mae_mask_value))).bool()
+            mask_loss = (mask == self.mae_mask_value).bool()
+            mask = mask * (mask != self.mae_mask_value)
+            unmasked_indices = mask.nonzero(as_tuple=True)[0]
+            masked_indices = (1 - mask).nonzero(as_tuple=True)[0]
+
+            x_enc = x.index_select(1, unmasked_indices)
+            mask_token = mask_token.index_select(1, masked_indices)
+        else:
+            B, L, _ = x.shape  # noqa: N806
+            x_enc = x
+            mask_token = None
+            mask_rec = torch.zeros(B, L, 1, dtype=torch.bool, device=x.device)
+            mask_loss = mask_rec
+
+        return x_enc, mask_token, None, mask_rec, mask_loss
+
     def unmask_seq(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
         """Unmask sequence, filling with mask token."""
         B, L_enc, C = x.shape  # noqa: N806
@@ -286,7 +312,9 @@ class MAE(BaseMIM):
         # collate encoded patches and mask tokens
         batch_indices = rearrange(torch.arange(B, device=x.device), "b -> b 1")
         x_dec = torch.zeros((B, L, C), dtype=x.dtype, device=x.device)
-        x_dec[batch_indices, masked_indices, :] = mask_token.to(x.dtype)
+
+        if torch.is_tensor(mask_token):
+            x_dec[batch_indices, masked_indices, :] = mask_token.to(x.dtype)
         x_dec[batch_indices, unmasked_indices, :] = x
         return x_dec
 

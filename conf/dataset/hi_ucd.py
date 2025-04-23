@@ -31,6 +31,9 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
             "hi_ucd_seg_2",
         ],
     )  # selected target modalities
+    filter_masks: list[str] = field(
+        default_factory=list,
+    )  # selected mask modalities
 
     image_1: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(

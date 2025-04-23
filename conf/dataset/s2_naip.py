@@ -35,6 +35,9 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
     filter_targets: list[str] = field(
         default_factory=lambda: ["osm_seg"],
     )  # selected target modalities
+    filter_masks: list[str] = field(
+        default_factory=list,
+    )  # selected mask modalities
 
     naip: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(

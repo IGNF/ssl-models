@@ -31,6 +31,9 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     filter_targets: list[str] = field(
         default_factory=lambda: ["pastis_seg"],
     )  # selected target modalities
+    filter_masks: list[str] = field(
+        default_factory=list,
+    )  # selected mask modalities
 
     spot: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(

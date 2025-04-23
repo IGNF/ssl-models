@@ -7,8 +7,14 @@ from typing import Literal
 import numpy as np
 
 from conf.dataset.utils import DatasetConfig
+from conf.mask import MaskConfig
 from ssl_models.dataset.dataset import GenericDataset
-from ssl_models.dataset.utils import cloud_mask_correction, read_csv, strs_datetimes
+from ssl_models.dataset.utils import (
+    custom_mae_masking,
+    mask_local_global_consistency,
+    read_csv,
+    strs_datetimes,
+)
 
 
 class CircaDataset(GenericDataset):
@@ -48,7 +54,10 @@ class CircaDataset(GenericDataset):
         self.patch_ids = csv_data["patch_id"].tolist()
         self.base_length = len(self.patch_ids)
         self.repeats = dataset.repeats
+        self.dataset_mods = dataset.rasters
         self.rng = np.random.default_rng(seed=42)
+        self.mask_ratio = MaskConfig.mask_ratio
+        self.mae_mask_value = MaskConfig.mae_mask_value
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
@@ -122,14 +131,24 @@ class CircaDataset(GenericDataset):
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
         inputs["ref_date"] = np.expand_dims(ref_date, axis=0)
 
-        if "s2_cloud_mask_global" in inputs:
-            inputs["s2_cloud_mask_global"] = cloud_mask_correction(
-                inputs["s2_cloud_mask_global"],
-            )
-        if "s2_cloud_mask_zoom" in inputs:
-            inputs["s2_cloud_mask_zoom"] = cloud_mask_correction(
-                inputs["s2_cloud_mask_zoom"],
-            )
+        # mask clouds in local window
+        inputs["s2_cloud_mask_zoom"] = custom_mae_masking(
+            inputs["s2_cloud_mask_zoom"],
+            self.dataset_mods["s2_cloud_mask_zoom"].mask_threshold,
+            self.mask_ratio,
+            self.mae_mask_value,
+        )
+        # corresponding mask in global window
+        inputs["s2_cloud_mask_global"] = mask_local_global_consistency(
+            inputs["s2_cloud_mask_zoom_dates"],
+            inputs["s2_cloud_mask_zoom"],
+            inputs["s2_cloud_mask_global_dates"],
+            inputs["s2_cloud_mask_global"],
+            self.mae_mask_value,
+        )
+
+        inputs.pop("s2_cloud_mask_zoom_dates", None)
+        inputs.pop("s2_cloud_mask_global_dates", None)
 
         return self.transform_rasters(inputs)
 

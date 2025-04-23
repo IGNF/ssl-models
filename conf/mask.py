@@ -14,6 +14,7 @@ class MaskConfig:  # noqa: D101
     mask_bands: float | None = None
     mask_dates: float | None = 0.25
     mask_loc: float | None = 0.25
+    mae_mask_value: float | None = 0.5
 
 
 model_store = store(group="mask")

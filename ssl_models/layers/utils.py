@@ -5,6 +5,7 @@ from typing import Literal
 
 import numpy as np
 import torch
+from einops import rearrange
 from sympy.ntheory import factorint
 from torch import Tensor
 
@@ -217,3 +218,25 @@ def downsamplings_from_patch_size(unpool_dim: int | None, patch_size: int) -> li
         for prime, power in factorint(patch_size).items():
             downsamplings += [prime] * power
     return downsamplings[::-1]
+
+
+def mask_partition(mask: Tensor, patch_size: int) -> Tensor:
+    """Reduce mask size with a given patch size."""
+    _, _, _, H, W = mask.shape  # noqa: N806
+    mask = (
+        rearrange(  # noqa: PD011
+            mask,
+            "b d c (h p1) (w p2) -> b d h p1 w p2 c",
+            h=H // patch_size,
+            w=W // patch_size,
+            p1=patch_size,
+            p2=patch_size,
+        )
+        .min(dim=5)
+        .values.min(dim=3)
+        .values
+    )
+    return rearrange(
+        mask,
+        "b d h w c -> b d (h w) c",
+    )

@@ -17,7 +17,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     repeats: int = 137
     crop_meters: float = 163.84
 
-    ref_input: str | None = "s1_asc_zoom"  # defines grid for raster targets
+    ref_input: str | None = "s2_zoom"  # defines grid for raster targets
     log_inputs: list[str] = field(
         default_factory=lambda: ["s2_zoom"],
     )  # logged input modalities
@@ -25,23 +25,28 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     filter_inputs: list[str] = field(
         default_factory=lambda: [
             "s2_global",
-            "s2_cloud_mask_global",
             "s1_asc_global",
             "s1_des_global",
             "s2_zoom",
-            "s2_cloud_mask_zoom",
             "s1_asc_zoom",
             "s1_des_zoom",
         ],
     )  # selected input modalities
     filter_targets: list[str] = field(
         default_factory=list,
-    )  # selected target modalities
+    )  # selected mask modalities
+
+    filter_masks: list[str] = field(
+        default_factory=lambda: [
+            "s2_cloud_mask_zoom",
+            "s2_cloud_mask_global",
+        ],
+    )
 
     s1_asc_global: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=4,
             num_dates=4,
             norm_fac=1.0,
@@ -51,7 +56,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s1_des_global: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=4,
             num_dates=4,
             norm_fac=1.0,
@@ -61,7 +66,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s2_global: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=10,
             norm_bands=[4, 6],
             num_dates=4,
@@ -72,18 +77,19 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s2_cloud_mask_global: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=[[11]],
             num_dates=4,
             mask_threshold=0.0,
+            name_group="s2_global",
         ),
     )
     s1_asc_zoom: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=4,
-            num_dates=4,
+            num_dates=2,
             norm_fac=1.0,
             name_group="sen1_zoom",
         ),
@@ -91,9 +97,9 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s1_des_zoom: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=4,
-            num_dates=4,
+            num_dates=2,
             norm_fac=1.0,
             name_group="sen1_zoom",
         ),
@@ -101,7 +107,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s2_zoom: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=10,
             num_dates=4,
             norm_bands=[4, 6],
@@ -111,9 +117,10 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s2_cloud_mask_zoom: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=[[11]],
             num_dates=4,
+            name_group="s2_zoom",
         ),
     )
 

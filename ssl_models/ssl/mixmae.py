@@ -224,6 +224,15 @@ class MixMAE(BaseMIM):
 
         return x_enc, mask_token, mask_attn, mask_rec
 
+    def custom_mask_seq(
+        self,
+        x: Tensor,
+        mask_token: Tensor,
+        mask: Tensor,
+    ) -> tuple[Tensor, Tensor, None, Tensor]:
+        """Mask sequence."""
+        return None, None, None, None, None
+
     def unmask_seq(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
         """Unmask sequence, filling with mask token."""
         B_enc, L, C = x.shape  # noqa: N806

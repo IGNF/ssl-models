@@ -167,6 +167,12 @@ class BaseModule(LightningModule, ABC):
     ) -> dict[str, torch.Tensor]:
         """Shared step for training/validation."""
         # resize
+        for name_mask, mask in self.dataset.masks.items():
+            batch[name_mask] = F.interpolate(
+                batch[name_mask].flatten(0, 1),
+                size=(mask.image_size,) * 2,
+                mode="nearest",
+            ).unflatten(0, (-1, mask.num_dates))
         for name_mod, mod in self.dataset.inputs.items():
             batch[name_mod] = F.interpolate(
                 batch[name_mod].flatten(0, 1),

@@ -108,9 +108,9 @@ class DatasetConfig:
         self.size_gcd = size_gcd
         self.crop_gcd = round(crop_gcd)
 
-    def _set_groups(self) -> list[tuple]:
+    def _set_groups(self, mods: dict[str, InputConfig]) -> list[tuple]:
         groups = []
-        for name_mod, mod in self.inputs.items():
+        for name_mod, mod in mods.items():
             name_group = mod.name_group if mod.name_group is not None else name_mod
             groups.append((name_mod, name_group))
 
@@ -141,10 +141,22 @@ class DatasetConfig:
                 raise ValueError(msg)
             self.targets[name_mod] = getattr(self, name_mod)
 
+        self.masks = {}
+        for name_mod in self.filter_masks:
+            if name_mod not in self.__dict__:
+                msg = f"Invalid modality name {name_mod}. Not an attribute."
+                raise ValueError(msg)
+            self.masks[name_mod] = getattr(self, name_mod)
+
         self.rasters = {
             name_mod: mod
-            for name_mod, mod in (*self.inputs.items(), *self.targets.items())
+            for name_mod, mod in (
+                *self.inputs.items(),
+                *self.targets.items(),
+                *self.masks.items(),
+            )
             if isinstance(mod, RasterConfig)
         }
 
-        self.groups = self._set_groups()
+        self.groups = self._set_groups(self.inputs)
+        self.groups_masks = self._set_groups(self.masks)

@@ -24,6 +24,7 @@ from ssl_models.layers.mask import (
 from ssl_models.layers.utils import (
     encode_dates,
     group_mods,
+    mask_partition,
     posemb_sincos_2d,
     reshape_encoding,
     shuffle_enc_to_dec,
@@ -37,7 +38,7 @@ RGB_BANDS = 3
 class BaseMIM(nn.Module, ABC):
     """Masked Auto Encoder (MAE)."""
 
-    def __init__(  # noqa: C901
+    def __init__(  # noqa: C901, PLR0915
         self,
         datasets: DatasetsConfig,
         multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
@@ -171,6 +172,11 @@ class BaseMIM(nn.Module, ABC):
             },
             grid_size=self.grid_size,
         )
+        self.group_masks = partial(
+            group_mods,
+            multimodal=multimodal,
+            groups=self.dataset.groups_masks,
+        )
 
         # shuffling of modalities
         self.shuffle_mods = multimodal == "msgfm"
@@ -184,6 +190,17 @@ class BaseMIM(nn.Module, ABC):
                 for name_mod, len_bands in self.len_bands.items()
             },
         )
+
+        # partitionning mask with patch size
+        self.mask_partition = {
+            name_mask: partial(
+                mask_partition,
+                patch_size=(
+                    mask.patch_size.mae if model == "mae" else mask.patch_size.mixmae
+                ),
+            )
+            for name_mask, mask in self.dataset.masks.items()
+        }
 
         # heads
         self.heads = nn.ModuleDict()
@@ -274,7 +291,6 @@ class BaseMIM(nn.Module, ABC):
                 mask_token[name_mod].expand((B, -1, D // G, L_out, -1)).flatten(1, 2)
             )
             dates[name_mod] = batch[f"{name_mod}_dates"]
-
         return (
             self.group(x_enc),
             self.group(mask_token),
@@ -331,6 +347,7 @@ class BaseMIM(nn.Module, ABC):
         self,
         x: dict[str, Tensor],
         mask: dict[str, Tensor],
+        custom_masks: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
     ) -> tuple[
         dict[str, Tensor],
@@ -340,26 +357,46 @@ class BaseMIM(nn.Module, ABC):
     ]:
         """Mask multimodal."""
         if ssl_phase == "pretrain":
-            mask_rec = self.mask_struct(x)
-
-            x_enc, mask_token, mask_attn = {}, {}, {}
-            for name_group in x:
-                (
-                    x_enc[name_group],
-                    mask_token[name_group],
-                    mask_attn[name_group],
-                    mask_rec[name_group],
-                ) = self.mask_seq(
-                    x[name_group],
-                    mask[name_group],
-                    mask_rec[name_group],
-                    name_group,
-                )
-            return x_enc, mask_token, mask_attn, mask_rec
+            x_enc, mask_token, mask_attn, mask_loss = {}, {}, {}, {}
+            if not custom_masks:
+                mask_rec = self.mask_struct(x)
+                for name_group in x:
+                    (
+                        x_enc[name_group],
+                        mask_token[name_group],
+                        mask_attn[name_group],
+                        mask_rec[name_group],
+                    ) = self.mask_seq(
+                        x[name_group],
+                        mask[name_group],
+                        mask_rec[name_group],
+                        name_group,
+                    )
+                    mask_loss[name_group] = mask_rec[name_group]
+            else:
+                for name_mod, mod in custom_masks.items():
+                    custom_masks[name_mod] = self.mask_partition[name_mod](mask=mod)
+                custom_masks = self.group_masks(custom_masks)
+                mask_rec = {}
+                for name_group in x:
+                    (
+                        x_enc[name_group],
+                        mask_token[name_group],
+                        mask_attn[name_group],
+                        mask_rec[name_group],
+                        mask_loss[name_group],
+                    ) = self.custom_mask_seq(
+                        x[name_group],
+                        mask[name_group],
+                        custom_masks.get(name_group, None),
+                    )
+            return x_enc, mask_token, mask_attn, mask_rec, mask_loss
 
         # else, probe or finetune
-        mask_token, mask_attn, mask_rec = ({name_group: None for name_group in x},) * 3
-        return x, mask_token, mask_attn, mask_rec
+        mask_token, mask_attn, mask_rec, mask_rec_loss = (
+            {name_group: None for name_group in x},
+        ) * 4
+        return x, mask_token, mask_attn, mask_rec, mask_rec_loss
 
     def unmask(
         self,
@@ -670,6 +707,15 @@ class BaseMIM(nn.Module, ABC):
         """Abstract method for masking of sequence."""
 
     @abstractmethod
+    def custom_mask_seq(
+        self,
+        x: Tensor,
+        mask_token: Tensor,
+        mask: Tensor | None,
+    ) -> tuple[Tensor, Tensor, Tensor | None, Tensor]:
+        """Abstract method for masking of sequence."""
+
+    @abstractmethod
     def unmask_seq(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
         """Abstract method for unmasking of sequence."""
 
@@ -696,10 +742,16 @@ class BaseMIM(nn.Module, ABC):
         stage: Literal["train", "val", "test"],
     ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         """Shared forward pass for all MIM modules."""
+        masks = {k: batch.pop(k) for k in self.dataset.masks}
+
         x_enc, mask_token, embed_inds, dates, ref_date = self.embed(batch)
         x_enc = self.enc_add_encodings(x_enc, dates, ref_date)
-
-        x_enc, mask_token, mask_attn, mask_rec = self.mask(x_enc, mask_token, ssl_phase)
+        x_enc, mask_token, mask_attn, mask_rec, mask_loss = self.mask(
+            x_enc,
+            mask_token,
+            masks,
+            ssl_phase,
+        )
 
         x_enc = self.encode(x_enc, mask_attn)
 
@@ -708,18 +760,19 @@ class BaseMIM(nn.Module, ABC):
             x_dec = self.encoder_to_decoder(x_dec)
             x_dec = self.unmask(x_dec, mask_token, mask_rec)
             x_dec = self.dec_add_encodings(x_dec, dates, ref_date)
-
             x_dec = self.decode(x_dec)
 
-            pixels_rec, mask_rec = self.rec_pixels(x_dec, embed_inds, mask_rec)
+            pixels_rec, mask_loss = self.rec_pixels(x_dec, embed_inds, mask_loss)
+
             loss_rec = self.compute_loss_rec(
                 pixels_rec,
-                mask_rec,
+                mask_loss,
                 batch,
             )
+
             log_inputs, log_preds, log_targets = self.compute_pixels(
                 pixels_rec,
-                mask_rec,
+                mask_loss,
                 batch,
                 ssl_phase,
                 stage,

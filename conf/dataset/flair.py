@@ -43,6 +43,10 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["cosia"],
     )  # selected target modalities
 
+    filter_masks: list[str] = field(
+        default_factory=list,
+    )  # selected mask modalities
+
     aerial: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=512,
