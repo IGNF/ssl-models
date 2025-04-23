@@ -230,8 +230,7 @@ class MixMAE(BaseMIM):
         mask_token: Tensor,
         mask: Tensor,
     ) -> tuple[Tensor, Tensor, None, Tensor]:
-        """Mask sequence."""
-        return None, None, None, None, None
+        pass
 
     def unmask_seq(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
         """Unmask sequence, filling with mask token."""
