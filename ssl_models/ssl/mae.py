@@ -275,17 +275,20 @@ class MAE(BaseMIM):
         mask: Tensor,
     ) -> tuple[Tensor, Tensor, None, Tensor]:
         """Mask sequence."""
+        B, L, C = x.shape  # noqa: N806
         if torch.is_tensor(mask):
             mask_rec = (1 - (mask * (mask != self.mae_mask_value))).bool()
             mask_loss = (mask == self.mae_mask_value).bool()
-            mask = mask * (mask != self.mae_mask_value)
-            unmasked_indices = mask.nonzero(as_tuple=True)[0]
-            masked_indices = (1 - mask).nonzero(as_tuple=True)[0]
+   
+            mask = mask_rec.squeeze(-1)
+            masked_indices = (~mask).nonzero(as_tuple=True)
+            unmasked_indices = mask.nonzero(as_tuple=True)
 
-            x_enc = x.index_select(1, unmasked_indices)
-            mask_token = mask_token.index_select(1, masked_indices)
+            masked = x[masked_indices[0], masked_indices[1], :]
+            unmasked = mask_token[unmasked_indices[0], unmasked_indices[1], :]
+            x_enc = masked.view(B, -1, C)
+            mask_token = unmasked.view(B, -1, mask_token.shape[-1])
         else:
-            B, L, _ = x.shape  # noqa: N806
             x_enc = x
             mask_token = None
             mask_rec = torch.zeros(B, L, 1, dtype=torch.bool, device=x.device)

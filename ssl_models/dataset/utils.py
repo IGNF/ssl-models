@@ -139,7 +139,7 @@ def custom_mae_masking(
     num_add_mask = np.clip(round(mask_ratio * L) - num_masked, 0, L)
 
     rng = np.random.default_rng(42)
-    rand_vals = rng.normal(D, L)
+    rand_vals = rng.random((D, L))
     threshold_vals = np.take_along_axis(
         np.sort(rand_vals, axis=-1),
         num_add_mask[..., None] - 1,
