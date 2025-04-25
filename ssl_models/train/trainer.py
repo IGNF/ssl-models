@@ -88,15 +88,18 @@ class SSLTrainer(pl.Trainer):
                 logging_interval="step",
             ),
         )
-        if self.monitor is not None:
-            callbacks.append(
-                ModelCheckpoint(
-                    filename=self.ssl_phase + "-{epoch}",
-                    monitor=f"{self.ssl_phase}_{self.monitor}",
-                    mode="max",
-                    save_weights_only=True,
+        callbacks.append(
+            ModelCheckpoint(
+                filename=self.ssl_phase + "-{epoch}",
+                monitor=(
+                    f"{self.ssl_phase}_{self.monitor}"
+                    if self.monitor is not None
+                    else None
                 ),
-            )
+                mode="max",
+                save_weights_only=True,
+            ),
+        )
         return callbacks
 
     def fit_and_test(
