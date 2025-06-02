@@ -39,6 +39,7 @@ class PASTISHDDataset(GenericDataset):
             ssl_phase=ssl_phase,
             balance_pretrain=dataset.balance_pretrain,
             val_pretrain=dataset.val_pretrain,
+            filter_percent=dataset.filter_percent,
             fold=dataset.fold,
         )
         image_ids = csv_data["image"].tolist()

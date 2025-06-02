@@ -17,6 +17,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "PASTIS-HD"
     balance_pretrain: bool = False
     val_pretrain: bool = True
+    filter_percent: int | None = None
     fold: int | None = None
     repeats: int = 8
     crop_meters: float = 160
