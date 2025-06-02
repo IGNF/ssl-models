@@ -624,6 +624,8 @@ class BaseMIM(nn.Module, ABC):
                 logits_selected,
                 targets_selected,
             )
+        if not isinstance(loss_pred, Tensor):
+            loss_pred = 0 * x_enc.mean()
         return loss_pred, log_inputs, log_preds, log_targets
 
     def encode_or_decode(
