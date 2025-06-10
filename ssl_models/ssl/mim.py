@@ -24,7 +24,7 @@ from ssl_models.layers.mask import (
 from ssl_models.layers.utils import (
     encode_dates,
     group_mods,
-    mask_partition,
+    # mask_partition,
     posemb_sincos_2d,
     reshape_encoding,
     shuffle_enc_to_dec,
@@ -190,17 +190,6 @@ class BaseMIM(nn.Module, ABC):
                 for name_mod, len_bands in self.len_bands.items()
             },
         )
-
-        # partitionning mask with patch size
-        self.mask_partition = {
-            name_mask: partial(
-                mask_partition,
-                patch_size=(
-                    mask.patch_size.mae if model == "mae" else mask.patch_size.mixmae
-                ),
-            )
-            for name_mask, mask in self.dataset.masks.items()
-        }
 
         # heads
         self.heads = nn.ModuleDict()
@@ -375,7 +364,7 @@ class BaseMIM(nn.Module, ABC):
                     mask_loss[name_group] = mask_rec[name_group]
             else:
                 for name_mod, mod in custom_masks.items():
-                    custom_masks[name_mod] = self.mask_partition[name_mod](mask=mod)
+                    custom_masks[name_mod] = rearrange(mod, "b d c h w -> b d (h w) c")
                 custom_masks = self.group_masks(custom_masks)
                 mask_rec = {}
                 for name_group in x:
@@ -752,24 +741,19 @@ class BaseMIM(nn.Module, ABC):
             masks,
             ssl_phase,
         )
-
         x_enc = self.encode(x_enc, mask_attn)
-
         if ssl_phase == "pretrain":
             x_dec = self.shuffle_enc_to_dec(x_enc)
             x_dec = self.encoder_to_decoder(x_dec)
             x_dec = self.unmask(x_dec, mask_token, mask_rec)
             x_dec = self.dec_add_encodings(x_dec, dates, ref_date)
             x_dec = self.decode(x_dec)
-
             pixels_rec, mask_loss = self.rec_pixels(x_dec, embed_inds, mask_loss)
-
             loss_rec = self.compute_loss_rec(
                 pixels_rec,
                 mask_loss,
                 batch,
             )
-
             log_inputs, log_preds, log_targets = self.compute_pixels(
                 pixels_rec,
                 mask_loss,
@@ -777,7 +761,6 @@ class BaseMIM(nn.Module, ABC):
                 ssl_phase,
                 stage,
             )
-
             self.metrics[f"loss_rec_{stage}"].update(loss_rec)
             return loss_rec, log_inputs, log_preds, log_targets, None
 

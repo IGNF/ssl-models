@@ -109,6 +109,8 @@ class CircaDataset(GenericDataset):
         )
         meta["s2_global_path"] = s2_dir / f"bands_stacked_{zone_id}_{row_col_id}.tif"
         meta["s2_zoom_path"] = s2_dir / f"bands_stacked_{zone_id}_{row_col_id}.tif"
+        meta["s2_zoom_mask"] = meta["s2_zoom_path"]
+        meta["s2_zoom_mask_bands"] = 10
         with Path(s2_dir / "dates.json").open() as f:
             meta["s2_global_dates"] = strs_datetimes(json.load(f), fmt="%Y%m%d")
             meta["s2_zoom_dates"] = meta["s2_global_dates"]
@@ -123,8 +125,11 @@ class CircaDataset(GenericDataset):
             s2_dir / f"bands_stacked_{zone_id}_{row_col_id}.tif"
         )
         meta["s2_cloud_mask_global_dates"] = meta["s2_global_dates"]
-        meta["s2_cloud_mask_zoom_dates"] = meta["s2_zoom_dates"]
 
+        meta["s2_cloud_mask_zoom_dates"] = meta["s2_zoom_dates"]
+        meta["s2_cloud_mask_zoom_window"] = True
+        meta["s2_cloud_mask_zoom_mask"] = meta["s2_cloud_mask_zoom_path"]
+        meta["s2_cloud_mask_zoom_mask_bands"] = 10
         ref_date = self.rng.choice(meta["s1_asc_zoom_dates"])
         meta["ref_date"] = ref_date
 
@@ -137,7 +142,9 @@ class CircaDataset(GenericDataset):
             self.dataset_mods["s2_cloud_mask_zoom"].mask_threshold,
             self.mask_ratio,
             self.mae_mask_value,
+            2,  # TODO,
         )
+
         # corresponding mask in global window
         inputs["s2_cloud_mask_global"] = mask_local_global_consistency(
             inputs["s2_cloud_mask_zoom_dates"],
@@ -145,10 +152,11 @@ class CircaDataset(GenericDataset):
             inputs["s2_cloud_mask_global_dates"],
             inputs["s2_cloud_mask_global"],
             self.mae_mask_value,
+            2,  # TODO
         )
 
         inputs.pop("s2_cloud_mask_zoom_dates", None)
-        inputs.pop("s2_cloud_mask_global_dates", None)
+        # inputs.pop("s2_cloud_mask_global_dates", None)
 
         return self.transform_rasters(inputs)
 

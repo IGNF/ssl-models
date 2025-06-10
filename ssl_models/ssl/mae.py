@@ -279,14 +279,12 @@ class MAE(BaseMIM):
         if torch.is_tensor(mask):
             mask_rec = (1 - (mask * (mask != self.mae_mask_value))).bool()
             mask_loss = (mask == self.mae_mask_value).bool()
-   
             mask = mask_rec.squeeze(-1)
             masked_indices = (~mask).nonzero(as_tuple=True)
             unmasked_indices = mask.nonzero(as_tuple=True)
-
             masked = x[masked_indices[0], masked_indices[1], :]
             unmasked = mask_token[unmasked_indices[0], unmasked_indices[1], :]
-            x_enc = masked.view(B, -1, C)
+            x_enc = masked.view(B, -1, C)  # TODO nom incoherent
             mask_token = unmasked.view(B, -1, mask_token.shape[-1])
         else:
             x_enc = x
@@ -307,7 +305,7 @@ class MAE(BaseMIM):
         mask_rec = mask_rec.argsort(dim=1, descending=True)
         masked_indices, unmasked_indices = torch.split(
             mask_rec,
-            [L - L_enc, L_enc],
+            [max(L - L_enc, 0), L_enc],
             dim=1,
         )
         unmasked_indices, _ = unmasked_indices.sort(dim=1)

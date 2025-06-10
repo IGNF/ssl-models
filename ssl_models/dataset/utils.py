@@ -122,36 +122,61 @@ def cloud_mask_correction(input_mask: np.ndarray, threshold: int = 50) -> np.nda
     return np.stack(cloud_masks, axis=0)
 
 
-def custom_mae_masking(
+def custom_mae_masking(  # TODO stage Test
     cloud_mask: np.ndarray,
     cloud_threshold: float,
     mask_ratio: float,
     mask_value: float,
+    patch_size: int,
+    mae_masking_ratio: float = 0.1,
 ) -> np.ndarray:
     """Add random masked pixels to cloud mask."""
     D, C, H, W = cloud_mask.shape  # noqa: N806
-    L = H * W  # noqa: N806
     cloud_mask = cloud_mask_correction(cloud_mask)
-    cloud_mask = rearrange(cloud_mask, "d c h w -> d (h w c)")
 
-    cloud_mask = (cloud_mask <= cloud_threshold).astype(np.float16)  # 0: cloud
-    num_masked = (cloud_mask == 0).sum(axis=-1)
-    num_add_mask = np.clip(round(mask_ratio * L) - num_masked, 0, L)
-
-    rng = np.random.default_rng(42)
-    rand_vals = rng.random((D, L))
-    threshold_vals = np.take_along_axis(
-        np.sort(rand_vals, axis=-1),
-        num_add_mask[..., None] - 1,
-        axis=-1,
+    # mask partition : average pooling
+    cloud_mask = cloud_mask.reshape(
+        D,
+        C,
+        H // patch_size,
+        patch_size,
+        W // patch_size,
+        patch_size,
     )
-    random_mask = (rand_vals <= threshold_vals).astype(np.float16)  # 1: mask
+    cloud_mask = cloud_mask.mean(axis=3).mean(axis=4)
+    cloud_mask = rearrange(cloud_mask, "d c h w -> (d c) (h w)")
+    P, L = cloud_mask.shape  # noqa: N806
 
-    cloud_mask[cloud_mask == 1] = (random_mask[cloud_mask == 1] * mask_value) + (
-        1 - random_mask[cloud_mask == 1]
+    mae_mask = np.ones((P, L))
+    num_masked_cloud = int(mask_ratio * L)
+    num_masked_mae = int(mae_masking_ratio * L)
+
+    for i in range(P):
+        cloud_mask_sorted = np.argsort(cloud_mask[i, :])[::-1]
+        masked_indices, unmasked_indices = np.split(
+            cloud_mask_sorted,
+            [num_masked_cloud],
+        )
+        cloud_threshold_index = np.where(cloud_mask_sorted <= cloud_threshold)[0][0]
+        visible_indices = unmasked_indices[unmasked_indices < cloud_threshold_index]
+        if len(visible_indices) >= num_masked_mae:
+            np.random.shuffle(visible_indices)
+            masked_mae_indices = visible_indices[:num_masked_mae]
+            visible_indices = visible_indices[num_masked_mae:]
+        else:
+            masked_mae_indices = []  # TODO
+
+        mae_mask[i, masked_indices] = 0
+        mae_mask[i, masked_mae_indices] = mask_value
+
+    return rearrange(
+        mae_mask,
+        "(d c) (h w) -> d c h w",
+        d=D,
+        c=C,
+        h=H // patch_size,
+        w=W // patch_size,
     )
-
-    return rearrange(cloud_mask, "d (h w c) -> d c h w", d=D, c=C, h=H, w=W)
 
 
 def mask_local_global_consistency(
@@ -160,9 +185,23 @@ def mask_local_global_consistency(
     dates_global: np.ndarray,
     mask_global: np.ndarray,
     mask_value: float,
+    patch_size: int,
 ) -> np.ndarray:
     """Mask the global mask with the pixels masked in the local mask."""
-    _, C, H, W = mask_global.shape  # noqa: N806
+    D, C, H, W = mask_global.shape  # noqa: N806
+    # mask partition : average pooling
+    mask_global = mask_global.reshape(
+        D,
+        C,
+        H // patch_size,
+        patch_size,
+        W // patch_size,
+        patch_size,
+    )
+    mask_global = mask_global.mean(axis=3).mean(axis=4)
+    cloud_threshold = 0.0  # TODO
+    mask_global = (mask_global <= cloud_threshold).astype(np.float16)
+
     dates_local = dates_local.reshape(-1, 3)
     dates_global = dates_global.reshape(-1, 3)
 
@@ -186,14 +225,15 @@ def mask_local_global_consistency(
         common_local_indices,
         ...,
     ]
+
     # not needed for reconstruction
-    mask_global = np.where(mask_global == 0, mask_value, mask_global)
+    mask_global = np.where(mask_global == mask_value, 0, mask_global)
 
     uncommon_global_indices = np.setdiff1d(
         np.arange(mask_global.shape[0]),
         common_global_indices,
     )
     mask_global[uncommon_global_indices, ...] = np.ones(
-        (len(uncommon_global_indices), C, H, W),
+        (len(uncommon_global_indices), C, H // patch_size, W // patch_size),
     )
     return mask_global

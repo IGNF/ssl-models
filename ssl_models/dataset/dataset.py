@@ -202,6 +202,32 @@ class GenericDataset(Dataset, ABC):
                 raise NotImplementedError(msg)
 
         if zoom_window:
+            if mask_mod is not None:  # TODO and not test
+
+
+                D, C, H, W = cloud_mask.shape  # noqa: N806
+                cloud_mask = cloud_mask_correction(cloud_mask)
+
+                # mask partition : average pooling
+                cloud_mask = cloud_mask.reshape(
+                    D,
+                    C,
+                    H // patch_size,
+                    patch_size,
+                    W // patch_size,
+                    patch_size,
+                )
+                cloud_mask = cloud_mask.mean(axis=3).mean(axis=4)
+                cloud_mask = rearrange(cloud_mask, "d c h w -> (d c) (h w)")
+
+                # On ne garde que les dates pour lesquelles 20% des pixels minimum ne sont pas nuageux
+                mask = mask_mod <= mask_threshold
+                proportion = mask.mean(axis=(1, 2))
+                filtre = proportion >= 0.2
+                mask_mod = mask_mod[filtre]
+                input_mod = input_mod[filtre]
+                dates_mod = dates_mod[filtre]
+
             zoom_dates_idx = np.argsort(
                 [np.abs(ref_date[0] + ref_date[1] - (x[0] + x[1])) for x in dates_mod],
             )[:num_dates]

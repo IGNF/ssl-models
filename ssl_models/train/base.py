@@ -168,9 +168,14 @@ class BaseModule(LightningModule, ABC):
         """Shared step for training/validation."""
         # resize
         for name_mask, mask in self.dataset.masks.items():
+            patch_size = (
+                mask.patch_size.mae
+                if isinstance(self.model, MAE)
+                else mask.patch_size.mixmae
+            )
             batch[name_mask] = F.interpolate(
                 batch[name_mask].flatten(0, 1),
-                size=(mask.image_size,) * 2,
+                size=(mask.image_size // patch_size,) * 2,
                 mode="nearest",
             ).unflatten(0, (-1, mask.num_dates))
         for name_mod, mod in self.dataset.inputs.items():

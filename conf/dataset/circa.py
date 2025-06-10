@@ -14,7 +14,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     balance_pretrain: bool = False
     val_pretrain: bool = False
     filter_percent: int | None = None
-    repeats: int = 137
+    repeats: int = 8
     crop_meters: float = 163.84
 
     ref_input: str | None = "s2_zoom"  # defines grid for raster targets
@@ -25,11 +25,11 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     filter_inputs: list[str] = field(
         default_factory=lambda: [
             "s2_global",
-            "s1_asc_global",
-            "s1_des_global",
+            # "s1_asc_global",
+            # "s1_des_global",
             "s2_zoom",
-            "s1_asc_zoom",
-            "s1_des_zoom",
+            # "s1_asc_zoom",
+            # "s1_des_zoom",
         ],
     )  # selected input modalities
     filter_targets: list[str] = field(
@@ -66,7 +66,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s2_global: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=10,
             norm_bands=[4, 6],
             num_dates=4,
@@ -77,8 +77,8 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s2_cloud_mask_global: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
-            bands=[[11]],
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            bands=[[10]],
             num_dates=4,
             mask_threshold=0.0,
             name_group="s2_global",
@@ -107,7 +107,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s2_zoom: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=10,
             num_dates=4,
             norm_bands=[4, 6],
@@ -117,10 +117,9 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s2_cloud_mask_zoom: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
-            bands=[[11]],
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            bands=[[10]],
             num_dates=4,
-            name_group="s2_zoom",
         ),
     )
 
