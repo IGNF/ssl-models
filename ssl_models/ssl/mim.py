@@ -493,7 +493,7 @@ class BaseMIM(nn.Module, ABC):
 
         return torch.stack(losses_rec).sum() / sum(weights)
 
-    def compute_loss_pred(
+    def compute_loss_pred(  # noqa: PLR0915
         self,
         x_enc: dict[str, Tensor],
         batch: dict[str, Tensor],
