@@ -64,7 +64,11 @@ def run_experiment(
         task.set_parameters_as_dict(config)
 
     if run.load_ckpt_path:
-        model = SSLModule.load_from_checkpoint(run.load_ckpt_path, datasets=datasets)
+        model = SSLModule.load_from_checkpoint(
+            run.load_ckpt_path,
+            map_location=lambda storage, _: storage,
+            datasets=datasets,
+        )
     else:
         model = model_partial()
 
