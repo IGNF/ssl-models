@@ -37,6 +37,7 @@ class TreeSatAITSDataset(GenericDataset):
             ssl_phase=ssl_phase,
             balance_pretrain=dataset.balance_pretrain,
             val_pretrain=dataset.val_pretrain,
+            filter_percent=dataset.filter_percent,
             parse_dates=["aerial_date"],
         )
         target_cols = [

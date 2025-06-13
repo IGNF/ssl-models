@@ -82,7 +82,7 @@ class FLAIRDataset(GenericDataset):
             )
             dates_mod = gpd.read_file(dates_path, engine="pyogrio", use_arrow=True)
             self.dates_dict[name_mod] = {
-                row["patch_id"]: row["acquisition_dates"]
+                "_".join(row["patch_id"].split("_")[:2]): row["acquisition_dates"]
                 for _, row in dates_mod.iterrows()
             }
 
@@ -102,6 +102,7 @@ class FLAIRDataset(GenericDataset):
 
         patch_id = self.patch_ids[idx]
         domain, area, pos = patch_id.split("_")
+        zone_id = f"{domain}_{area}"
 
         meta = {}
         for name_mod in self.mod_mapping:
@@ -121,7 +122,7 @@ class FLAIRDataset(GenericDataset):
 
         for name_mod in ("s2", "s1_asc", "s1_des"):
             meta[f"{name_mod}_dates"] = dict_datetimes(
-                json.loads(self.dates_dict[name_mod][patch_id]),
+                json.loads(self.dates_dict[name_mod][zone_id]),
                 start=1,
             )
         meta["s2_mask_bands"] = [0, 1]

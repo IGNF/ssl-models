@@ -215,12 +215,13 @@ class MetricsLogger(Callback):
                             self.log_confmat(
                                 trainer=trainer,
                                 name=f"confmat_{trainer.ssl_phase}_{name_target}_{stage}/confmat",
-                                cm=MetricsLogger.cm2arr(cm, normalized=False),
+                                arr=MetricsLogger.cm2arr(cm, normalized=False),
+                                cm=cm,
                             )
                             self.log_confmat(
                                 trainer=trainer,
                                 name=f"confmat_{trainer.ssl_phase}_{name_target}_{stage}/confmat_norm",
-                                cm=MetricsLogger.cm2arr(cm, normalized=True),
+                                arr=MetricsLogger.cm2arr(cm, normalized=True),
                             )
                         else:
                             self.log_metric(
@@ -282,9 +283,12 @@ class MetricsLogger(Callback):
         self,
         trainer: Trainer,
         name: str,
-        cm: np.ndarray,
+        arr: np.ndarray,
+        cm: np.ndarray | None = None,
     ) -> None:
-        trainer.tb_logger.add_image(name, cm, trainer.current_epoch)
+        trainer.tb_logger.add_image(name, arr, trainer.current_epoch)
+        if cm is not None:
+            np.save(f"{trainer.tb_logger.log_dir}/{name.split('/')[0]}.npy", cm)
 
     def log_metric(
         self,
