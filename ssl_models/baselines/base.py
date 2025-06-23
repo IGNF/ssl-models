@@ -36,7 +36,7 @@ class BaseModule(Module, ABC):
         embed_dim: int,
         unpool_dim: int,
         type_head: Literal["linear", "attentive"] = "linear",
-        multimodal: Literal["shared", "monotemp"] = "shared",
+        multimodal: Literal["shared", "monotemp", "croma-intergroup"] = "shared",
         add_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
@@ -182,7 +182,10 @@ class BaseModule(Module, ABC):
         """Add positional and date encodings before encoder."""
         x_enc = self.ungroup(x_enc)
 
-        for name_mod in x_enc:
+        dates_k = set(dates.keys())
+        x_k = set(x_enc.keys())
+
+        for name_mod in dates_k.intersection(x_k):  # noqa: PLC0206
             date_encoding = self.enc_date_encoding[name_mod](
                 dates=dates[name_mod],
                 ref_date=ref_date,
