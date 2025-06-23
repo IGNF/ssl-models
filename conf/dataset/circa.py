@@ -24,7 +24,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
 
     filter_inputs: list[str] = field(
         default_factory=lambda: [
-            "s2_global",
+            # "s2_global",
             # "s1_asc_global",
             # "s1_des_global",
             "s2_zoom",
@@ -38,8 +38,8 @@ class CircaConfig(DatasetConfig):  # noqa: D101
 
     filter_masks: list[str] = field(
         default_factory=lambda: [
-            "s2_cloud_mask_zoom",
-            "s2_cloud_mask_global",
+            "s2_zoom_mask",
+            # "s2_global_mask",
         ],
     )
 
@@ -74,7 +74,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
             norm_fac=5000.0,
         ),
     )
-    s2_cloud_mask_global: InputRasterConfig = field(
+    s2_global_mask: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
             patch_size=PatchSizeConfig(mae=2, mixmae=1),
@@ -114,12 +114,14 @@ class CircaConfig(DatasetConfig):  # noqa: D101
             norm_fac=5000.0,
         ),
     )
-    s2_cloud_mask_zoom: InputRasterConfig = field(
+    s2_zoom_mask: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
             patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=[[10]],
             num_dates=4,
+            mask_threshold=0.0,
+            name_group="s2_zoom",
         ),
     )
 
@@ -133,10 +135,10 @@ class CircaConfig(DatasetConfig):  # noqa: D101
                 "s2_global": 10.24,
                 "s1_asc_global": 10.24,
                 "s1_des_global": 10.24,
-                "s2_cloud_mask_global": 10.24,
+                "s2_global_mask": 10.24,
                 "s2_zoom": 10.24,
                 "s1_asc_zoom": 10.24,
                 "s1_des_zoom": 10.24,
-                "s2_cloud_mask_zoom": 10.24,
+                "s2_zoom_mask": 10.24,
             },
         )

@@ -11,7 +11,7 @@ import rasterio
 from rasterio.windows import Window
 from torch.utils.data import Dataset
 
-from conf.dataset.utils import DatasetConfig
+from conf.dataset.utils import DatasetConfig, PatchSizeConfig
 from ssl_models.dataset.osm_to_seg import process_geojson_file
 
 warnings.filterwarnings("ignore", category=rasterio.errors.NotGeoreferencedWarning)
@@ -25,14 +25,17 @@ class GenericDataset(Dataset, ABC):
         dataset: DatasetConfig,
         stage: Literal["train", "val", "test"],
         use_transform: bool,
+        model: Literal["mae", "mixmae"],
         random_dates: bool = False,
         random_crop: bool = False,
     ) -> None:
+        self.stage = stage
         self.rng = np.random.default_rng(seed=42)
         self.use_transform = use_transform
         self.dataset = dataset
         self.random_dates = random_dates and stage == "train"
         self.random_crop = random_crop and stage == "train"
+        self.model = model
 
     @staticmethod
     def unflatten(x: np.ndarray, axis: int, reshape_axis: tuple) -> np.ndarray:
@@ -62,6 +65,30 @@ class GenericDataset(Dataset, ABC):
             start_gcd = None
 
         return (idx % base_length), start_gcd
+
+    def average_pooling(self, x: np.ndarray, patch_size: int) -> np.ndarray:
+        D, H, W = x.shape  # noqa: N806
+        # mask partition : average pooling
+        x = x.reshape(
+            D,
+            H // patch_size,
+            patch_size,
+            W // patch_size,
+            patch_size,
+        )
+        return x.mean(axis=2).mean(axis=3)
+
+    def max_pooling(self, x: np.ndarray, patch_size: int) -> np.ndarray:
+        D, H, W = x.shape  # noqa: N806
+        # mask partition : average pooling
+        x = x.reshape(
+            D,
+            H // patch_size,
+            patch_size,
+            W // patch_size,
+            patch_size,
+        )
+        return x.max(axis=2).max(axis=3)
 
     def preprocess_rasters(
         self,
@@ -111,7 +138,7 @@ class GenericDataset(Dataset, ABC):
         # read raster slices
         inputs = {}
         for name_mod, mod in self.dataset.rasters.items():
-            input_mod, dates_mod = self.preprocess_raster(
+            input_mod, dates_mod, mask_mod, mask_mod_test = self.preprocess_raster(
                 meta[f"{name_mod}_path"],
                 meta[f"{name_mod}_dates"],
                 meta.get(f"{name_mod}_mask", None),
@@ -126,6 +153,10 @@ class GenericDataset(Dataset, ABC):
             )
             inputs[name_mod] = input_mod
             inputs[f"{name_mod}_dates"] = dates_mod
+            if meta.get(f"{name_mod}_need_mask", False):
+                inputs[f"{name_mod}_mask"] = mask_mod
+                if self.stage == "test":
+                    inputs[f"{name_mod}_mask_test"] = mask_mod_test
 
         return inputs
 
@@ -146,6 +177,7 @@ class GenericDataset(Dataset, ABC):
         mask_threshold: float,  # threshold on mask percentage cover
         norm_fac: float | None,
         log_scale: bool,
+        patch_size: PatchSizeConfig,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> tuple[np.ndarray, np.ndarray]:
         """Read raster modality."""
@@ -161,6 +193,7 @@ class GenericDataset(Dataset, ABC):
         )
         use_mask = (mask_threshold / 100.0) < 1.0
         mask_mod = None  # by default, no mask is used
+        mask_mod_test = None
 
         match path_mod.suffix:
             case ".tif" | ".png" | ".jpg" | ".jpeg":
@@ -201,30 +234,21 @@ class GenericDataset(Dataset, ABC):
                 msg = f"File format {path_mod.suffix} not supported."
                 raise NotImplementedError(msg)
 
+        patch_size = patch_size.mae if self.model == "mae" else patch_size.mixmae
         if zoom_window:
-            if mask_mod is not None:  # TODO and not test
+            if mask_mod is not None:
+                mask_mod_test = mask_mod
+                if self.stage == "test":
+                    mask_mod = self.max_pooling(mask_mod, patch_size)
+                else:
+                    mask_mod = self.average_pooling(mask_mod, patch_size)
 
-
-                D, C, H, W = cloud_mask.shape  # noqa: N806
-                cloud_mask = cloud_mask_correction(cloud_mask)
-
-                # mask partition : average pooling
-                cloud_mask = cloud_mask.reshape(
-                    D,
-                    C,
-                    H // patch_size,
-                    patch_size,
-                    W // patch_size,
-                    patch_size,
-                )
-                cloud_mask = cloud_mask.mean(axis=3).mean(axis=4)
-                cloud_mask = rearrange(cloud_mask, "d c h w -> (d c) (h w)")
-
-                # On ne garde que les dates pour lesquelles 20% des pixels minimum ne sont pas nuageux
                 mask = mask_mod <= mask_threshold
                 proportion = mask.mean(axis=(1, 2))
-                filtre = proportion >= 0.2
+                filtre = proportion >= 0.2  # noqa: PLR2004
+
                 mask_mod = mask_mod[filtre]
+                mask_mod_test = mask_mod_test[filtre]
                 input_mod = input_mod[filtre]
                 dates_mod = dates_mod[filtre]
 
@@ -235,6 +259,11 @@ class GenericDataset(Dataset, ABC):
             dates_mod = np.take(dates_mod, zoom_dates_idx, axis=0)
             dates_mod = np.expand_dims(dates_mod, axis=(2, 3))
             input_mod = np.take(input_mod, zoom_dates_idx, axis=0)
+            if mask_mod is not None:
+                mask_mod = np.take(mask_mod, zoom_dates_idx, axis=0)
+                mask_mod = np.expand_dims(mask_mod, axis=1)
+                mask_mod_test = np.take(mask_mod_test, zoom_dates_idx, axis=0)
+                mask_mod_test = np.expand_dims(mask_mod_test, axis=1)
 
         elif len(dates_mod) != num_dates:
             input_mod = input_mod[slices[2]]
@@ -244,11 +273,17 @@ class GenericDataset(Dataset, ABC):
             if mask_mod is not None:
                 mask_mod = mask_mod[slices[2]]
                 mask_mod = self.unflatten(mask_mod, 0, (num_dates, -1))
-                mask_mod = (mask_mod > mask_threshold).any(axis=2, keepdims=True)
-                mask_mod = mask_mod & ~(
-                    mask_mod.any(axis=(3, 4), keepdims=True).all(axis=1, keepdims=True)
+                mask_mod_criterion = (mask_mod > mask_threshold).any(
+                    axis=2,
+                    keepdims=True,
                 )
-                input_mod = np.where(mask_mod, np.nan, input_mod)
+                mask_mod_criterion = mask_mod_criterion & ~(
+                    mask_mod_criterion.any(axis=(3, 4), keepdims=True).all(
+                        axis=1,
+                        keepdims=True,
+                    )
+                )
+                input_mod = np.where(mask_mod_criterion, np.nan, input_mod)
 
             diff_mod = input_mod - np.nanmedian(input_mod, axis=1, keepdims=True)
             diff_mod = np.abs(diff_mod)
@@ -260,6 +295,14 @@ class GenericDataset(Dataset, ABC):
             median_inds = np.nanargmin(diff_mod, axis=1, keepdims=True)
             input_mod = np.take_along_axis(input_mod, median_inds, axis=1).squeeze(1)
             dates_mod = np.take_along_axis(dates_mod, median_inds, axis=1).squeeze(1)
+            if mask_mod is not None:
+                mask_mod = np.take_along_axis(mask_mod, median_inds, axis=1).squeeze(1)
+                mask_mod = mask_mod[:, 0, :, :]
+
+                mask_mod_test = mask_mod
+                mask_mod = self.average_pooling(mask_mod, patch_size)
+                mask_mod = np.expand_dims(mask_mod, axis=(1))
+                mask_mod_test = np.expand_dims(mask_mod_test, axis=(1))
 
         input_mod = input_mod.astype(np.float32)
         if log_scale:
@@ -268,11 +311,10 @@ class GenericDataset(Dataset, ABC):
         if norm_fac is not None:
             input_mod /= norm_fac
 
-        return input_mod, dates_mod
+        return input_mod, dates_mod, mask_mod, mask_mod_test
 
     def transform_rasters(
-        self,
-        inputs: dict[str, np.ndarray],
+        self, inputs: dict[str, np.ndarray], additional_inputs: dict[str, None] = {},
     ) -> dict[str, np.ndarray]:
         """Transform model rasters."""
         if self.use_transform:
@@ -281,6 +323,8 @@ class GenericDataset(Dataset, ABC):
                     {
                         name_mod: np.flip(inputs[name_mod], axis=2)
                         for name_mod in self.dataset.rasters
+                        | self.dataset.masks
+                        | additional_inputs
                     },
                 )
             if self.rng.choice([True, False]):
@@ -288,6 +332,8 @@ class GenericDataset(Dataset, ABC):
                     {
                         name_mod: np.flip(inputs[name_mod], axis=3)
                         for name_mod in self.dataset.rasters
+                        | self.dataset.masks
+                        | additional_inputs
                     },
                 )
             if self.rng.choice([True, False]):
@@ -295,12 +341,16 @@ class GenericDataset(Dataset, ABC):
                     {
                         name_mod: np.swapaxes(inputs[name_mod], 2, 3)
                         for name_mod in self.dataset.rasters
+                        | self.dataset.masks
+                        | additional_inputs
                     },
                 )
             inputs.update(
                 {
                     name_mod: np.ascontiguousarray(inputs[name_mod])
                     for name_mod in self.dataset.rasters
+                    | self.dataset.masks
+                    | additional_inputs
                 },
             )
         return inputs

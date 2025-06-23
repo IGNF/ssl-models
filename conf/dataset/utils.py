@@ -153,7 +153,6 @@ class DatasetConfig:
             for name_mod, mod in (
                 *self.inputs.items(),
                 *self.targets.items(),
-                *self.masks.items(),
             )
             if isinstance(mod, RasterConfig)
         }

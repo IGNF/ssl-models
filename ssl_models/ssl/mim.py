@@ -440,6 +440,7 @@ class BaseMIM(nn.Module, ABC):
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
+        log_bands: list[int],
     ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
         """Visu of reconstructed images, shared for all MIM modules."""
         log_inputs, log_preds, log_targets = {}, {}, {}
@@ -462,9 +463,18 @@ class BaseMIM(nn.Module, ABC):
                 batch[name_mod],
             )
             targets = batch[name_mod]
-            log_inputs[f"{ssl_phase}_{stage}/_{name_mod}_input"] = inputs[0, 0]
-            log_preds[f"{ssl_phase}_{stage}/_{name_mod}_rec"] = preds[0, 0]
-            log_targets[f"{ssl_phase}_{stage}/_{name_mod}_target"] = targets[0, 0]
+            log_inputs[f"{ssl_phase}_{stage}/_{name_mod}_input"] = inputs[0, 0][
+                log_bands,
+                ...,
+            ]
+            log_preds[f"{ssl_phase}_{stage}/_{name_mod}_rec"] = preds[0, 0][
+                log_bands,
+                ...,
+            ]
+            log_targets[f"{ssl_phase}_{stage}/_{name_mod}_target"] = targets[0, 0][
+                log_bands,
+                ...,
+            ]
 
         return log_inputs, log_preds, log_targets
 
@@ -478,6 +488,8 @@ class BaseMIM(nn.Module, ABC):
         losses_rec = []
         weights = []
         for name_mod in pixels_rec:
+            if not torch.any(mask_rec[name_mod]):
+                continue
             D = batch[name_mod].shape[1]  # noqa: N806
             H, W = (  # noqa: N806
                 self.out_grid_size[name_mod],
@@ -510,7 +522,6 @@ class BaseMIM(nn.Module, ABC):
                 p1=P,
                 p2=P,
             )
-
             weight = D * H * W
             weights.append(weight)
             loss_rec = self.loss_fn(target - pixels_rec[name_mod])
@@ -518,6 +529,20 @@ class BaseMIM(nn.Module, ABC):
             losses_rec.append(weight * loss_rec)
 
         return torch.stack(losses_rec).sum() / sum(weights)
+
+        # ###########################################################
+        # # TODO NDVI loss + OFFSET NDVI 1000
+        # # ndvi target
+        # mod_utilisee = "s2_zoom"
+        # idx_nir = 6
+        # idx_red = 2
+
+        # target_ndvi = (batch[mod_utilisee][:, :, idx_nir, ...] - batch[mod_utilisee][:, :, idx_red, ...]) / (batch[mod_utilisee][:, :, idx_nir, ...] + batch[mod_utilisee][:, :, idx_red, ...] + torch.finfo().eps)
+        # rec_ndvi = (pixels_rec[mod_utilisee][:, :, idx_nir, ...] - pixels_rec[mod_utilisee][:, :, idx_red, ...]) / (pixels_rec[mod_utilisee][:, :, idx_nir, ...] + pixels_rec[mod_utilisee][:, :, idx_red, ...] + torch.finfo().eps)
+        # ndvi_rec = self.loss_fn(target_ndvi - rec_ndvi)
+        # ndvi_rec = torch.masked_select(ndvi_rec, mask_rec[mod_utilisee][:, :, 0, :, :]).mean()
+
+        # return ndvi_rec
 
     def compute_loss_pred(
         self,
@@ -732,6 +757,9 @@ class BaseMIM(nn.Module, ABC):
     ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         """Shared forward pass for all MIM modules."""
         masks = {k: batch.pop(k) for k in self.dataset.masks}
+        masks_test_inference = {
+            k: batch.pop(k) for k, v in batch.items() if k.endswith("test")
+        }
 
         x_enc, mask_token, embed_inds, dates, ref_date = self.embed(batch)
         x_enc = self.enc_add_encodings(x_enc, dates, ref_date)
@@ -741,6 +769,7 @@ class BaseMIM(nn.Module, ABC):
             masks,
             ssl_phase,
         )
+
         x_enc = self.encode(x_enc, mask_attn)
         if ssl_phase == "pretrain":
             x_dec = self.shuffle_enc_to_dec(x_enc)
@@ -749,17 +778,25 @@ class BaseMIM(nn.Module, ABC):
             x_dec = self.dec_add_encodings(x_dec, dates, ref_date)
             x_dec = self.decode(x_dec)
             pixels_rec, mask_loss = self.rec_pixels(x_dec, embed_inds, mask_loss)
+            if stage == "test":
+                mask_loss.update(
+                    {k.replace("_mask_test", ""): v for k, v in mask_loss.items()},
+                )
             loss_rec = self.compute_loss_rec(
                 pixels_rec,
                 mask_loss,
                 batch,
             )
+
+            _, mask_rec = self.rec_pixels(x_dec, embed_inds, mask_rec)
+
             log_inputs, log_preds, log_targets = self.compute_pixels(
                 pixels_rec,
-                mask_loss,
+                mask_rec,
                 batch,
                 ssl_phase,
                 stage,
+                [1, 2, 3],  # TODO
             )
             self.metrics[f"loss_rec_{stage}"].update(loss_rec)
             return loss_rec, log_inputs, log_preds, log_targets, None
