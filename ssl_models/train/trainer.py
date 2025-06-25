@@ -1,7 +1,6 @@
 """Trainer module."""
 
-from pathlib import Path
-from typing import Callable, Literal
+from typing import Literal
 
 import pytorch_lightning as pl
 from pytorch_lightning import Callback, LightningDataModule, LightningModule
@@ -107,16 +106,9 @@ class SSLTrainer(pl.Trainer):
         self,
         model: LightningModule,
         datamodule: LightningDataModule,
-        load_partial: Callable,
-        current_path: str | Path | None,
-        load_path: str | Path | None,
     ) -> None:
-        if load_path != current_path and load_path is not None:
-            model = load_partial(load_path)
         self.fit(model=model, datamodule=datamodule)
 
         ckpt_path = self.checkpoint_callback.best_model_path
         if ckpt_path:
             self.test(model=model, datamodule=datamodule, ckpt_path=ckpt_path)
-
-        return ckpt_path

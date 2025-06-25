@@ -32,16 +32,11 @@ def run_experiment(
     """Run experiment, with arguments set up using hydra zen."""
     trainer_partial = partial(SSLTrainer, run=run, **vars(trainer))
     data_partial = partial(SSLDataModule, datasets=datasets, **vars(data))
-    load_partial = partial(
-        SSLModule.load_from_checkpoint,
-        map_location=lambda storage, _: storage,
-        datasets=datasets,
-    )
 
     if isinstance(model, BaselineConfig):
-        model = BaselineModule(datasets=datasets, **vars(model))
+        model_partial = partial(BaselineModule, datasets=datasets, **vars(model))
     else:
-        model = SSLModule(datasets=datasets, mask=mask, **vars(model))
+        model_partial = partial(SSLModule, datasets=datasets, mask=mask, **vars(model))
 
     if (
         run.use_clearml
@@ -68,9 +63,14 @@ def run_experiment(
         )
         task.set_parameters_as_dict(config)
 
-    LOGGER.info("Set restore path")
-    current_path = None
-    load_path = run.load_ckpt_path if run.load_ckpt_path else None
+    if run.load_ckpt_path:
+        model = SSLModule.load_from_checkpoint(
+            run.load_ckpt_path,
+            map_location=lambda storage, _: storage,
+            datasets=datasets,
+        )
+    else:
+        model = model_partial()
 
     if opt_pretrain.epochs > 0:
         LOGGER.info("Pretrain")
@@ -79,14 +79,7 @@ def run_experiment(
             ssl_phase="pretrain",
             opt=opt_pretrain,
         )
-        current_path = trainer_pretrain.fit_and_test(
-            model=model,
-            datamodule=data_pretrain,
-            load_partial=load_partial,
-            current_path=current_path,
-            load_path=load_path,
-        )
-        load_path = current_path
+        trainer_pretrain.fit_and_test(model=model, datamodule=data_pretrain)
 
     if opt_probe.epochs > 0:
         LOGGER.info("Probe")
@@ -95,13 +88,7 @@ def run_experiment(
             ssl_phase="probe",
             opt=opt_probe,
         )
-        current_path = trainer_probe.fit_and_test(
-            model=model,
-            datamodule=data_probe,
-            load_partial=load_partial,
-            current_path=current_path,
-            load_path=load_path,
-        )
+        trainer_probe.fit_and_test(model=model, datamodule=data_probe)
 
     if opt_finetune.epochs > 0:
         LOGGER.info("Finetune")
@@ -110,10 +97,4 @@ def run_experiment(
             ssl_phase="finetune",
             opt=opt_finetune,
         )
-        current_path = trainer_finetune.fit_and_test(
-            model=model,
-            datamodule=data_finetune,
-            load_partial=load_partial,
-            current_path=current_path,
-            load_path=load_path,
-        )
+        trainer_finetune.fit_and_test(model=model, datamodule=data_finetune)
