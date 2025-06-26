@@ -100,9 +100,17 @@ class BaselineModule(BaseModule):
     def configure_optimizers(self) -> dict:
         """Configure optimizer."""
         total_steps = self.trainer.estimated_stepping_batches
+        total_batch_size = (
+            self.trainer.train_dataloader.batch_size
+            * self.trainer.accumulate_grad_batches
+            * self.trainer.num_nodes
+            * self.trainer.num_devices
+            / 3.0  # remain iso with existing runs on Jean Zellou
+        )
+
         lr = (
             # use sqrt scaling rule with Adam
-            self.trainer.base_lr * self.trainer.train_dataloader.batch_size**0.5
+            self.trainer.base_lr * total_batch_size**0.5
         )
         match self.trainer.lw_decay:
             case None:
@@ -129,6 +137,7 @@ class BaselineModule(BaseModule):
             pct_start=0.2,
             cycle_momentum=False,
             div_factor=1000,
+            final_div_factor=self.trainer.final_factor / 1000.0,
         )
         return {
             "optimizer": optimizer,
