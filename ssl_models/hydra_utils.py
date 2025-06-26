@@ -21,7 +21,7 @@ def pre_call_resolve(cfg: OmegaConf) -> None:
         load_root = Path(cfg.run.exp_dir) / cfg.run.load_name
         ckpt_path = sorted(
             str(ckpt_path)
-            for ckpt_path in load_root.rglob("*/checkpoints/pretrain-epoch=*.ckpt")
+            for ckpt_path in load_root.rglob("*/checkpoints/finetune-epoch=*.ckpt")
         ).pop()
         load_cfg_path = (
             Path(ckpt_path).parent.parent / ".hydra" / "config_resolved.yaml"

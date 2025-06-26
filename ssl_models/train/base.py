@@ -147,7 +147,7 @@ class BaseModule(LightningModule, ABC):
             model = self.model
         else:
             model = self.ema_model
-        _, log_inputs, log_preds, log_targets, loss_pred = model(
+        _, log_inputs, log_preds, log_targets, loss_pred, log_bonus = model(
             batch,
             stage=stage,
             ssl_phase=self.trainer.ssl_phase,
@@ -158,6 +158,7 @@ class BaseModule(LightningModule, ABC):
             "log_inputs": log_inputs,
             "log_preds": log_preds,
             "log_targets": log_targets,
+            "log_bonus": log_bonus
         }
 
     def shared_step(

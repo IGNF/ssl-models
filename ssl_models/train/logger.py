@@ -102,6 +102,12 @@ class ImageLogger(Callback):
                 ImageLogger.to_numpy(log_img),
                 epoch,
             )
+        for log_title, log_img in outputs["log_bonus"].items():
+            trainer.tb_logger.add_image(
+                log_title.replace("/", f"/{prefix_idx}"),
+                ImageLogger.to_numpy(log_img),
+                epoch,
+            )
 
     def on_train_batch_end(
         self,
@@ -137,6 +143,24 @@ class ImageLogger(Callback):
             batch,
             batch_idx,
             stage="val",
+        )
+
+    def on_test_batch_end(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,  # noqa: ARG002
+        outputs: dict[str, Tensor],
+        batch: dict[str, Tensor],
+        batch_idx: int,
+        dataloader_idx: int = 0,  # noqa: ARG002
+    ) -> None:
+        """Log validation images."""
+        self.on_batch_end(
+            trainer,
+            outputs,
+            batch,
+            batch_idx,
+            stage="test",
         )
 
 

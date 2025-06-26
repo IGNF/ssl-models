@@ -32,11 +32,12 @@ class PASTISHDDataset(GenericDataset):
             random_dates=random_dates,
             random_crop=random_crop,
         )
-
+        csv_dir = Path(dataset.csv_dir) if dataset.csv_dir else root_dir
         csv_data = read_csv(
-            csv_dir=root_dir,
+            csv_dir=csv_dir,
             stage=stage,
             ssl_phase=ssl_phase,
+            version=dataset.version,
             balance_pretrain=dataset.balance_pretrain,
             val_pretrain=dataset.val_pretrain,
             filter_percent=dataset.filter_percent,

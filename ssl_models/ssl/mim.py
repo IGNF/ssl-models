@@ -20,6 +20,8 @@ from ssl_models.layers.mask import (
     get_cd_mask_from_logits,
     get_segment_mask_from_logits,
     get_target_mask_from_batch,
+    resize_bonus_mod,
+    process_pastis_img,
 )
 from ssl_models.layers.utils import (
     encode_dates,
@@ -440,7 +442,7 @@ class BaseMIM(nn.Module, ABC):
             log_preds[f"{ssl_phase}_{stage}/_{name_mod}_rec"] = preds[0, 0]
             log_targets[f"{ssl_phase}_{stage}/_{name_mod}_target"] = targets[0, 0]
 
-        return log_inputs, log_preds, log_targets
+        return log_inputs, log_preds, log_targets, None
 
     def compute_loss_rec(
         self,
@@ -534,7 +536,7 @@ class BaseMIM(nn.Module, ABC):
             dim=1,
         )
         loss_pred = 0
-        log_inputs, log_preds, log_targets = {}, {}, {}
+        log_inputs, log_preds, log_targets, log_bonus = {}, {}, {}, {}
         for name_target, target in self.dataset.targets.items():
             targets = batch[name_target]
             # image logger
@@ -544,12 +546,16 @@ class BaseMIM(nn.Module, ABC):
                     0,
                     0,
                 ][:RGB_BANDS]
+                bonus_img = torch.median(batch["s2"][0], dim=0, keepdim=True).values.squeeze()
+                bonus_img = resize_bonus_mod(input_img, bonus_img)
+                bonus_img = process_pastis_img(bonus_img)
                 target_msk = get_target_mask_from_batch(
                     batch[name_target][0, 0, 0],
                     target.num_classes,
                     target.missing_val,
                 )
                 log_inputs[f"{ssl_phase}_{name_target}_{stage}/_input"] = input_img
+                log_bonus[f"{ssl_phase}_{name_target}_{stage}/_mod-s2"] = bonus_img
                 log_targets[f"{ssl_phase}_{name_target}_{stage}/_target"] = (
                     create_masked_image(
                         input_img,
@@ -626,7 +632,7 @@ class BaseMIM(nn.Module, ABC):
             )
         if not isinstance(loss_pred, Tensor):
             loss_pred = 0 * x_enc.mean()
-        return loss_pred, log_inputs, log_preds, log_targets
+        return loss_pred, log_inputs, log_preds, log_targets, log_bonus
 
     def encode_or_decode(
         self,
@@ -719,7 +725,7 @@ class BaseMIM(nn.Module, ABC):
                 mask_rec,
                 batch,
             )
-            log_inputs, log_preds, log_targets = self.compute_pixels(
+            log_inputs, log_preds, log_targets, _ = self.compute_pixels(
                 pixels_rec,
                 mask_rec,
                 batch,
@@ -728,14 +734,14 @@ class BaseMIM(nn.Module, ABC):
             )
 
             self.metrics[f"loss_rec_{stage}"].update(loss_rec)
-            return loss_rec, log_inputs, log_preds, log_targets, None
+            return loss_rec, log_inputs, log_preds, log_targets, None, None
 
         # else, probe or finetune
-        loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
+        loss_pred, log_input, log_pred, log_target, log_bonus = self.compute_loss_pred(
             x_enc,
             batch,
             ssl_phase,
             stage,
         )
         self.metrics[f"loss_pred_{stage}"].update(loss_pred)
-        return None, log_input, log_pred, log_target, loss_pred
+        return None, log_input, log_pred, log_target, loss_pred, log_bonus
