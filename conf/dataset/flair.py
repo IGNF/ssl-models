@@ -13,7 +13,7 @@ from ssl_models.dataset.flair import FLAIRDataset
 
 @dataclass
 class FLAIRConfig(DatasetConfig):  # noqa: D101
-    rel_dir: str = "FLAIR-INC"
+    rel_dir: str = "FLAIR-HUB"
     csv_dir: str | None = None
     version: str | None = None
     balance_pretrain: bool = False

@@ -27,7 +27,7 @@ class CROMABaseline(BaseModule):
         unpool_dim: int,
         freeze: bool = False,
         type_head: Literal["linear", "attentive"] = "linear",
-        multimodal: str = "shared",
+        multimodal: Literal["monotemp", "croma-intergroup"] = "monotemp",
         pretrained_path: str | None = None,
         add_date_enc: bool = False,
         fac_date_enc: float = 1.0,
@@ -50,7 +50,7 @@ class CROMABaseline(BaseModule):
         type_head: str
            Segmentation head to use. Either "linear" (default) or "attentive".
         multimodal: str
-           Multimodal strategy. Either "shared" (default) or "monotemp" (default).
+           Multimodal strategy. Either "monotemp" (default) or "croma-intergroup".
         pretrained_path: str
            Path to the location of the pretrained weights.
         add_date_enc: bool
@@ -111,6 +111,12 @@ class CROMABaseline(BaseModule):
         if self.freeze:
             self.freeze_backbone()
 
+        if self.multimodal == "croma-intergroup":
+            modalities = self.dataset.inputs.keys()
+            ref_mod = "s2" if "s2" in modalities else "s1_asc"
+            self.num_dates["joint"] = self.num_dates[ref_mod]
+            self.grid_size["joint"] = self.grid_size[ref_mod]
+
     def _build_backbone(self) -> Module:
         modalities = self.dataset.inputs.keys()
 
@@ -132,16 +138,18 @@ class CROMABaseline(BaseModule):
 
     def _check_image_size(self) -> int:
         all_image_size = None
+        used_mods = ["s2", "s1_des", "s1_asc"]
 
         for name_mod in self.dataset.inputs:
-            mod_image_size = self.dataset.inputs[name_mod].image_size
+            if name_mod in used_mods:
+                mod_image_size = self.dataset.inputs[name_mod].image_size
 
-            if all_image_size is None:
-                all_image_size = mod_image_size
+                if all_image_size is None:
+                    all_image_size = mod_image_size
 
-            if mod_image_size != all_image_size:
-                msg = "All modalities should have the same image size."
-                raise ValueError(msg)
+                if mod_image_size != all_image_size:
+                    msg = "All modalities should have the same image size."
+                    raise ValueError(msg)
 
         return all_image_size
 
@@ -280,6 +288,9 @@ class CROMABaseline(BaseModule):
         if self.croma_modality in ["both", "SAR"]:
             s1_outputs = output_croma["SAR_encodings"]
             x["s1_asc"], x["s1_des"] = self._ungroup_s1(s1_outputs)
+
+        if self.multimodal == "croma-intergroup":
+            x["joint"] = output_croma["joint_encodings"]
 
         if self.add_date_enc:
             dates = {}

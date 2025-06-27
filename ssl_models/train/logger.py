@@ -173,6 +173,7 @@ class MetricsLogger(Callback):
         sns.heatmap(cm_df, annot=True, fmt=fmt)
         rgba_buf = fig.canvas.buffer_rgba()
         (w, h) = fig.canvas.get_width_height()
+        plt.close()
         return (
             np.frombuffer(rgba_buf, dtype=np.uint8)
             .reshape((h, w, 4))

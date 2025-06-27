@@ -44,12 +44,19 @@ def shuffle_enc_to_dec(x: dict[str, Tensor]) -> dict[str, Tensor]:
 
 def group_mods(
     x: dict[str, Tensor],
-    multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+    multimodal: Literal[
+        "msgfm",
+        "shared",
+        "monotemp",
+        "mod",
+        "group",
+        "croma-intergroup",
+    ],
     groups: list[tuple],
 ) -> dict[str, Tensor]:
     """Group modality sequences."""
     match multimodal:
-        case "msgfm" | "shared" | "monotemp":
+        case "msgfm" | "shared" | "monotemp" | "croma-intergroup":
             dim = 0
             groups = None
         case "mod":
@@ -75,14 +82,21 @@ def group_mods(
 
 def ungroup_mods(
     x_group: dict[str, Tensor],
-    multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+    multimodal: Literal[
+        "msgfm",
+        "shared",
+        "monotemp",
+        "mod",
+        "group",
+        "croma-intergroup",
+    ],
     groups: list[tuple],
     num_dates: dict[str, int],
     grid_size: dict[str, int],
 ) -> dict[str, Tensor]:
     """Ungroup modality sequences."""
     match multimodal:
-        case "msgfm" | "shared" | "monotemp":
+        case "msgfm" | "shared" | "monotemp" | "croma-intergroup":
             dim = 0
             groups = None
         case "mod":
