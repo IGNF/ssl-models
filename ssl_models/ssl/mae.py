@@ -224,33 +224,14 @@ class MAE(BaseMIM):
                     mask_group[name_group],
                 )
 
-        noise = {}
-        for name_mod, len_bands in self.len_bands.items():
-            B, D, L, _ = mask_mod[name_mod].shape  # noqa: N806
-            G = len_bands  # noqa: N806
-            noise[name_mod] = (
-                # mask all band groups
-                torch.zeros((B, G, D // G, L))
-                + torch.rand((B, G, D // G, L)).mean(dim=1, keepdim=True)
-            )
-            noise[name_mod] = noise[name_mod].reshape((B, D, L, 1))
-
-        noise = self.group(noise)
-
-        mask_group = {
+        return {
             name_group: mask_group[name_group].to(x[name_group].device)
             for name_group in mask_group
         }
-        noise = {
-            name_group: noise[name_group].to(x[name_group].device)
-            for name_group in noise
-        }
-        return mask_group, noise
 
     def mask_seq(
         self,
         x: Tensor,
-        noise: Tensor,
         mask_token: Tensor,
         mask_rec: Tensor,
         name_group: str,
@@ -259,8 +240,8 @@ class MAE(BaseMIM):
         B, L, _ = x.shape  # noqa: N806
 
         # sample masked tokens
-        noise *= 1 - mask_rec.float()
-        noise = noise.reshape((B, L))
+        noise = torch.rand((B, L), device=x.device)  # [B L]
+        noise *= 1 - mask_rec.reshape((B, L)).float()
         random_indices = torch.argsort(noise, dim=-1)  # [B L]
         reverse_indices = torch.argsort(random_indices, dim=-1)
 

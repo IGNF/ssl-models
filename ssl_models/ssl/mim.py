@@ -340,7 +340,7 @@ class BaseMIM(nn.Module, ABC):
     ]:
         """Mask multimodal."""
         if ssl_phase == "pretrain":
-            mask_rec, noise = self.mask_struct(x)
+            mask_rec = self.mask_struct(x)
 
             x_enc, mask_token, mask_attn = {}, {}, {}
             for name_group in x:
@@ -351,7 +351,6 @@ class BaseMIM(nn.Module, ABC):
                     mask_rec[name_group],
                 ) = self.mask_seq(
                     x[name_group],
-                    noise[name_group],
                     mask[name_group],
                     mask_rec[name_group],
                     name_group,
