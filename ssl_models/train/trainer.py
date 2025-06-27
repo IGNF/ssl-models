@@ -35,6 +35,7 @@ class SSLTrainer(pl.Trainer):
         self.exp_dir = run.exp_dir
         self.exp_name = run.exp_name
         self.exp_version = get_hydra_timestamp()
+        self.ckpt_load_path = run.load_ckpt_path
 
         self.logged_images_per_epoch = run.logged_images_per_epoch
 
@@ -108,7 +109,9 @@ class SSLTrainer(pl.Trainer):
         datamodule: LightningDataModule,
     ) -> None:
         self.fit(model=model, datamodule=datamodule)
-
-        ckpt_path = self.checkpoint_callback.best_model_path
+        if self.ckpt_load_path:
+            ckpt_path = self.ckpt_load_path
+        else:
+            ckpt_path = self.checkpoint_callback.best_model_path
         if ckpt_path:
             self.test(model=model, datamodule=datamodule, ckpt_path=ckpt_path)

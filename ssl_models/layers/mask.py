@@ -30,6 +30,28 @@ pastis_cm = [
     [1, 1, 1]
 ]
 
+flair_cm = [
+    '#db0e9a',
+    '#9999ff',
+    '#3de6eb',
+    '#f80c00',
+    '#938e7b',
+    '#a97101',
+    '#1553ae',
+    '#ffffff',
+    '#55ff00',
+    '#fff30d',
+    '#e4df7c',
+    '#660082',
+    '#46e483',
+    '#194a26',
+    # '#f3a60d',
+    # '#8ab3a0',
+    # '#c5dc42',
+    # '#6b714f',
+    '#000000',
+]
+
 
 def get_segment_mask_from_logits(logits: Tensor, num_classes: int) -> Tensor:
     """Convert prediction logits to mask for segmentation task."""
@@ -72,9 +94,10 @@ def create_masked_image(img: Tensor, msk: Tensor, num_classes: int) -> Tensor:
         map(
             to_hex,
             #cm.get_cmap("plasma", num_classes).colors,
-            pastis_cm,
+            flair_cm,
         ),
     )
+    # colormap = flair_cm
     msk = msk.unsqueeze(0)
     msk = F.interpolate(msk.float(), img.shape[-2:], mode="nearest").bool()
     msk = msk.squeeze(0)

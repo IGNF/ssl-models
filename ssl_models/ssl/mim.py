@@ -545,7 +545,7 @@ class BaseMIM(nn.Module, ABC):
                 input_img = batch[next(input_keys)][
                     0,
                     0,
-                ][:RGB_BANDS]
+                ][:RGB_BANDS]  #[[1, 2, 3], ...]  # [:RGB_BANDS]
                 bonus_img = torch.median(batch["s2"][0], dim=0, keepdim=True).values.squeeze()
                 bonus_img = resize_bonus_mod(input_img, bonus_img)
                 bonus_img = process_pastis_img(bonus_img)
