@@ -23,15 +23,15 @@ class BaselineModule(BaseModule):
         self,
         # shared args
         datasets: DatasetsConfig,
-        model: Literal["dinov2", "dofa"],
-        model_size: Literal["small", "base", "large", "huge"],
+        model: Literal["dinov2", "dofa", "croma"],
+        model_size: Literal["small", "base", "large"],
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         weight_source: str = "imagenat",
         pretrained_path: str | None = None,
         freeze: bool = False,
         use_ema: bool = False,
-        multimodal: str = "shared",
+        multimodal: Literal["shared", "monotemp", "croma-intergroup"] = "shared",
         keep_norm: bool = True,
         add_date_enc: bool = True,
     ) -> None:
