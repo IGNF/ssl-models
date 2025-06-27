@@ -111,7 +111,7 @@ class CROMABaseline(BaseModule):
         if self.freeze:
             self.freeze_backbone()
 
-        if self.multimodal=="croma-intergroup":
+        if self.multimodal == "croma-intergroup":
             modalities = self.dataset.inputs.keys()
             ref_mod = "s2" if "s2" in modalities else "s1_asc"
             self.num_dates["joint"] = self.num_dates[ref_mod]
