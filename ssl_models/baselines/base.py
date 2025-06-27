@@ -185,7 +185,7 @@ class BaseModule(Module, ABC):
         dates_k = set(dates.keys())
         x_k = set(x_enc.keys())
 
-        for name_mod in dates_k.intersection(x_k):  # noqa: PLC0206
+        for name_mod in dates_k.intersection(x_k):
             date_encoding = self.enc_date_encoding[name_mod](
                 dates=dates[name_mod],
                 ref_date=ref_date,
