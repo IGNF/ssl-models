@@ -66,43 +66,34 @@ class PatchifyBands(nn.Module):
             for idx, _ in enumerate(self.downsamplings):
                 pow_in = len(self.downsamplings) - idx
                 pow_out = len(self.downsamplings) - (idx + 1)
-                channels_in = self.unpool_dim // 2**pow_in
+                channels_in = self.unpool_dim // 2**pow_in if idx > 0 else in_chans
                 channels_out = self.unpool_dim // 2**pow_out
                 channels.append((channels_in, channels_out))
 
-            self.conv = nn.Conv2d(
-                in_chans,
-                channels[0][0],
-                kernel_size=1,
-            )
-            self.norms = nn.ModuleDict(
-                {
-                    f"{branch}_{idx}": nn.GroupNorm(1, channels_in)
-                    for branch in ("skip", "res")
-                    for idx, (channels_in, _) in enumerate(channels)
-                },
-            )
-            self.convs = nn.ModuleDict(
-                {
-                    f"{branch}_{idx}": nn.Conv2d(
+            self.convs = nn.ModuleList(
+                [
+                    nn.Conv2d(
                         channels_in,
                         channels_out,
                         kernel_size=self.downsamplings[idx],
                         stride=self.downsamplings[idx],
                         padding_mode="reflect",
                     )
-                    for branch in ("skip", "res")
                     for idx, (channels_in, channels_out) in enumerate(channels)
-                },
+                ],
             )
-            self.norm = nn.GroupNorm(1, channels[-1][1])
-            self.fc = nn.Conv2d(
+            self.norms = nn.ModuleList(
+                [
+                    nn.GroupNorm(1, channels_out)
+                    for _, (_, channels_out) in enumerate(channels)
+                ],
+            )
+            self.act = nn.ReLU()
+            self.conv = nn.Conv2d(
                 channels[-1][1],
                 embed_dim,
                 kernel_size=1,
             )
-            self.norm_fc = nn.GroupNorm(1, embed_dim)
-            self.act = nn.SiLU()
 
     def forward(self, x: Tensor) -> tuple[Tensor, list[Tensor]]:
         _, D, _, H, W = x.shape  # noqa: N806
@@ -122,22 +113,11 @@ class PatchifyBands(nn.Module):
                 p1=self.patch_size,
                 p2=self.patch_size,
             )
-            x = self.conv(x)
             for idx, _ in enumerate(self.downsamplings):
-                x_res, x_skip = x, x
-
-                x_res = self.norms[f"res_{idx}"](x_res)
-                x_res = self.act(x_res)
-                x_res = self.convs[f"res_{idx}"](x_res)
-
-                x_skip = self.norms[f"skip_{idx}"](x_skip)
-                x_skip = self.convs[f"skip_{idx}"](x_skip)
-
-                x = x_res + x_skip
-
-            x = self.norm(x)
-            x = self.fc(x)
-            x = self.norm_fc(x)
+                x = self.convs[idx](x)
+                x = self.norms[idx](x)
+                x = self.act(x)
+            x = self.conv(x)
             x = x + skip
         else:
             x = skip
@@ -232,41 +212,33 @@ class PixelifyBands(nn.Module):
             for idx, _ in enumerate(self.downsamplings):
                 pow_in = idx
                 pow_out = idx + 1
-                channels_in = self.unpool_dim // 2**pow_in
+                channels_in = self.unpool_dim // 2**pow_in if idx > 0 else embed_dim
                 channels_out = self.unpool_dim // 2**pow_out
                 channels.append((channels_in, channels_out))
 
-            self.conv = nn.Conv2d(
-                embed_dim,
-                channels[0][0],
-                kernel_size=1,
-            )
-            self.norms = nn.ModuleDict(
-                {
-                    f"{branch}_{idx}": nn.GroupNorm(1, channels_in)
-                    for branch in ("skip", "res")
-                    for idx, (channels_in, _) in enumerate(channels)
-                },
-            )
-            self.convs = nn.ModuleDict(
-                {
-                    f"{branch}_{idx}": nn.ConvTranspose2d(
+            self.convs = nn.ModuleList(
+                [
+                    nn.ConvTranspose2d(
                         channels_in,
                         channels_out,
                         kernel_size=self.downsamplings[::-1][idx],
                         stride=self.downsamplings[::-1][idx],
                     )
-                    for branch in ("skip", "res")
                     for idx, (channels_in, channels_out) in enumerate(channels)
-                },
+                ],
             )
-            self.norm = nn.GroupNorm(1, channels[-1][1])
-            self.fc = nn.Conv2d(
+            self.norms = nn.ModuleList(
+                [
+                    nn.GroupNorm(1, channels_out)
+                    for _, (_, channels_out) in enumerate(channels)
+                ],
+            )
+            self.act = nn.ReLU()
+            self.conv = nn.Conv2d(
                 channels[-1][1],
                 out_chans,
                 kernel_size=1,
             )
-            self.act = nn.SiLU()
 
     def forward(
         self,
@@ -289,21 +261,11 @@ class PixelifyBands(nn.Module):
             p2=self.patch_size,
         )
         if self.unpool_dim and self.downsamplings:
-            x = self.conv(x)
             for idx, _ in enumerate(self.downsamplings):
-                x_res, x_skip = x, x
-
-                x_res = self.norms[f"res_{idx}"](x_res)
-                x_res = self.act(x_res)
-                x_res = self.convs[f"res_{idx}"](x_res)
-
-                x_skip = self.norms[f"skip_{idx}"](x_skip)
-                x_skip = self.convs[f"skip_{idx}"](x_skip)
-
-                x = x_res + x_skip
-
-            x = self.norm(x)
-            x = self.fc(x)
+                x = self.convs[idx](x)
+                x = self.norms[idx](x)
+                x = self.act(x)
+            x = self.conv(x)
             x = x + skip
         else:
             x = skip

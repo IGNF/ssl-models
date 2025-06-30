@@ -173,12 +173,13 @@ class MetricsLogger(Callback):
         sns.heatmap(cm_df, annot=True, fmt=fmt)
         rgba_buf = fig.canvas.buffer_rgba()
         (w, h) = fig.canvas.get_width_height()
-        plt.close()
-        return (
+        arr = (
             np.frombuffer(rgba_buf, dtype=np.uint8)
             .reshape((h, w, 4))
             .transpose((2, 0, 1))[:3]
         )
+        plt.close()
+        return arr
 
     def on_epoch_end(
         self,
@@ -187,10 +188,14 @@ class MetricsLogger(Callback):
         stage: Literal["train", "val", "test"],
     ) -> None:
         """Log epoch metrics for training/val/test."""
-        if stage == "train" or pl_module.ema_model is None:
-            model = pl_module.model
-        else:
+        if (
+            trainer.ssl_phase == "finetune"
+            and stage != "train"
+            and pl_module.ema_model is not None
+        ):
             model = pl_module.ema_model
+        else:
+            model = pl_module.model
 
         match trainer.ssl_phase:
             case "pretrain":

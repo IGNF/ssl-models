@@ -86,7 +86,10 @@ class FLAIRDataset(GenericDataset):
                 for _, row in dates_mod.iterrows()
             }
 
-        self.cosia_ignore = (15, 16, 17, 18)
+        if dataset.version == "flair2":
+            self.cosia_ignore = (1, 2, 7, 15, 16, 17, 18)
+        else:
+            self.cosia_ignore = (15, 16, 17, 18)
         self.cosia_missing = dataset.cosia.missing_val
 
         self.lpis_ignore = (0,)

@@ -233,11 +233,7 @@ class SSLModule(BaseModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Pretraining step."""
-        if stage == "train" or self.ema_model is None:
-            model = self.model
-        else:
-            model = self.ema_model
-        loss_rec, log_inputs, log_preds, log_targets, _ = model(
+        loss_rec, log_inputs, log_preds, log_targets, _ = self.model(
             batch,
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,

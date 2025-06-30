@@ -143,10 +143,15 @@ class BaseModule(LightningModule, ABC):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Probing/finetuning step."""
-        if stage == "train" or self.ema_model is None:
-            model = self.model
-        else:
+        if (
+            self.trainer.ssl_phase == "finetune"
+            and stage != "train"
+            and self.ema_model is not None
+        ):
             model = self.ema_model
+        else:
+            model = self.model
+
         _, log_inputs, log_preds, log_targets, loss_pred = model(
             batch,
             stage=stage,
