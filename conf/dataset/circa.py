@@ -14,7 +14,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     balance_pretrain: bool = False
     val_pretrain: bool = False
     filter_percent: int | None = None
-    repeats: int = 8
+    repeats: int = 4
     crop_meters: float = 163.84
 
     ref_input: str | None = "s2_zoom"  # defines grid for raster targets

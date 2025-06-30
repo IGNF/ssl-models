@@ -59,6 +59,7 @@ class CircaDataset(GenericDataset):
         self.base_length = len(self.patch_ids)
         self.repeats = dataset.repeats
         self.dataset_masks = dataset.masks
+        self.dataset_inputs = dataset.inputs
         self.rng = np.random.default_rng(seed=42)
         self.mask_ratio = MaskConfig.mask_ratio
         self.mae_mask_value = MaskConfig.mae_mask_value
@@ -149,6 +150,8 @@ class CircaDataset(GenericDataset):
                 mae_masking_ratio=0.1,
                 mask_value=self.mae_mask_value,
             )
+            inputs["s2_zoom_mask_test"][inputs["s2_zoom_mask_test"] == 1] = 0
+            inputs["s2_zoom_mask_test"][inputs["s2_zoom_mask_test"] == self.mae_mask_value] = 1
         else:
             inputs["s2_zoom_mask"] = cloud_mae_masking(
                 inputs["s2_zoom_mask"],
@@ -170,9 +173,11 @@ class CircaDataset(GenericDataset):
         # )
 
         if self.stage == "test":
-            inputs["s2_zoom_mask_test"] = inputs["s2_zoom_mask_test"].expand(
-                inputs["s2_zoom_mask"].shape,
-            )
+            inputs["s2_zoom_mask_test"] = np.repeat(
+                inputs["s2_zoom_mask_test"],
+                self.dataset.inputs["s2_zoom"].bands,
+                axis=1
+            ).astype(bool)
             return self.transform_rasters(inputs, {"s2_zoom_mask_test": None})
         return self.transform_rasters(inputs)
 

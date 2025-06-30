@@ -488,8 +488,6 @@ class BaseMIM(nn.Module, ABC):
         losses_rec = []
         weights = []
         for name_mod in pixels_rec:
-            if not torch.any(mask_rec[name_mod]):
-                continue
             D = batch[name_mod].shape[1]  # noqa: N806
             H, W = (  # noqa: N806
                 self.out_grid_size[name_mod],
@@ -522,13 +520,17 @@ class BaseMIM(nn.Module, ABC):
                 p1=P,
                 p2=P,
             )
-            weight = D * H * W
-            weights.append(weight)
+
             loss_rec = self.loss_fn(target - pixels_rec[name_mod])
             loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod]).mean()
+            if not torch.any(mask_rec[name_mod]):
+                weight = 0
+            else:
+                weight = D * H * W
+            weights.append(weight)
             losses_rec.append(weight * loss_rec)
 
-        return torch.stack(losses_rec).sum() / sum(weights)
+        return torch.stack(losses_rec).sum() / max(sum(weights), 1)
 
         # ###########################################################
         # # TODO NDVI loss + OFFSET NDVI 1000
@@ -758,7 +760,7 @@ class BaseMIM(nn.Module, ABC):
         """Shared forward pass for all MIM modules."""
         masks = {k: batch.pop(k) for k in self.dataset.masks}
         masks_test_inference = {
-            k: batch.pop(k) for k, v in batch.items() if k.endswith("test")
+            k: batch.pop(k) for k, v in batch.copy().items() if k.endswith("test")
         }
 
         x_enc, mask_token, embed_inds, dates, ref_date = self.embed(batch)
@@ -780,7 +782,7 @@ class BaseMIM(nn.Module, ABC):
             pixels_rec, mask_loss = self.rec_pixels(x_dec, embed_inds, mask_loss)
             if stage == "test":
                 mask_loss.update(
-                    {k.replace("_mask_test", ""): v for k, v in mask_loss.items()},
+                    {k.replace("_mask_test", ""): v for k, v in masks_test_inference.items()},
                 )
             loss_rec = self.compute_loss_rec(
                 pixels_rec,
