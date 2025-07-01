@@ -18,7 +18,6 @@ class PatchSizeConfig:
     """Patch size config."""
 
     mae: int = MISSING
-    mixmae: int = MISSING
     dinov2_imagenat: int = 14
     dinov2_sat: int = 16
     dofa: int = 16

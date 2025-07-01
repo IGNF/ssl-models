@@ -41,7 +41,7 @@ class BaseMIM(nn.Module, ABC):
         self,
         datasets: DatasetsConfig,
         multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
-        model: Literal["mae", "mixmae"],
+        model: Literal["mae"],
         num_levels: Literal[1, 3, 4],
         unpool_dim: int | None,
         embed_dim: int,
@@ -81,7 +81,7 @@ class BaseMIM(nn.Module, ABC):
         self.grid_size, self.out_grid_size = {}, {}
         self.patch_embed, self.embed_to_rec = nn.ModuleDict(), nn.ModuleDict()
         for name_mod, mod in self.dataset.inputs.items():
-            patch_size = mod.patch_size.mae if model == "mae" else mod.patch_size.mixmae
+            patch_size = mod.patch_size.mae
             self.grid_size[name_mod] = mod.image_size // patch_size
             self.out_grid_size[name_mod] = mod.image_size // (patch_size * self.stride)
             self.patch_embed[name_mod] = Patchify(

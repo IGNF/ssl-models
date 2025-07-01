@@ -8,13 +8,6 @@ import torch
 from conf.datasets import DatasetsConfig
 from conf.mask import MaskConfig
 from ssl_models.ssl.mae import MAE, mae_large, mae_medium, mae_small, mae_tiny
-from ssl_models.ssl.mixmae import (
-    mixmae_base,
-    mixmae_huge,
-    mixmae_large,
-    mixmae_small,
-    mixmae_tiny,
-)
 from ssl_models.train.base import BaseModule
 
 torch.set_float32_matmul_precision(precision="medium")
@@ -32,7 +25,7 @@ class SSLModule(BaseModule):
         mask: MaskConfig,
         multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         allmods_depth: int,
-        model: Literal["mae", "mixmae"],
+        model: Literal["mae"],
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
@@ -40,11 +33,6 @@ class SSLModule(BaseModule):
         use_date_enc: bool = True,
         batch_repeats: int | None = None,
         use_ema: bool = False,
-        # mixmae args
-        num_levels: Literal[3, 4] = 3,
-        swin_version: Literal[1, 2] = 1,
-        v2_attn: bool = True,
-        swin_abs_enc: bool = False,
     ) -> None:
         super().__init__(datasets, model, loss)
 
@@ -77,23 +65,6 @@ class SSLModule(BaseModule):
                     "medium": mae_medium,
                     "large": mae_large,
                 }
-            case "mixmae":
-                if num_levels not in (3, 4):
-                    msg = f"Invalid number of levels {num_levels}. Expected '3' or '4'."
-                    raise ValueError(msg)
-                if swin_version not in (1, 2):
-                    msg = f"Invalid swin version {swin_version}. Expected '1' or '2'"
-                    raise ValueError(msg)
-                fac_abs_enc = 1.0 if swin_abs_enc else 0.0  # optional abs pos encodings
-                fac_date_enc = 1.0 if use_date_enc else 0.0
-
-                model_map = {
-                    "tiny": mixmae_tiny,
-                    "small": mixmae_small,
-                    "base": mixmae_base,
-                    "large": mixmae_large,
-                    "huge": mixmae_huge,
-                }
             case _:
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)
@@ -114,8 +85,6 @@ class SSLModule(BaseModule):
                 "model": model,
                 "unpool_dim": unpool_dim,
                 "num_levels": num_levels,
-                "swin_version": swin_version,
-                "v2_attn": v2_attn,
                 "type_head": type_head,
                 "loss_fn": loss_fn,
                 "norm_pix_loss": norm_pix_loss,

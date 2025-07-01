@@ -36,7 +36,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     spot: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=160,
-            patch_size=PatchSizeConfig(mae=16, mixmae=4),
+            patch_size=PatchSizeConfig(mae=16),
             bands=3,
             norm_fac=255.0,
         ),
@@ -44,7 +44,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     s2: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2),
             bands=10,
             norm_bands=[4, 4, 2],
             num_dates=16,
@@ -54,7 +54,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     s1_asc: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2),
             bands=[[0, 1]],
             norm_bands=[1, 1],
             num_dates=4,
@@ -65,7 +65,7 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
     s1_des: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2),
             bands=[[0, 1]],
             norm_bands=[1, 1],
             num_dates=4,
