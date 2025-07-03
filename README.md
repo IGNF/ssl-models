@@ -44,6 +44,22 @@ Evaluated on four diverse EO datasets, MAESTRO consistently achieves state-of-th
     poetry install
 ```
 
+### Run Locally
+To run the model locally, you can use the following minimal code:
+```bash
+poetry run python main.py \
+        model.model=mae \
+        model.model_size=medium \
+        model.use_ema=True \
+        run.exp_name=mae-m_pastis \
+        run.exp_dir=/path/to/experiments/dir \
+        datasets.root_dir=/path/to/dataset/dir \
+        datasets.pastis_hd.rel_dir=PASTIS-HD \
+        datasets.filter_pretrain=[pastis_hd] \
+        datasets.filter_finetune=[pastis_hd]
+
+```
+
 ### Data
 Our implementation already supports 4 datasets:  
 
