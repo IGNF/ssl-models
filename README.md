@@ -59,6 +59,7 @@ poetry run python main.py \
         datasets.filter_finetune=[pastis_hd]
 
 ```
+Many parameters can be modified with the hydra configuration.
 
 ### Data
 Our implementation already supports 4 datasets:  
