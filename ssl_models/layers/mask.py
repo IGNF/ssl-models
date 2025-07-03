@@ -84,20 +84,20 @@ def get_target_mask_from_batch(
         batch_target.type(torch.int64),
         num_classes + 1,
     )
-    # target_msk = target_msk[:, :, :num_classes]
+    target_msk = target_msk[:, :, :num_classes]
     return target_msk.permute(2, 0, 1).type(torch.bool)
 
 
 def create_masked_image(img: Tensor, msk: Tensor, num_classes: int) -> Tensor:
     """Create overlayed image with input image and mask."""
-    colormap = list(
-        map(
-            to_hex,
-            #cm.get_cmap("plasma", num_classes).colors,
-            pastis_cm,
-        ),
-    )
-    # colormap = flair_cm
+    # colormap = list(
+    #     map(
+    #         to_hex,
+    #         cm.get_cmap("plasma", num_classes).colors,
+    #         pastis_cm,
+    #     ),
+    # )
+    colormap = flair_cm
     msk = msk.unsqueeze(0)
     msk = F.interpolate(msk.float(), img.shape[-2:], mode="nearest").bool()
     msk = msk.squeeze(0)

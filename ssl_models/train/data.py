@@ -56,7 +56,7 @@ class SSLDataModule(LightningDataModule):
             val_dataset,
             batch_size=opt.batch_size,
             num_workers=num_workers,
-            shuffle=True,
+            shuffle=False,
             drop_last=True,
         )
 
@@ -73,7 +73,7 @@ class SSLDataModule(LightningDataModule):
             test_dataset,
             batch_size=opt.batch_size,
             num_workers=num_workers,
-            shuffle=True,
+            shuffle=False,
             drop_last=True,
         )
 
