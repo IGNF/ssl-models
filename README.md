@@ -13,35 +13,14 @@ Evaluated on four diverse EO datasets, MAESTRO consistently achieves state-of-th
 - **Patch-spectral-wise normalization:** Novel normalization method that normalizes reconstruction targets patch-wise within groups of highly correlated spectral bands.
 - **MAESTRO Method:** Novel adaptation of the MAE that combines optimized fusion strategies with a target normalization scheme that introduces an effective multispectral prior as self-supervisory signal to learn better deep representation.
 
-
-
-### Results
-<div align="center">
-
-| Item            | TreeSatAI-TS | PASTIS-HD | FLAIR#2 | FLAIR-HUB |
-|-----------------|:------------:|----------:|--------:|----------:|
-| MAESTRO         |      0       |         0 |       0 |         0 |
-| DINO-v2         |      0       |         0 |       0 |         0 |
-| DINO-v2 sat.    |      0       |         0 |       0 |         0 |
-| DOFA            |      0       |         0 |       0 |         0 |
-| CROMA           |      0       |         0 |       0 |         0 |
-| AnySat          |      0       |         0 |       0 |         0 |
-|            |              |           |         |          |
-| ViT             |      0       |         0 |       0 |         0 |
-|          |              |           |         |          |
-| Previous SOTA   |      0       |         0 |       0 |         0 |
-
-</div>
-
 ## Getting Started
 ```bash
-    # 1. Clone the repository
+# 1. Clone the repository
+git clone https://github.com/your-org/ssl-models.git
+cd ssl-models
 
-    git clone https://github.com/your-org/ssl-models.git
-    cd ssl-models
-
-    # 2. Install dependencies with Poetry
-    poetry install
+# 2. Install dependencies with Poetry
+poetry install
 ```
 
 ### Run Locally
