@@ -16,7 +16,7 @@ class RunConfig:  # noqa: D101
     reproducible: bool = True
     seed: int = 42
     logged_images_per_epoch: int = 5
-    use_clearml: bool = True
+    use_clearml: bool = False
     clearml_project_name: str = "ssl"
     clearml_tags: list[str] = field(default_factory=lambda: ["multimodal", "hydra"])
     clearml_offline_mode: bool = False

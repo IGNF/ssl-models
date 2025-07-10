@@ -15,9 +15,9 @@ Evaluated on four diverse EO datasets, MAESTRO consistently achieves state-of-th
 
 ## Getting Started
 ```bash
-# 1. Clone the repository
-git clone https://github.com/your-org/ssl-models.git
-cd ssl-models
+# 1.  **Extract the archive**  
+unzip Maestro.zip
+cd Maestro
 
 # 2. Install dependencies with Poetry
 poetry install
