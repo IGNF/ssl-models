@@ -46,7 +46,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s1_asc_global: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=4,
             num_dates=4,
             norm_fac=1.0,
@@ -56,7 +56,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s1_des_global: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=4,
             num_dates=4,
             norm_fac=1.0,
@@ -87,9 +87,9 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s1_asc_zoom: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=4,
-            num_dates=2,
+            num_dates=4,
             norm_fac=1.0,
             name_group="sen1_zoom",
         ),
@@ -97,9 +97,9 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s1_des_zoom: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=4,
-            num_dates=2,
+            num_dates=4,
             norm_fac=1.0,
             name_group="sen1_zoom",
         ),

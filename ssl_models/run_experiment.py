@@ -32,7 +32,10 @@ def run_experiment(
     """Run experiment, with arguments set up using hydra zen."""
     trainer_partial = partial(SSLTrainer, run=run, **vars(trainer))
     data_partial = partial(
-        SSLDataModule, datasets=datasets, model=model.model, **vars(data),
+        SSLDataModule,
+        datasets=datasets,
+        model=model.model,
+        **vars(data),
     )
 
     if isinstance(model, BaselineConfig):

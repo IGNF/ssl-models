@@ -1,18 +1,22 @@
 """Generic dataset module."""
 
+import json
 import warnings
 from abc import ABC
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
 import h5py
 import numpy as np
+import pandas as pd
 import rasterio
 from rasterio.windows import Window
 from torch.utils.data import Dataset
 
 from conf.dataset.utils import DatasetConfig, PatchSizeConfig
 from ssl_models.dataset.osm_to_seg import process_geojson_file
+from ssl_models.dataset.utils import strs_datetimes
 
 warnings.filterwarnings("ignore", category=rasterio.errors.NotGeoreferencedWarning)
 
@@ -65,6 +69,41 @@ class GenericDataset(Dataset, ABC):
             start_gcd = None
 
         return (idx % base_length), start_gcd
+
+    def crop_dates(
+        self, tiles: list[str], root_dir: str, mod_dir: str, num_dates_zoom: int
+    ) -> pd.DataFrame:
+        temporal_crop_df = pd.DataFrame(columns=["patch_id", "crop_idx", "ref_date"])
+        for tile in tiles:
+            dates_path = (
+                root_dir
+                / mod_dir
+                / tile.rsplit("/", maxsplit=1)[0]
+                / "dates.json"
+            )
+            with open(dates_path, "r") as file:
+                dates = strs_datetimes(json.load(file), fmt="%Y%m%d")
+            nb_crops = (len(dates)) // num_dates_zoom
+            crops = [
+                list(range(i * num_dates_zoom, (i + 1) * num_dates_zoom))
+                for i in range(nb_crops - 1)
+            ]
+            crops.append(list(range((nb_crops - 1) * num_dates_zoom, len(dates))))
+            date_ref = [dates[len(crop) // 2] for crop in crops]
+
+            temporal_crop_df = pd.concat(
+                [
+                    temporal_crop_df,
+                    pd.DataFrame(
+                        {
+                            "patch_id": [tile] * nb_crops,
+                            "crop_idx": crops,
+                            "ref_date": date_ref,
+                        }
+                    ),
+                ],
+            )
+        return temporal_crop_df
 
     def average_pooling(self, x: np.ndarray, patch_size: int) -> np.ndarray:
         D, H, W = x.shape  # noqa: N806
@@ -146,6 +185,7 @@ class GenericDataset(Dataset, ABC):
                 meta.get(f"{name_mod}_h5_name", None),
                 meta.get(f"{name_mod}_h5_mask", None),
                 meta.get(f"{name_mod}_window", None),
+                meta.get(f"{name_mod}_temporal_crop", None),
                 meta.get("ref_date"),
                 start[name_mod],
                 end[name_mod],
@@ -155,7 +195,7 @@ class GenericDataset(Dataset, ABC):
             inputs[f"{name_mod}_dates"] = dates_mod
             if meta.get(f"{name_mod}_need_mask", False):
                 inputs[f"{name_mod}_mask"] = mask_mod
-                if self.stage == "test":
+                if self.stage == "test" and meta.get(f"{name_mod}_window", False):
                     inputs[f"{name_mod}_mask_test"] = mask_mod_test
 
         return inputs
@@ -169,6 +209,7 @@ class GenericDataset(Dataset, ABC):
         h5_name: str | None,
         h5_mask: str | None,
         zoom_window: bool,
+        temporal_crop: list[int],
         ref_date: np.array,
         start: tuple[int],
         end: tuple[int],
@@ -236,25 +277,41 @@ class GenericDataset(Dataset, ABC):
 
         patch_size = patch_size.mae if self.model == "mae" else patch_size.mixmae
         if zoom_window:
-            if mask_mod is not None:
-                mask_mod_test = mask_mod
-                if self.stage == "test":
-                    mask_mod = self.max_pooling(mask_mod, patch_size)
-                else:
+            if self.stage != "test":
+                if mask_mod is not None:
+                    mask_mod_test = mask_mod
                     mask_mod = self.average_pooling(mask_mod, patch_size)
+                    mask = mask_mod <= mask_threshold
+                    proportion = mask.mean(axis=(1, 2))
+                    filtre = proportion >= 0.2  # noqa: PLR2004
 
-                mask = mask_mod <= mask_threshold
-                proportion = mask.mean(axis=(1, 2))
-                filtre = proportion >= 0.2  # noqa: PLR2004
+                    mask_mod = mask_mod[filtre]
+                    mask_mod_test = mask_mod_test[filtre]
+                    input_mod = input_mod[filtre]
+                    dates_mod = dates_mod[filtre]
 
-                mask_mod = mask_mod[filtre]
-                mask_mod_test = mask_mod_test[filtre]
-                input_mod = input_mod[filtre]
-                dates_mod = dates_mod[filtre]
+                zoom_dates_idx = np.argsort(
+                    [
+                        abs(
+                            (
+                                datetime(int(x[0]), 1, 1)
+                                + timedelta(days=int(x[1]) - 1)
+                                - (
+                                    datetime(int(ref_date[0]), 1, 1)
+                                    + timedelta(days=int(ref_date[1]) - 1)
+                                )
+                            ).days
+                        )
+                        for x in dates_mod
+                    ]
+                )[:num_dates]
 
-            zoom_dates_idx = np.argsort(
-                [np.abs(ref_date[0] + ref_date[1] - (x[0] + x[1])) for x in dates_mod],
-            )[:num_dates]
+            if self.stage == "test":
+                if mask_mod is not None:
+                    mask_mod_test = mask_mod
+                    mask_mod = self.max_pooling(mask_mod, patch_size)
+                zoom_dates_idx = temporal_crop
+
             zoom_dates_idx = np.sort(zoom_dates_idx)
             dates_mod = np.take(dates_mod, zoom_dates_idx, axis=0)
             dates_mod = np.expand_dims(dates_mod, axis=(2, 3))
@@ -314,7 +371,9 @@ class GenericDataset(Dataset, ABC):
         return input_mod, dates_mod, mask_mod, mask_mod_test
 
     def transform_rasters(
-        self, inputs: dict[str, np.ndarray], additional_inputs: dict[str, None] = {},
+        self,
+        inputs: dict[str, np.ndarray],
+        additional_inputs: dict[str, None] = {},
     ) -> dict[str, np.ndarray]:
         """Transform model rasters."""
         if self.use_transform:

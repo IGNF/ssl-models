@@ -178,10 +178,10 @@ def cloud_mae_masking_test(
     cloud_mask = rearrange(cloud_mask, "d c h w -> (d c) (h w)")
     P, L = cloud_mask.shape  # noqa: N806
     num_masked = int((mask_ratio + mae_masking_ratio) * L * P)
-    masked_mae_indices = np.argwhere(cloud_mask == mask_value)
+    cloud_mask = cloud_mask.flatten()
+    masked_mae_indices = np.where(cloud_mask >= mask_value)[0]
     if len(masked_mae_indices) < num_masked:
-        cloud_mask = cloud_mask.flatten()
-        unmasked_mae_indices = np.where(cloud_mask != mask_value)[0]
+        unmasked_mae_indices = np.where(cloud_mask < mask_value)[0]
         unmasked_sorted_indices = unmasked_mae_indices[
             np.argsort(cloud_mask[unmasked_mae_indices])[::-1]
         ]
@@ -193,6 +193,8 @@ def cloud_mae_masking_test(
         mae_mask[to_mask_indices] = 0
 
         mae_mask = rearrange(mae_mask, "(p l) -> p l", p=P, l=L)
+    else:
+        print(np.unique(cloud_mask, return_counts=True))
     return rearrange(
         mae_mask,
         "(d c) (h w) -> d c h w",
@@ -242,13 +244,12 @@ def mask_local_global_consistency(
 
     # not needed for reconstruction
     mask_global = mask_global.flatten()
-    num_mae_masked = np.count_nonzero(mask_global == mask_value)
-    mae_indices = np.where(mask_global == mask_value)[0]
+    num_mae_masked = np.count_nonzero(mask_global >= mask_value)
+    mae_indices = np.where(mask_global >= mask_value)[0]
     cloud_indices = np.where(mask_global == 0)[0]
     visible_indices = np.where(mask_global == 1)[0]
     non_mae_indices = np.concatenate([cloud_indices, visible_indices])
 
-    mask_ratio = mask_ratio
     num_masked = int(D * C * H * W * mask_ratio)
     to_mask_indices = []
     if num_mae_masked < num_masked:
@@ -259,7 +260,7 @@ def mask_local_global_consistency(
             axis=0,
         )
     mae_mask = np.ones(mask_global.shape)
-    mae_mask[mae_indices] = mask_value
+    mae_mask[mae_indices] = 0
     mae_mask[to_mask_indices] = 0
 
     return rearrange(mae_mask, "(d c h w) -> d c h w", d=D, c=C, h=H, w=W)

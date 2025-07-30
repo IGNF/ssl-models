@@ -522,13 +522,13 @@ class BaseMIM(nn.Module, ABC):
             )
 
             loss_rec = self.loss_fn(target - pixels_rec[name_mod])
-            loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod]).mean()
-            if not torch.any(mask_rec[name_mod]):
+            loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod].bool()).mean()
+            if not torch.any(mask_rec[name_mod].bool()):
                 weight = 0
             else:
                 weight = D * H * W
             weights.append(weight)
-            losses_rec.append(weight * loss_rec)
+            losses_rec.append(torch.nan_to_num(weight * loss_rec))
 
         return torch.stack(losses_rec).sum() / max(sum(weights), 1)
 
@@ -782,8 +782,12 @@ class BaseMIM(nn.Module, ABC):
             pixels_rec, mask_loss = self.rec_pixels(x_dec, embed_inds, mask_loss)
             if stage == "test":
                 mask_loss.update(
-                    {k.replace("_mask_test", ""): v for k, v in masks_test_inference.items()},
+                    {
+                        k.replace("_mask_test", ""): v
+                        for k, v in masks_test_inference.items()
+                    },
                 )
+
             loss_rec = self.compute_loss_rec(
                 pixels_rec,
                 mask_loss,

@@ -55,9 +55,22 @@ class CircaDataset(GenericDataset):
         )
         self.stage = stage
         self.root_dir = root_dir
+
+        if self.stage == "test":
+            csv_data = self.crop_dates(
+                csv_data["patch_id"].tolist(),
+                self.root_dir,
+                "test_v2/aleatoire", # TODO
+                self.dataset.inputs["s2_zoom"].num_dates,
+            )
+            self.ref_dates = csv_data["ref_date"].tolist()
+            self.crop_idx = csv_data["crop_idx"].tolist()
+            self.repeats = 137
+        else:
+            self.repeats = dataset.repeats
+
         self.patch_ids = csv_data["patch_id"].tolist()
         self.base_length = len(self.patch_ids)
-        self.repeats = dataset.repeats
         self.dataset_masks = dataset.masks
         self.dataset_inputs = dataset.inputs
         self.rng = np.random.default_rng(seed=42)
@@ -74,7 +87,7 @@ class CircaDataset(GenericDataset):
         )
 
         patch_id = self.patch_ids[idx]
-        zone_id, row_col_id = patch_id.split("/")[2].split("_", maxsplit=1)
+        zone_id, row_col_id = patch_id.split("/")[1].split("_", maxsplit=1)
         zone_id = zone_id.split("-")[-1]
 
         meta = {}
@@ -110,7 +123,7 @@ class CircaDataset(GenericDataset):
         if self.stage == "test":
             s2_dir = (
                 self.root_dir
-                / "test"
+                / "test_v2"
                 / "aleatoire"
                 / zone_id
                 / f"MGRS25-{zone_id}_{row_col_id}"
@@ -128,6 +141,9 @@ class CircaDataset(GenericDataset):
         meta["s2_zoom_mask_bands"] = 10
         meta["s2_zoom_need_mask"] = True
         meta["s2_zoom_window"] = True
+        meta["s2_zoom_temporal_crop"] = (
+            self.crop_idx[idx] if self.stage == "test" else None
+        )
         with Path(s2_dir / "dates.json").open() as f:
             meta["s2_global_dates"] = strs_datetimes(json.load(f), fmt="%Y%m%d")
             meta["s2_zoom_dates"] = meta["s2_global_dates"]
@@ -136,10 +152,19 @@ class CircaDataset(GenericDataset):
         meta["s2_global_mask_bands"] = [10, 11]
         meta["s2_global_need_mask"] = True
 
-        ref_date = self.rng.choice(meta["s1_asc_zoom_dates"])
-        meta["ref_date"] = ref_date
+        # ref date
+        if self.stage == "test":
+            ref_date = self.ref_dates[idx]
+            meta["ref_date"] = ref_date
+        else:
+            ref_date = self.rng.choice(meta["s1_asc_zoom_dates"])
+            meta["ref_date"] = ref_date
 
-        inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
+        inputs = self.preprocess_rasters(
+            meta,
+            start_gcd=start_gcd,
+        )
+
         inputs["ref_date"] = np.expand_dims(ref_date, axis=0)
 
         # mask clouds in local window
@@ -150,8 +175,13 @@ class CircaDataset(GenericDataset):
                 mae_masking_ratio=0.1,
                 mask_value=self.mae_mask_value,
             )
-            inputs["s2_zoom_mask_test"][inputs["s2_zoom_mask_test"] == 1] = 0
-            inputs["s2_zoom_mask_test"][inputs["s2_zoom_mask_test"] == self.mae_mask_value] = 1
+            inputs["s2_zoom_mask_test"][
+                inputs["s2_zoom_mask_test"] >= self.mae_mask_value
+            ] = 1
+            inputs["s2_zoom_mask_test"][
+                inputs["s2_zoom_mask_test"] < self.mae_mask_value
+            ] = 0
+
         else:
             inputs["s2_zoom_mask"] = cloud_mae_masking(
                 inputs["s2_zoom_mask"],
@@ -161,22 +191,23 @@ class CircaDataset(GenericDataset):
                 mae_masking_ratio=self.mae_mask_ratio,
             )
 
-        # # corresponding mask in global window
-        # inputs["s2_global_mask"] = mask_local_global_consistency(
-        #     inputs["s2_zoom_dates"],
-        #     inputs["s2_zoom_mask"],
-        #     inputs["s2_global_dates"],
-        #     inputs["s2_global_mask"],
-        #     self.mae_mask_value,
-        #     self.dataset_masks["s2_global_mask"].mask_threshold,
-        #     mask_ratio=self.mask_ratio + self.mae_mask_ratio,
-        # )
+        if any("s2_global" in k for k in inputs):
+            # corresponding mask in global window
+            inputs["s2_global_mask"] = mask_local_global_consistency(
+                inputs["s2_zoom_dates"],
+                inputs["s2_zoom_mask"],
+                inputs["s2_global_dates"],
+                inputs["s2_global_mask"],
+                self.mae_mask_value,
+                self.dataset_masks["s2_global_mask"].mask_threshold,
+                mask_ratio=self.mask_ratio + self.mae_mask_ratio,
+            )
 
         if self.stage == "test":
             inputs["s2_zoom_mask_test"] = np.repeat(
                 inputs["s2_zoom_mask_test"],
                 self.dataset.inputs["s2_zoom"].bands,
-                axis=1
+                axis=1,
             ).astype(bool)
             return self.transform_rasters(inputs, {"s2_zoom_mask_test": None})
         return self.transform_rasters(inputs)
