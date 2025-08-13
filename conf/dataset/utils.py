@@ -35,6 +35,7 @@ class RasterConfig:
     num_dates: int = 1
     norm_fac: float | None = None
     log_scale: bool = False
+    offset: int | None = None
 
 
 @dataclass

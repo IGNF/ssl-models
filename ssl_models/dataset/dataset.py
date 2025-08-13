@@ -15,6 +15,7 @@ from rasterio.windows import Window
 from torch.utils.data import Dataset
 
 from conf.dataset.utils import DatasetConfig, PatchSizeConfig
+from ssl_models import RNG
 from ssl_models.dataset.osm_to_seg import process_geojson_file
 from ssl_models.dataset.utils import strs_datetimes
 
@@ -34,7 +35,6 @@ class GenericDataset(Dataset, ABC):
         random_crop: bool = False,
     ) -> None:
         self.stage = stage
-        self.rng = np.random.default_rng(seed=42)
         self.use_transform = use_transform
         self.dataset = dataset
         self.random_dates = random_dates and stage == "train"
@@ -71,17 +71,18 @@ class GenericDataset(Dataset, ABC):
         return (idx % base_length), start_gcd
 
     def crop_dates(
-        self, tiles: list[str], root_dir: str, mod_dir: str, num_dates_zoom: int
+        self,
+        tiles: list[str],
+        root_dir: str,
+        mod_dir: str,
+        num_dates_zoom: int,
     ) -> pd.DataFrame:
         temporal_crop_df = pd.DataFrame(columns=["patch_id", "crop_idx", "ref_date"])
         for tile in tiles:
             dates_path = (
-                root_dir
-                / mod_dir
-                / tile.rsplit("/", maxsplit=1)[0]
-                / "dates.json"
+                root_dir / mod_dir / tile.rsplit("/", maxsplit=1)[0] / "dates.json"
             )
-            with open(dates_path, "r") as file:
+            with Path(dates_path).open() as file:
                 dates = strs_datetimes(json.load(file), fmt="%Y%m%d")
             nb_crops = (len(dates)) // num_dates_zoom
             crops = [
@@ -89,7 +90,9 @@ class GenericDataset(Dataset, ABC):
                 for i in range(nb_crops - 1)
             ]
             crops.append(list(range((nb_crops - 1) * num_dates_zoom, len(dates))))
-            date_ref = [dates[len(crop) // 2] for crop in crops]
+            date_ref = [
+                dates[(len(crop) // 2) * (i + 1)] for i, crop in enumerate(crops)
+            ]
 
             temporal_crop_df = pd.concat(
                 [
@@ -99,7 +102,7 @@ class GenericDataset(Dataset, ABC):
                             "patch_id": [tile] * nb_crops,
                             "crop_idx": crops,
                             "ref_date": date_ref,
-                        }
+                        },
                     ),
                 ],
             )
@@ -147,7 +150,7 @@ class GenericDataset(Dataset, ABC):
             for name_mod in self.dataset.rasters
         }
         if start_gcd is None:
-            start_gcd = self.rng.integers(
+            start_gcd = RNG.integers(
                 low=0,
                 high=self.dataset.size_gcd - self.dataset.crop_gcd + 1,
                 size=2,
@@ -159,7 +162,7 @@ class GenericDataset(Dataset, ABC):
                 self.dataset.sizes[name_mod] // self.dataset.size_gcd
             )
             start_mod += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
-            start_mod_date = self.rng.integers(
+            start_mod_date = RNG.integers(
                 low=0,
                 high=sizes_date[name_mod] % mod.num_dates + 1,
             )
@@ -218,6 +221,7 @@ class GenericDataset(Dataset, ABC):
         mask_threshold: float,  # threshold on mask percentage cover
         norm_fac: float | None,
         log_scale: bool,
+        offset: int | None,
         patch_size: PatchSizeConfig,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -277,41 +281,33 @@ class GenericDataset(Dataset, ABC):
 
         patch_size = patch_size.mae if self.model == "mae" else patch_size.mixmae
         if zoom_window:
-            if self.stage != "test":
-                if mask_mod is not None:
-                    mask_mod_test = mask_mod
-                    mask_mod = self.average_pooling(mask_mod, patch_size)
-                    mask = mask_mod <= mask_threshold
-                    proportion = mask.mean(axis=(1, 2))
-                    filtre = proportion >= 0.2  # noqa: PLR2004
-
-                    mask_mod = mask_mod[filtre]
-                    mask_mod_test = mask_mod_test[filtre]
-                    input_mod = input_mod[filtre]
-                    dates_mod = dates_mod[filtre]
-
-                zoom_dates_idx = np.argsort(
+            if mask_mod is not None:
+                mask_mod_test = mask_mod
+                mask_mod = (
+                    self.max_pooling(mask_mod, patch_size)
+                    if self.stage == "test"
+                    else self.average_pooling(mask_mod, patch_size)
+                )
+            num_dates = len(temporal_crop) if temporal_crop else num_dates
+            zoom_dates_idx = (
+                temporal_crop
+                if temporal_crop
+                else np.argsort(
                     [
                         abs(
                             (
-                                datetime(int(x[0]), 1, 1)
+                                datetime(int(x[0]), 1, 1)  # noqa: DTZ001
                                 + timedelta(days=int(x[1]) - 1)
                                 - (
-                                    datetime(int(ref_date[0]), 1, 1)
+                                    datetime(int(ref_date[0]), 1, 1)  # noqa: DTZ001
                                     + timedelta(days=int(ref_date[1]) - 1)
                                 )
-                            ).days
+                            ).days,
                         )
                         for x in dates_mod
-                    ]
+                    ],
                 )[:num_dates]
-
-            if self.stage == "test":
-                if mask_mod is not None:
-                    mask_mod_test = mask_mod
-                    mask_mod = self.max_pooling(mask_mod, patch_size)
-                zoom_dates_idx = temporal_crop
-
+            )
             zoom_dates_idx = np.sort(zoom_dates_idx)
             dates_mod = np.take(dates_mod, zoom_dates_idx, axis=0)
             dates_mod = np.expand_dims(dates_mod, axis=(2, 3))
@@ -346,7 +342,7 @@ class GenericDataset(Dataset, ABC):
             diff_mod = np.abs(diff_mod)
             if self.random_dates:
                 diff_mod = 0 * diff_mod  # keep NaNs
-                diff_mod += self.rng.random(diff_mod.shape).astype(diff_mod.dtype)
+                diff_mod += RNG.random(diff_mod.shape).astype(diff_mod.dtype)
 
             diff_mod = np.mean(diff_mod, axis=(2, 3, 4), keepdims=True)
             median_inds = np.nanargmin(diff_mod, axis=1, keepdims=True)
@@ -362,6 +358,10 @@ class GenericDataset(Dataset, ABC):
                 mask_mod_test = np.expand_dims(mask_mod_test, axis=(1))
 
         input_mod = input_mod.astype(np.float32)
+
+        if offset is not None:
+            input_mod += offset
+
         if log_scale:
             input_mod = np.log(np.maximum(input_mod, 1e-10))
 
@@ -373,11 +373,11 @@ class GenericDataset(Dataset, ABC):
     def transform_rasters(
         self,
         inputs: dict[str, np.ndarray],
-        additional_inputs: dict[str, None] = {},
+        additional_inputs: dict[str, None] = {},  # noqa: B006
     ) -> dict[str, np.ndarray]:
         """Transform model rasters."""
         if self.use_transform:
-            if self.rng.choice([True, False]):
+            if RNG.choice([True, False]):
                 inputs.update(
                     {
                         name_mod: np.flip(inputs[name_mod], axis=2)
@@ -386,7 +386,7 @@ class GenericDataset(Dataset, ABC):
                         | additional_inputs
                     },
                 )
-            if self.rng.choice([True, False]):
+            if RNG.choice([True, False]):
                 inputs.update(
                     {
                         name_mod: np.flip(inputs[name_mod], axis=3)
@@ -395,7 +395,7 @@ class GenericDataset(Dataset, ABC):
                         | additional_inputs
                     },
                 )
-            if self.rng.choice([True, False]):
+            if RNG.choice([True, False]):
                 inputs.update(
                     {
                         name_mod: np.swapaxes(inputs[name_mod], 2, 3)

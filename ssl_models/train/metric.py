@@ -180,3 +180,29 @@ class MultiLabelMetric(Metric):
             "weighted_f1": (per_label_f1 * label_weights).nansum(),
             "weighted_ap": (per_label_ap * label_weights).nansum(),
         }
+
+
+class WeightedLoss(Metric):
+    def __init__(
+        self,
+        dist_sync_on_step: bool = False,
+    ):
+        super().__init__(dist_sync_on_step=dist_sync_on_step)
+        self.add_state(
+            "sum_weighted_loss",
+            default=torch.tensor(0.0),
+            dist_reduce_fx="sum",
+        )
+        self.add_state(
+            "total_pixels",
+            default=torch.tensor(0.0),
+            dist_reduce_fx="sum",
+        )
+
+    def update(self, loss_mean, nb_pixels):
+        weighted = loss_mean * nb_pixels.float()
+        self.sum_weighted_loss += weighted
+        self.total_pixels += nb_pixels.float()
+
+    def compute(self):
+        return self.sum_weighted_loss / self.total_pixels.clamp_min(1e-8)

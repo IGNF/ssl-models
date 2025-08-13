@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 
 from conf.datasets import DatasetsConfig
 from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
+from ssl_models.dataset.utils import pad_dates_modalities
 
 
 class SSLDataModule(LightningDataModule):
@@ -79,6 +80,7 @@ class SSLDataModule(LightningDataModule):
             num_workers=num_workers,
             shuffle=True,
             drop_last=True,
+            collate_fn=pad_dates_modalities,
         )
 
     def train_dataloader(self) -> DataLoader:

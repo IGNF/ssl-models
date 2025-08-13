@@ -77,8 +77,8 @@ def ungroup_mods(
     x_group: dict[str, Tensor],
     multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
     groups: list[tuple],
-    num_dates: dict[str, int],
     grid_size: dict[str, int],
+    num_dates: dict[str, int],
 ) -> dict[str, Tensor]:
     """Ungroup modality sequences."""
     match multimodal:

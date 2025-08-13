@@ -6,7 +6,11 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
+import torch
+import torch.nn.functional as F
 from einops import rearrange
+
+from ssl_models import RNG
 
 
 def dates_numpy(dates: list[datetime]) -> np.ndarray:
@@ -125,42 +129,31 @@ def cloud_mask_correction(input_mask: np.ndarray, threshold: int = 50) -> np.nda
 def cloud_mae_masking(
     cloud_mask: np.ndarray,
     cloud_threshold: float,
-    mask_ratio: float,
+    # mask_ratio: float,
     mask_value: float,
     mae_masking_ratio: float = 0.1,
 ) -> np.ndarray:
     """Add random masked pixels to cloud mask."""
+
     D, C, H, W = cloud_mask.shape  # noqa: N806
-    cloud_mask = cloud_mask_correction(cloud_mask)
-    cloud_mask = rearrange(cloud_mask, "d c h w -> (d c) (h w)")
-    P, L = cloud_mask.shape  # noqa: N806
+    # cloud_mask = cloud_mask_correction(cloud_mask)  # TODO à mettre dans dataset avant filtrage date
 
-    mae_mask = np.ones((P, L))
-    num_masked_cloud = int(mask_ratio * L)
-    num_masked_mae = int(mae_masking_ratio * L)
-
-    for i in range(P):
-        cloud_mask_sorted = np.argsort(cloud_mask[i, :])[::-1]
-        masked_indices, unmasked_indices = np.split(
-            cloud_mask_sorted,
-            [num_masked_cloud],
+    cloud_mask = np.where(cloud_mask <= cloud_threshold, 1, 0)
+    cloud_mask = cloud_mask.flatten()
+    nb_visible = np.count_nonzero(cloud_mask == 1)
+    visible_indices = np.where(cloud_mask == 1)[0]
+    num_mae_masked = round(nb_visible * mae_masking_ratio)
+    if num_mae_masked > 0:
+        mae_masked_indices = RNG.choice(
+            visible_indices,
+            size=num_mae_masked,
+            replace=False,
         )
-        visible_indices = [
-            j for j in unmasked_indices if cloud_mask[i, ...][j] <= cloud_threshold
-        ]
-        if len(visible_indices) >= num_masked_mae:
-            np.random.shuffle(visible_indices)
-            masked_mae_indices = visible_indices[:num_masked_mae]
-            visible_indices = visible_indices[num_masked_mae:]
-        else:
-            masked_mae_indices = []  # TODO
-
-        mae_mask[i, masked_indices] = 0
-        mae_mask[i, masked_mae_indices] = mask_value
+        cloud_mask[mae_masked_indices] = mask_value
 
     return rearrange(
-        mae_mask,
-        "(d c) (h w) -> d c h w",
+        cloud_mask,
+        "(d c h w) -> d c h w",
         d=D,
         c=C,
         h=H,
@@ -170,38 +163,15 @@ def cloud_mae_masking(
 
 def cloud_mae_masking_test(
     cloud_mask: np.ndarray,
-    mask_ratio: float,
-    mae_masking_ratio: float,
+    cloud_threshold: float,
     mask_value: float,
 ) -> np.ndarray:
-    D, C, H, W = cloud_mask.shape  # noqa: N806
-    cloud_mask = rearrange(cloud_mask, "d c h w -> (d c) (h w)")
-    P, L = cloud_mask.shape  # noqa: N806
-    num_masked = int((mask_ratio + mae_masking_ratio) * L * P)
-    cloud_mask = cloud_mask.flatten()
-    masked_mae_indices = np.where(cloud_mask >= mask_value)[0]
-    if len(masked_mae_indices) < num_masked:
-        unmasked_mae_indices = np.where(cloud_mask < mask_value)[0]
-        unmasked_sorted_indices = unmasked_mae_indices[
-            np.argsort(cloud_mask[unmasked_mae_indices])[::-1]
-        ]
-        to_mask_indices = unmasked_sorted_indices[
-            : num_masked - len(masked_mae_indices)
-        ]
-        mae_mask = np.ones(P * L)
-        mae_mask[masked_mae_indices] = mask_value
-        mae_mask[to_mask_indices] = 0
-
-        mae_mask = rearrange(mae_mask, "(p l) -> p l", p=P, l=L)
-    else:
-        print(np.unique(cloud_mask, return_counts=True))
-    return rearrange(
-        mae_mask,
-        "(d c) (h w) -> d c h w",
-        d=D,
-        c=C,
-        h=H,
-        w=W,
+    """Process test cloud mask."""
+    cloud_mask = np.where(cloud_mask >= mask_value, mask_value, cloud_mask)
+    return np.where(
+        (cloud_mask <= cloud_threshold) & (cloud_mask != mask_value),
+        1,
+        0,
     )
 
 
@@ -212,14 +182,13 @@ def mask_local_global_consistency(
     mask_global: np.ndarray,
     mask_value: float,
     cloud_threshold: float,
-    mask_ratio: float,
 ) -> np.ndarray:
     """Mask the global mask with the pixels masked in the local mask."""
-    D, C, H, W = mask_global.shape  # noqa: N806
-    mask_global = 1 - (mask_global <= cloud_threshold).astype(np.float16)
+    mask_global = np.where(mask_global >= mask_value, 0, mask_global)
+    mask_global = np.where(mask_global <= cloud_threshold, 1, 0)
+
     dates_local = dates_local.reshape(-1, 3)
     dates_global = dates_global.reshape(-1, 3)
-
     dtype = np.dtype(
         [
             ("f0", dates_local.dtype),
@@ -230,7 +199,7 @@ def mask_local_global_consistency(
     dates_local = dates_local.view(dtype)
     dates_global = dates_global.view(dtype)
 
-    # finding common dates
+    # common dates
     _, common_local_indices, common_global_indices = np.intersect1d(
         dates_local,
         dates_global,
@@ -242,25 +211,44 @@ def mask_local_global_consistency(
         ...,
     ]
 
-    # not needed for reconstruction
-    mask_global = mask_global.flatten()
-    num_mae_masked = np.count_nonzero(mask_global >= mask_value)
-    mae_indices = np.where(mask_global >= mask_value)[0]
-    cloud_indices = np.where(mask_global == 0)[0]
-    visible_indices = np.where(mask_global == 1)[0]
-    non_mae_indices = np.concatenate([cloud_indices, visible_indices])
+    return np.where(mask_global >= mask_value, 0, mask_global)
 
-    num_masked = int(D * C * H * W * mask_ratio)
-    to_mask_indices = []
-    if num_mae_masked < num_masked:
-        np.random.shuffle(non_mae_indices)
-        to_mask_indices, visible_indices = np.split(
-            non_mae_indices,
-            [num_masked - num_mae_masked],
-            axis=0,
+
+def pad_dates_modalities(batch: list[dict], pad_dim=0):
+    max_dates = max(t["s2_zoom"].shape[0] for t in batch)
+    min_dates = min(t["s2_zoom"].shape[0] for t in batch)
+
+    modalities = list(batch[0].keys())
+
+    modalities.remove("ref_date")
+    pad_value = 0  # vérifier que les vrais nuages sont maskés par des 0  TODO
+
+    if min_dates == max_dates:
+        return {
+            key: torch.stack([torch.from_numpy(item[key]) for item in batch])
+            for key in batch[0]
+        }
+    else:
+        padded_batch = {}
+        for name_mod in modalities:
+            padded_batch[name_mod] = torch.from_numpy(
+                np.stack(
+                    [
+                        np.pad(
+                            b[name_mod],
+                            [
+                                (max_dates - b[name_mod].shape[pad_dim], 0)
+                                if i == pad_dim
+                                else (0, 0)
+                                for i in range(b[name_mod].ndim)
+                            ],
+                            constant_values=pad_value,
+                        )
+                        for b in batch
+                    ]
+                )
+            )
+        padded_batch["ref_date"] = torch.from_numpy(
+            np.stack([b["ref_date"] for b in batch])
         )
-    mae_mask = np.ones(mask_global.shape)
-    mae_mask[mae_indices] = 0
-    mae_mask[to_mask_indices] = 0
-
-    return rearrange(mae_mask, "(d c h w) -> d c h w", d=D, c=C, h=H, w=W)
+        return padded_batch

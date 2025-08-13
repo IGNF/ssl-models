@@ -30,7 +30,7 @@ from ssl_models.layers.utils import (
     shuffle_enc_to_dec,
     ungroup_mods,
 )
-from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
+from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric, WeightedLoss
 
 RGB_BANDS = 3
 
@@ -166,10 +166,10 @@ class BaseMIM(nn.Module, ABC):
             ungroup_mods,
             multimodal=multimodal,
             groups=self.dataset.groups,
-            num_dates={
-                name_mod: mod.num_dates * self.len_bands[name_mod]
-                for name_mod, mod in self.dataset.inputs.items()
-            },
+            # num_dates={
+            #     name_mod: mod.num_dates * self.len_bands[name_mod]
+            #     for name_mod, mod in self.dataset.inputs.items()
+            # },
             grid_size=self.grid_size,
         )
         self.group_masks = partial(
@@ -185,7 +185,7 @@ class BaseMIM(nn.Module, ABC):
         self.mask_token = nn.ParameterDict(
             {
                 name_mod: nn.Parameter(
-                    torch.randn(1, len_bands, 1, 1, decoder_dim),
+                    torch.randn(1, len_bands, 1, 1, embed_dim),
                 )
                 for name_mod, len_bands in self.len_bands.items()
             },
@@ -249,11 +249,18 @@ class BaseMIM(nn.Module, ABC):
             for stage in ("train", "val", "test"):
                 self.metrics[f"{name_target}_{stage}"] = metric_partial()
 
-        for name_loss in ("loss_rec", "loss_pred"):
-            for stage in ("train", "val", "test"):
-                self.metrics[f"{name_loss}_{stage}"] = MeanMetric(
-                    dist_sync_on_step=False,
-                )
+        # for name_loss in ("loss_rec", "loss_pred"):
+        # for stage in ("train", "val", "test"):
+        #     self.metrics[f"{name_loss}_{stage}"] = MeanMetric(
+        #         dist_sync_on_step=False,
+        #     )
+        for stage in ("train", "val", "test"):
+            self.metrics[f"loss_pred_{stage}"] = MeanMetric(
+                dist_sync_on_step=False,
+            )
+            self.metrics[f"loss_rec_{stage}"] = WeightedLoss(
+                dist_sync_on_step=False,
+            )
 
     def embed(
         self,
@@ -281,8 +288,10 @@ class BaseMIM(nn.Module, ABC):
             )
             dates[name_mod] = batch[f"{name_mod}_dates"]
         return (
-            self.group(x_enc),
-            self.group(mask_token),
+            # self.group(x_enc),
+            # self.group(mask_token),
+            x_enc,
+            mask_token,
             embed_inds,
             dates,
             batch["ref_date"],
@@ -293,9 +302,14 @@ class BaseMIM(nn.Module, ABC):
         x_enc: dict[str, Tensor],
         dates: dict[str, Tensor],
         ref_date: Tensor,
+        num_dates: dict[str, int],
     ) -> dict[str, Tensor]:
         """Add positional and date encodings before encoder."""
-        x_enc = self.ungroup(x_enc)
+        # x_enc = self.ungroup(x_enc, num_dates=num_dates)
+        for name_mod, mod in x_enc.items():
+            x_enc[name_mod] = rearrange(
+                mod, "b (d l) c -> b d l c", d=num_dates[name_mod]
+            )
 
         for name_mod in x_enc:
             pos_encoding = reshape_encoding(
@@ -315,9 +329,10 @@ class BaseMIM(nn.Module, ABC):
         x_dec: dict[str, Tensor],
         dates: dict[str, Tensor],
         ref_date: Tensor,
+        num_dates: dict[str, int],
     ) -> dict[str, Tensor]:
         """Add positional and date encodings before decoder."""
-        x_dec = self.ungroup(x_dec)
+        x_dec = self.ungroup(x_dec, num_dates=num_dates)
 
         for name_mod in x_dec:
             pos_encoding = reshape_encoding(
@@ -366,6 +381,9 @@ class BaseMIM(nn.Module, ABC):
                 for name_mod, mod in custom_masks.items():
                     custom_masks[name_mod] = rearrange(mod, "b d c h w -> b d (h w) c")
                 custom_masks = self.group_masks(custom_masks)
+                for name_mod, mod in x.items():
+                    x[name_mod] = rearrange(mod, "b d l c -> b (d l) c")
+                    mask[name_mod] = rearrange(mod, "b d l c -> b (d l) c")
                 mask_rec = {}
                 for name_group in x:
                     (
@@ -403,10 +421,14 @@ class BaseMIM(nn.Module, ABC):
             )
         return x_dec
 
-    def shuffle_enc_to_dec(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
+    def shuffle_enc_to_dec(
+        self,
+        x: dict[str, Tensor],
+        num_dates: dict[str, int],
+    ) -> dict[str, Tensor]:
         """Shuffle modalities and dates."""
         if self.shuffle_mods:
-            x_dec = self.ungroup(x)
+            x_dec = self.ungroup(x, num_dates=num_dates)
 
             x_dec = shuffle_enc_to_dec(x_dec)
 
@@ -420,10 +442,15 @@ class BaseMIM(nn.Module, ABC):
         x_dec: dict[str, Tensor],
         embed_inds: dict[str, list[Tensor]],
         mask_rec: dict[str, Tensor],
+        num_dates: dict[str, int],
     ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
         """Reconstruct pixels from embeddings."""
-        x_dec, mask_rec = self.ungroup(x_dec), self.ungroup(mask_rec)
-
+        x_dec = self.ungroup(x_dec, num_dates=num_dates)
+        # mask_rec = self.ungroup(mask_rec, num_dates=num_dates)
+        for name_mod, mod in mask_rec.items():
+            mask_rec[name_mod] = rearrange(
+                mod, "b (d l) c -> b d l c", d=num_dates[name_mod]
+            )
         pixels_rec = {}
         for name_mod in x_dec:
             pixels_rec[name_mod], mask_rec[name_mod] = self.embed_to_rec[name_mod](
@@ -440,7 +467,6 @@ class BaseMIM(nn.Module, ABC):
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
-        log_bands: list[int],
     ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
         """Visu of reconstructed images, shared for all MIM modules."""
         log_inputs, log_preds, log_targets = {}, {}, {}
@@ -463,19 +489,23 @@ class BaseMIM(nn.Module, ABC):
                 batch[name_mod],
             )
             targets = batch[name_mod]
-            log_inputs[f"{ssl_phase}_{stage}/_{name_mod}_input"] = inputs[0, 0][
-                log_bands,
-                ...,
-            ]
-            log_preds[f"{ssl_phase}_{stage}/_{name_mod}_rec"] = preds[0, 0][
-                log_bands,
-                ...,
-            ]
-            log_targets[f"{ssl_phase}_{stage}/_{name_mod}_target"] = targets[0, 0][
-                log_bands,
-                ...,
-            ]
 
+            to_plot = mask_rec[name_mod].nonzero(as_tuple=False)
+            b_to_plot = to_plot[0][0] if to_plot.numel() > 0 else 0
+            d_to_plot = to_plot[0][1] if to_plot.numel() > 0 else 0
+
+            log_inputs[f"{ssl_phase}_{stage}/_{name_mod}_input"] = inputs[
+                b_to_plot,
+                d_to_plot,
+            ]
+            log_preds[f"{ssl_phase}_{stage}/_{name_mod}_rec"] = preds[
+                b_to_plot,
+                d_to_plot,
+            ]
+            log_targets[f"{ssl_phase}_{stage}/_{name_mod}_target"] = targets[
+                b_to_plot,
+                d_to_plot,
+            ]
         return log_inputs, log_preds, log_targets
 
     def compute_loss_rec(
@@ -485,66 +515,79 @@ class BaseMIM(nn.Module, ABC):
         batch: dict[str, Tensor],
     ) -> Tensor:
         """Shared loss computation for all MIM modules."""
-        losses_rec = []
-        weights = []
-        for name_mod in pixels_rec:
-            D = batch[name_mod].shape[1]  # noqa: N806
-            H, W = (  # noqa: N806
-                self.out_grid_size[name_mod],
-                self.out_grid_size[name_mod],
-            )
-            P = batch[name_mod].shape[3] // H  # noqa: N806
-            target = rearrange(
-                batch[name_mod],
-                "b d c (h p1) (w p2) -> b d (h w) (p1 p2) c",
-                p1=P,
-                p2=P,
-            )
-            if self.norm_pix_loss:
-                target_groups = list(
-                    torch.split(
-                        target,
-                        self.norm_bands[name_mod],
-                        dim=-1,
-                    ),
-                )
-                for idx, target_group in enumerate(target_groups):
-                    mean = target_group.mean(dim=(-2, -1), keepdim=True)
-                    var = target_group.var(dim=(-2, -1), keepdim=True)
-                    target_groups[idx] = (target_group - mean) / (var + 1.0e-6) ** 0.5
-                target = torch.cat(target_groups, dim=-1)
-            target = rearrange(
-                target,
-                "b d (h w) (p1 p2) c -> b d c (h p1) (w p2)",
-                h=H,
-                p1=P,
-                p2=P,
-            )
+        # losses_rec = []
+        # weights = []
+        # for name_mod in pixels_rec:
+        #     D = batch[name_mod].shape[1]  # noqa: N806
+        #     H, W = (  # noqa: N806
+        #         self.out_grid_size[name_mod],
+        #         self.out_grid_size[name_mod],
+        #     )
+        #     P = batch[name_mod].shape[3] // H  # noqa: N806
+        #     target = rearrange(
+        #         batch[name_mod],
+        #         "b d c (h p1) (w p2) -> b d (h w) (p1 p2) c",
+        #         p1=P,
+        #         p2=P,
+        #     )
+        #     if self.norm_pix_loss:
+        #         target_groups = list(
+        #             torch.split(
+        #                 target,
+        #                 self.norm_bands[name_mod],
+        #                 dim=-1,
+        #             ),
+        #         )
+        #         for idx, target_group in enumerate(target_groups):
+        #             mean = target_group.mean(dim=(-2, -1), keepdim=True)
+        #             var = target_group.var(dim=(-2, -1), keepdim=True)
+        #             target_groups[idx] = (target_group - mean) / (var + 1.0e-6) ** 0.5
+        #         target = torch.cat(target_groups, dim=-1)
+        #     target = rearrange(
+        #         target,
+        #         "b d (h w) (p1 p2) c -> b d c (h p1) (w p2)",
+        #         h=H,
+        #         p1=P,
+        #         p2=P,
+        #     )
 
-            loss_rec = self.loss_fn(target - pixels_rec[name_mod])
-            loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod].bool()).mean()
-            if not torch.any(mask_rec[name_mod].bool()):
-                weight = 0
-            else:
-                weight = D * H * W
-            weights.append(weight)
-            losses_rec.append(torch.nan_to_num(weight * loss_rec))
+        #     loss_rec = self.loss_fn(target - pixels_rec[name_mod])
+        #     loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod].bool()).mean()
 
-        return torch.stack(losses_rec).sum() / max(sum(weights), 1)
+        #     weight = 0 if not torch.any(mask_rec[name_mod].bool()) else D * H * W
+        #     weights.append(weight)
+        #     losses_rec.append(torch.nan_to_num(weight * loss_rec))
+
+        # loss_rec = torch.stack(losses_rec).sum() / max(sum(weights), 1)
 
         # ###########################################################
-        # # TODO NDVI loss + OFFSET NDVI 1000
+        # # TODO NDVI loss
         # # ndvi target
-        # mod_utilisee = "s2_zoom"
-        # idx_nir = 6
-        # idx_red = 2
+        mod_utilisee = "s2_zoom"
+        idx_red = 2
+        idx_nir = 6
+        epsilon = 0.000001
 
-        # target_ndvi = (batch[mod_utilisee][:, :, idx_nir, ...] - batch[mod_utilisee][:, :, idx_red, ...]) / (batch[mod_utilisee][:, :, idx_nir, ...] + batch[mod_utilisee][:, :, idx_red, ...] + torch.finfo().eps)
-        # rec_ndvi = (pixels_rec[mod_utilisee][:, :, idx_nir, ...] - pixels_rec[mod_utilisee][:, :, idx_red, ...]) / (pixels_rec[mod_utilisee][:, :, idx_nir, ...] + pixels_rec[mod_utilisee][:, :, idx_red, ...] + torch.finfo().eps)
-        # ndvi_rec = self.loss_fn(target_ndvi - rec_ndvi)
-        # ndvi_rec = torch.masked_select(ndvi_rec, mask_rec[mod_utilisee][:, :, 0, :, :]).mean()
+        target = batch[mod_utilisee][:, :, [idx_red, idx_nir], :, :]
+        rec = pixels_rec[mod_utilisee][:, :, [idx_red, idx_nir], :, :].float()
 
-        # return ndvi_rec
+        target_ndvi = (target[:, :, 1, :, :] - target[:, :, 0, :, :]) / (
+            target[:, :, 1, :, :] + target[:, :, 0, :, :] + epsilon
+        )
+        rec_ndvi = (rec[:, :, 1, :, :] - rec[:, :, 0, :, :]) / (
+            rec[:, :, 1, :, :] + rec[:, :, 0, :, :] + epsilon
+        )
+        loss_ndvi = self.loss_fn(target_ndvi - rec_ndvi)
+        loss_ndvi = torch.masked_select(
+            loss_ndvi, mask_rec[mod_utilisee][:, :, 0, :, :]
+        ).mean()
+
+        weight = 0 if not torch.any(mask_rec[mod_utilisee].bool()) else 1
+        loss_ndvi = torch.nan_to_num(weight * loss_ndvi)
+
+        return loss_ndvi
+
+        # return torch.stack(losses_rec).sum() / max(sum(weights), 1)
 
     def compute_loss_pred(
         self,
@@ -552,9 +595,10 @@ class BaseMIM(nn.Module, ABC):
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
+        num_dates: dict[str, int],
     ) -> Tensor:
         """Shared loss computation for all MIM modules."""
-        x_enc = self.ungroup(x_enc)
+        x_enc = self.ungroup(x_enc, num_dates=num_dates)
 
         ref_input = self.dataset.ref_input
         if ref_input is not None:
@@ -758,28 +802,32 @@ class BaseMIM(nn.Module, ABC):
         stage: Literal["train", "val", "test"],
     ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         """Shared forward pass for all MIM modules."""
+        num_dates = {
+            name_mod: batch[name_mod].shape[1] * self.len_bands[name_mod]
+            for name_mod, mod in self.dataset.inputs.items()
+        }
         masks = {k: batch.pop(k) for k in self.dataset.masks}
         masks_test_inference = {
             k: batch.pop(k) for k, v in batch.copy().items() if k.endswith("test")
         }
 
         x_enc, mask_token, embed_inds, dates, ref_date = self.embed(batch)
-        x_enc = self.enc_add_encodings(x_enc, dates, ref_date)
         x_enc, mask_token, mask_attn, mask_rec, mask_loss = self.mask(
             x_enc,
             mask_token,
             masks,
             ssl_phase,
         )
-
+        x_enc = self.enc_add_encodings(x_enc, dates, ref_date, num_dates)
         x_enc = self.encode(x_enc, mask_attn)
         if ssl_phase == "pretrain":
-            x_dec = self.shuffle_enc_to_dec(x_enc)
+            x_dec = self.shuffle_enc_to_dec(x_enc, num_dates)
             x_dec = self.encoder_to_decoder(x_dec)
-            x_dec = self.unmask(x_dec, mask_token, mask_rec)
-            x_dec = self.dec_add_encodings(x_dec, dates, ref_date)
+            x_dec = self.dec_add_encodings(x_dec, dates, ref_date, num_dates)
             x_dec = self.decode(x_dec)
-            pixels_rec, mask_loss = self.rec_pixels(x_dec, embed_inds, mask_loss)
+            pixels_rec, mask_loss = self.rec_pixels(
+                x_dec, embed_inds, mask_loss, num_dates
+            )
             if stage == "test":
                 mask_loss.update(
                     {
@@ -793,18 +841,19 @@ class BaseMIM(nn.Module, ABC):
                 mask_loss,
                 batch,
             )
+            nb_pixels_loss = mask_loss["s2_zoom"][:, :, 0, :, :].sum()  # TODO
 
-            _, mask_rec = self.rec_pixels(x_dec, embed_inds, mask_rec)
+            # _, mask_rec = self.rec_pixels(x_dec, embed_inds, mask_rec, num_dates)  # ungroup
 
             log_inputs, log_preds, log_targets = self.compute_pixels(
                 pixels_rec,
-                mask_rec,
+                # mask_rec,
+                mask_loss,
                 batch,
                 ssl_phase,
                 stage,
-                [1, 2, 3],  # TODO
             )
-            self.metrics[f"loss_rec_{stage}"].update(loss_rec)
+            self.metrics[f"loss_rec_{stage}"].update(loss_rec, nb_pixels_loss)
             return loss_rec, log_inputs, log_preds, log_targets, None
 
         # else, probe or finetune
@@ -813,6 +862,7 @@ class BaseMIM(nn.Module, ABC):
             batch,
             ssl_phase,
             stage,
+            num_dates,
         )
         self.metrics[f"loss_pred_{stage}"].update(loss_pred)
         return None, log_input, log_pred, log_target, loss_pred

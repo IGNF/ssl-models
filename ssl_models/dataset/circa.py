@@ -8,6 +8,7 @@ import numpy as np
 
 from conf.dataset.utils import DatasetConfig
 from conf.mask import MaskConfig
+from ssl_models import RNG
 from ssl_models.dataset.dataset import GenericDataset
 from ssl_models.dataset.utils import (
     cloud_mae_masking,
@@ -51,30 +52,32 @@ class CircaDataset(GenericDataset):
             balance_pretrain=dataset.balance_pretrain,
             val_pretrain=dataset.val_pretrain,
             filter_percent=dataset.filter_percent,
-            nrows=1,
+            # nrows=1,
         )
         self.stage = stage
         self.root_dir = root_dir
+        self.test_dir = (
+            "test_v2/aleatoire"
+            if dataset.dataset_local
+            else "optique_dataset"
+        )
 
         if self.stage == "test":
             csv_data = self.crop_dates(
                 csv_data["patch_id"].tolist(),
                 self.root_dir,
-                "test_v2/aleatoire", # TODO
+                self.test_dir,
                 self.dataset.inputs["s2_zoom"].num_dates,
             )
             self.ref_dates = csv_data["ref_date"].tolist()
             self.crop_idx = csv_data["crop_idx"].tolist()
-            self.repeats = 137
+            self.repeats = 68  # TODO
         else:
             self.repeats = dataset.repeats
-
         self.patch_ids = csv_data["patch_id"].tolist()
         self.base_length = len(self.patch_ids)
         self.dataset_masks = dataset.masks
         self.dataset_inputs = dataset.inputs
-        self.rng = np.random.default_rng(seed=42)
-        self.mask_ratio = MaskConfig.mask_ratio
         self.mae_mask_value = MaskConfig.mae_mask_value
         self.mae_mask_ratio = 0.1
 
@@ -120,21 +123,17 @@ class CircaDataset(GenericDataset):
             meta["s1_des_zoom_dates"] = meta["s1_des_global_dates"]
             meta["s1_des_zoom_window"] = True
 
-        if self.stage == "test":
-            s2_dir = (
-                self.root_dir
-                / "test_v2"
-                / "aleatoire"
-                / zone_id
-                / f"MGRS25-{zone_id}_{row_col_id}"
-            )
-        else:
-            s2_dir = (
+        s2_dir = (
+            (self.root_dir / self.test_dir / zone_id / f"MGRS25-{zone_id}_{row_col_id}")
+            if self.stage == "test"
+            else (
                 self.root_dir
                 / "optique_dataset"
                 / zone_id
                 / f"MGRS25-{zone_id}_{row_col_id}"
             )
+        )
+
         meta["s2_global_path"] = s2_dir / f"bands_stacked_{zone_id}_{row_col_id}.tif"
         meta["s2_zoom_path"] = s2_dir / f"bands_stacked_{zone_id}_{row_col_id}.tif"
         meta["s2_zoom_mask"] = meta["s2_zoom_path"]
@@ -157,7 +156,7 @@ class CircaDataset(GenericDataset):
             ref_date = self.ref_dates[idx]
             meta["ref_date"] = ref_date
         else:
-            ref_date = self.rng.choice(meta["s1_asc_zoom_dates"])
+            ref_date = RNG.choice(meta["s1_asc_zoom_dates"])
             meta["ref_date"] = ref_date
 
         inputs = self.preprocess_rasters(
@@ -171,22 +170,16 @@ class CircaDataset(GenericDataset):
         if self.stage == "test":
             inputs["s2_zoom_mask"] = cloud_mae_masking_test(
                 inputs["s2_zoom_mask"],
-                self.mask_ratio,
-                mae_masking_ratio=0.1,
+                self.dataset_masks["s2_zoom_mask"].mask_threshold,
                 mask_value=self.mae_mask_value,
             )
-            inputs["s2_zoom_mask_test"][
-                inputs["s2_zoom_mask_test"] >= self.mae_mask_value
-            ] = 1
-            inputs["s2_zoom_mask_test"][
-                inputs["s2_zoom_mask_test"] < self.mae_mask_value
-            ] = 0
-
+            inputs["s2_zoom_mask_test"] = np.where(
+                inputs["s2_zoom_mask_test"] >= self.mae_mask_value, 1, 0
+            )
         else:
             inputs["s2_zoom_mask"] = cloud_mae_masking(
                 inputs["s2_zoom_mask"],
                 self.dataset_masks["s2_zoom_mask"].mask_threshold,
-                self.mask_ratio,
                 self.mae_mask_value,
                 mae_masking_ratio=self.mae_mask_ratio,
             )
@@ -200,7 +193,6 @@ class CircaDataset(GenericDataset):
                 inputs["s2_global_mask"],
                 self.mae_mask_value,
                 self.dataset_masks["s2_global_mask"].mask_threshold,
-                mask_ratio=self.mask_ratio + self.mae_mask_ratio,
             )
 
         if self.stage == "test":
