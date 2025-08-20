@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from clearml import Task
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
@@ -161,6 +162,11 @@ class ImageLogger(Callback):
 class MetricsLogger(Callback):
     """Log metrics."""
 
+    def __init__(self) -> None:
+        super().__init__()
+        # self.worst_loss = 0
+        # self.worst_batch = None
+
     @staticmethod
     def cm2arr(cm: np.ndarray, normalized: bool = False) -> np.ndarray:
         if cm.shape[0] <= 10:  # noqa: PLR2004
@@ -211,11 +217,46 @@ class MetricsLogger(Callback):
 
         match trainer.ssl_phase:
             case "pretrain":
+                task = Task.current_task()
                 self.log_metric(
                     pl_module=pl_module,
                     name=f"{trainer.ssl_phase}_loss_rec/{stage}",
                     value=model.metrics[f"loss_rec_{stage}"].compute(),
                 )
+                if task is not None:
+                    task.get_logger().report_scalar(
+                        title=f"{trainer.ssl_phase}_loss_rec_epoch",
+                        series=stage,
+                        value=model.metrics[f"loss_rec_{stage}"].compute(),
+                        iteration=trainer.current_epoch
+                    )
+                if f"loss_ndvi_{stage}" in model.metrics.keys():
+                    self.log_metric(
+                        pl_module=pl_module,
+                        name=f"{trainer.ssl_phase}_loss_pretrain/{stage}",
+                        value=model.metrics[f"loss_pretrain_{stage}"].compute(),
+                    )
+                    self.log_metric(
+                        pl_module=pl_module,
+                        name=f"{trainer.ssl_phase}_loss_ndvi/{stage}",
+                        value=model.metrics[f"loss_ndvi_{stage}"].compute(),
+                    )
+                    if task is not None:
+                        Task.current_task().get_logger().report_scalar(
+                            title=f"{trainer.ssl_phase}_loss_pretrain_epoch",
+                            series=stage,
+                            value=model.metrics[f"loss_pretrain_{stage}"].compute(),
+                            iteration=trainer.current_epoch
+                        )
+                        Task.current_task().get_logger().report_scalar(
+                            title=f"{trainer.ssl_phase}_loss_ndvi_epoch",
+                            series=stage,
+                            value=model.metrics[f"loss_ndvi_{stage}"].compute(),
+                            iteration=trainer.current_epoch
+                        )
+                    model.metrics[f"loss_pretrain_{stage}"].reset()
+                    model.metrics[f"loss_ndvi_{stage}"].reset()
+
                 model.metrics[f"loss_rec_{stage}"].reset()
             case "probe" | "finetune":
                 self.log_metric(
@@ -247,6 +288,7 @@ class MetricsLogger(Callback):
                                 value=value,
                             )
                     model.metrics[f"{name_target}_{stage}"].reset()
+        # self._log_worst_batches(stage, trainer, self.worst_batch)
 
     def on_train_epoch_end(
         self,
@@ -268,6 +310,55 @@ class MetricsLogger(Callback):
         pl_module: LightningModule,
     ) -> None:
         self.on_epoch_end(trainer=trainer, pl_module=pl_module, stage="test")
+
+    # def _update_worst_batch(
+    #     self,
+    #     # batch: dict[str, Tensor],
+    #     outputs: dict[str, Tensor]
+    # ) -> None:
+    #     if self.worst_loss < outputs["loss"]:
+    #         self.worst_loss = outputs["loss"]
+    #         self.worst_batch = outputs
+    #     if not self.worst_batch:
+    #         self.worst_batch = outputs
+
+    # def _log_worst_batches(self, stage: str, trainer: Trainer, worst_batch: dict[str, Tensor]) -> None:
+    #     i = 0
+    #     epoch = trainer.current_epoch
+    #     for log_title, log_img in worst_batch["log_inputs"].items():
+    #         print("0000000000")
+    #         print(log_img.shape)
+    #         B, D, C, H, W = log_img.shape
+    #         for b in range(B):
+    #             for d in range(D):
+    #                 trainer.tb_logger.add_image(
+    #                     f"worst_batch_{stage}/{i}_input",
+    #                     ImageLogger.to_numpy(log_img[b, d, [3, 2, 1], ...]),
+    #                     epoch,
+    #                 )
+    #                 i += 1
+        # i = 0
+        # for log_title, log_img in worst_batch["log_preds"].items():
+        #     B, D, C, H, W = log_img.shape
+        #     for b in range(B):
+        #         for d in range(D):
+        #             trainer.tb_logger.add_image(
+        #                 f"worst_batch_{stage}/{i}_rec",
+        #                 ImageLogger.to_numpy(log_img[b, d, [3, 2, 1], ...]),
+        #                 epoch,
+        #             )
+        #             i += 1
+        # i = 0
+        # for log_title, log_img in worst_batch["log_targets"].items():
+        #     B, D, C, H, W = log_img.shape
+        #     for b in range(B):
+        #         for d in range(D):
+        #             trainer.tb_logger.add_image(
+        #                 f"worst_batch_{stage}/{i}_target",
+        #                 ImageLogger.to_numpy(log_img[b, d, [3, 2, 1], ...]),
+        #                 epoch,
+        #             )
+        #             i += 1
 
     def on_train_batch_end(
         self,
@@ -294,6 +385,19 @@ class MetricsLogger(Callback):
             logger=True,
             sync_dist=True,
         )
+
+        # self._update_worst_batch(outputs)
+
+    # def on_validation_batch_end(
+    #     self,
+    #     trainer: Trainer,
+    #     pl_module: LightningModule,
+    #     outputs: dict[str, Tensor],
+    #     batch: dict[str, Tensor],  # noqa: ARG002
+    #     batch_idx: int,  # noqa: ARG002
+    #     dataloader_idx: int = 0,  # noqa: ARG002
+    # ) -> None:
+        # self._update_worst_batch(outputs)
 
     @rank_zero_only
     def log_confmat(

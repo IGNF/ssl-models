@@ -34,6 +34,7 @@ class SSLModule(BaseModule):
         allmods_depth: int,
         model: Literal["mae", "mixmae"],
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
+        loss_type: Literal["rec", "ndvi"],
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         unpool_dim: int | None = None,
@@ -121,6 +122,7 @@ class SSLModule(BaseModule):
                 "norm_pix_loss": norm_pix_loss,
                 "fac_abs_enc": fac_abs_enc,
                 "fac_date_enc": fac_date_enc,
+                "loss_type": loss_type,
             }
             self.model = model_map[model_size](**model_args)
         else:

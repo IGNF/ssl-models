@@ -52,14 +52,12 @@ class CircaDataset(GenericDataset):
             balance_pretrain=dataset.balance_pretrain,
             val_pretrain=dataset.val_pretrain,
             filter_percent=dataset.filter_percent,
-            # nrows=1,
+            nrows=1,
         )
         self.stage = stage
         self.root_dir = root_dir
         self.test_dir = (
-            "test_v2/aleatoire"
-            if dataset.dataset_local
-            else "optique_dataset"
+            "test_v2/aleatoire" if dataset.dataset_local else "optique_dataset"
         )
 
         if self.stage == "test":
@@ -71,7 +69,7 @@ class CircaDataset(GenericDataset):
             )
             self.ref_dates = csv_data["ref_date"].tolist()
             self.crop_idx = csv_data["crop_idx"].tolist()
-            self.repeats = 68  # TODO
+            self.repeats = 68
         else:
             self.repeats = dataset.repeats
         self.patch_ids = csv_data["patch_id"].tolist()
@@ -174,7 +172,9 @@ class CircaDataset(GenericDataset):
                 mask_value=self.mae_mask_value,
             )
             inputs["s2_zoom_mask_test"] = np.where(
-                inputs["s2_zoom_mask_test"] >= self.mae_mask_value, 1, 0
+                inputs["s2_zoom_mask_test"] >= self.mae_mask_value,
+                1,
+                0,
             )
         else:
             inputs["s2_zoom_mask"] = cloud_mae_masking(
@@ -194,7 +194,6 @@ class CircaDataset(GenericDataset):
                 self.mae_mask_value,
                 self.dataset_masks["s2_global_mask"].mask_threshold,
             )
-
         if self.stage == "test":
             inputs["s2_zoom_mask_test"] = np.repeat(
                 inputs["s2_zoom_mask_test"],

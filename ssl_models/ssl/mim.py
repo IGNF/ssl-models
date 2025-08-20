@@ -47,6 +47,7 @@ class BaseMIM(nn.Module, ABC):
         unpool_dim: int | None,
         embed_dim: int,
         decoder_dim: int,
+        loss_type: Literal["rec", "ndvi"],
         type_head: Literal["linear", "attentive"] = "linear",
         loss_fn: Literal[torch.square, torch.abs] = torch.square,
         norm_pix_loss: bool = True,
@@ -57,6 +58,7 @@ class BaseMIM(nn.Module, ABC):
         super().__init__()
         self.dataset = datasets.dataset
         self.loss_fn = loss_fn
+        self.loss_type = loss_type
         self.norm_pix_loss = norm_pix_loss
         self.stride = 2 ** (num_levels - 1)
 
@@ -249,11 +251,6 @@ class BaseMIM(nn.Module, ABC):
             for stage in ("train", "val", "test"):
                 self.metrics[f"{name_target}_{stage}"] = metric_partial()
 
-        # for name_loss in ("loss_rec", "loss_pred"):
-        # for stage in ("train", "val", "test"):
-        #     self.metrics[f"{name_loss}_{stage}"] = MeanMetric(
-        #         dist_sync_on_step=False,
-        #     )
         for stage in ("train", "val", "test"):
             self.metrics[f"loss_pred_{stage}"] = MeanMetric(
                 dist_sync_on_step=False,
@@ -261,6 +258,13 @@ class BaseMIM(nn.Module, ABC):
             self.metrics[f"loss_rec_{stage}"] = WeightedLoss(
                 dist_sync_on_step=False,
             )
+            if self.loss_type == "ndvi":
+                self.metrics[f"loss_ndvi_{stage}"] = WeightedLoss(
+                    dist_sync_on_step=False,
+                )
+                self.metrics[f"loss_pretrain_{stage}"] = WeightedLoss(
+                    dist_sync_on_step=False,
+                )
 
     def embed(
         self,
@@ -308,7 +312,9 @@ class BaseMIM(nn.Module, ABC):
         # x_enc = self.ungroup(x_enc, num_dates=num_dates)
         for name_mod, mod in x_enc.items():
             x_enc[name_mod] = rearrange(
-                mod, "b (d l) c -> b d l c", d=num_dates[name_mod]
+                mod,
+                "b (d l) c -> b d l c",
+                d=num_dates[name_mod],
             )
 
         for name_mod in x_enc:
@@ -449,7 +455,9 @@ class BaseMIM(nn.Module, ABC):
         # mask_rec = self.ungroup(mask_rec, num_dates=num_dates)
         for name_mod, mod in mask_rec.items():
             mask_rec[name_mod] = rearrange(
-                mod, "b (d l) c -> b d l c", d=num_dates[name_mod]
+                mod,
+                "b (d l) c -> b d l c",
+                d=num_dates[name_mod],
             )
         pixels_rec = {}
         for name_mod in x_dec:
@@ -473,18 +481,33 @@ class BaseMIM(nn.Module, ABC):
         for name_mod in pixels_rec:
             if name_mod not in self.dataset.log_inputs:
                 continue
+            # inputs = torch.where(
+            #     mask_rec[name_mod],
+            #     0,
+            #     batch[name_mod],
+            # )
             inputs = torch.where(
-                mask_rec[name_mod],
+                mask_rec[name_mod] == 2,
                 0,
                 batch[name_mod],
             )
+            inputs[:, :, [2, 3], :, :] = torch.where(
+                inputs[:, :, [2, 3], :, :] == 0,
+                1,
+                inputs[:, :, [2, 3], :, :],
+            )
             inputs = torch.where(
-                torch.all(mask_rec[name_mod], dim=2, keepdim=True),
+                mask_rec[name_mod] == 1,
                 1,
                 inputs,
             )
+            # inputs = torch.where(
+            #     torch.all(mask_rec[name_mod], dim=2, keepdim=True),  # TODO change color
+            #     1,
+            #     inputs,
+            # )
             preds = torch.where(
-                mask_rec[name_mod],
+                mask_rec[name_mod] > 0,
                 pixels_rec[name_mod],
                 batch[name_mod],
             )
@@ -515,61 +538,66 @@ class BaseMIM(nn.Module, ABC):
         batch: dict[str, Tensor],
     ) -> Tensor:
         """Shared loss computation for all MIM modules."""
-        # losses_rec = []
-        # weights = []
-        # for name_mod in pixels_rec:
-        #     D = batch[name_mod].shape[1]  # noqa: N806
-        #     H, W = (  # noqa: N806
-        #         self.out_grid_size[name_mod],
-        #         self.out_grid_size[name_mod],
-        #     )
-        #     P = batch[name_mod].shape[3] // H  # noqa: N806
-        #     target = rearrange(
-        #         batch[name_mod],
-        #         "b d c (h p1) (w p2) -> b d (h w) (p1 p2) c",
-        #         p1=P,
-        #         p2=P,
-        #     )
-        #     if self.norm_pix_loss:
-        #         target_groups = list(
-        #             torch.split(
-        #                 target,
-        #                 self.norm_bands[name_mod],
-        #                 dim=-1,
-        #             ),
-        #         )
-        #         for idx, target_group in enumerate(target_groups):
-        #             mean = target_group.mean(dim=(-2, -1), keepdim=True)
-        #             var = target_group.var(dim=(-2, -1), keepdim=True)
-        #             target_groups[idx] = (target_group - mean) / (var + 1.0e-6) ** 0.5
-        #         target = torch.cat(target_groups, dim=-1)
-        #     target = rearrange(
-        #         target,
-        #         "b d (h w) (p1 p2) c -> b d c (h p1) (w p2)",
-        #         h=H,
-        #         p1=P,
-        #         p2=P,
-        #     )
+        mod_utilisee = "s2_zoom"
+        weight = 0 if not torch.any(mask_rec[mod_utilisee].bool()) else 1
+        H, _ = (  # noqa: N806
+            self.out_grid_size[mod_utilisee],
+            self.out_grid_size[mod_utilisee],
+        )
+        P = batch[mod_utilisee].shape[3] // H  # noqa: N806
+        target = rearrange(
+            batch[mod_utilisee],
+            "b d c (h p1) (w p2) -> b d (h w) (p1 p2) c",
+            p1=P,
+            p2=P,
+        )
+        if self.norm_pix_loss:
+            target_groups = list(
+                torch.split(
+                    target,
+                    self.norm_bands[mod_utilisee],
+                    dim=-1,
+                ),
+            )
+            for idx, target_group in enumerate(target_groups):
+                mean = target_group.mean(dim=(-2, -1), keepdim=True)
+                var = target_group.var(dim=(-2, -1), keepdim=True)
+                target_groups[idx] = (target_group - mean) / (var + 1.0e-6) ** 0.5
+            target = torch.cat(target_groups, dim=-1)
+        target = rearrange(
+            target,
+            "b d (h w) (p1 p2) c -> b d c (h p1) (w p2)",
+            h=H,
+            p1=P,
+            p2=P,
+        )
+        loss_rec = self.loss_fn(target - pixels_rec[mod_utilisee])
+        loss_rec = torch.masked_select(
+            loss_rec,
+            mask_rec[mod_utilisee],
+        ).mean()
+        loss_rec = torch.nan_to_num(weight * loss_rec)
 
-        #     loss_rec = self.loss_fn(target - pixels_rec[name_mod])
-        #     loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod].bool()).mean()
+        return loss_rec
 
-        #     weight = 0 if not torch.any(mask_rec[name_mod].bool()) else D * H * W
-        #     weights.append(weight)
-        #     losses_rec.append(torch.nan_to_num(weight * loss_rec))
-
-        # loss_rec = torch.stack(losses_rec).sum() / max(sum(weights), 1)
-
-        # ###########################################################
-        # # TODO NDVI loss
-        # # ndvi target
+    def compute_loss_ndvi(
+        self,
+        pixels_rec: dict[str, Tensor],
+        mask_rec: dict[str, Tensor],
+        batch: dict[str, Tensor],
+    ) -> Tensor:
+        """Shared loss computation for all MIM modules."""
         mod_utilisee = "s2_zoom"
         idx_red = 2
         idx_nir = 6
         epsilon = 0.000001
+        weight = 0 if not torch.any(mask_rec[mod_utilisee].bool()) else 1
 
+        # loss ndvi
         target = batch[mod_utilisee][:, :, [idx_red, idx_nir], :, :]
+        target = torch.clamp(target, min=0)
         rec = pixels_rec[mod_utilisee][:, :, [idx_red, idx_nir], :, :].float()
+        rec = torch.clamp(rec, min=0)
 
         target_ndvi = (target[:, :, 1, :, :] - target[:, :, 0, :, :]) / (
             target[:, :, 1, :, :] + target[:, :, 0, :, :] + epsilon
@@ -577,17 +605,55 @@ class BaseMIM(nn.Module, ABC):
         rec_ndvi = (rec[:, :, 1, :, :] - rec[:, :, 0, :, :]) / (
             rec[:, :, 1, :, :] + rec[:, :, 0, :, :] + epsilon
         )
+
         loss_ndvi = self.loss_fn(target_ndvi - rec_ndvi)
         loss_ndvi = torch.masked_select(
-            loss_ndvi, mask_rec[mod_utilisee][:, :, 0, :, :]
+            loss_ndvi,
+            mask_rec[mod_utilisee][:, :, 0, :, :],
         ).mean()
 
-        weight = 0 if not torch.any(mask_rec[mod_utilisee].bool()) else 1
         loss_ndvi = torch.nan_to_num(weight * loss_ndvi)
 
-        return loss_ndvi
+        # loss rec
+        H, _ = (  # noqa: N806
+            self.out_grid_size[mod_utilisee],
+            self.out_grid_size[mod_utilisee],
+        )
+        P = batch[mod_utilisee].shape[3] // H  # noqa: N806
+        target = rearrange(
+            batch[mod_utilisee],
+            "b d c (h p1) (w p2) -> b d (h w) (p1 p2) c",
+            p1=P,
+            p2=P,
+        )
+        if self.norm_pix_loss:
+            target_groups = list(
+                torch.split(
+                    target,
+                    self.norm_bands[mod_utilisee],
+                    dim=-1,
+                ),
+            )
+            for idx, target_group in enumerate(target_groups):
+                mean = target_group.mean(dim=(-2, -1), keepdim=True)
+                var = target_group.var(dim=(-2, -1), keepdim=True)
+                target_groups[idx] = (target_group - mean) / (var + 1.0e-6) ** 0.5
+            target = torch.cat(target_groups, dim=-1)
+        target = rearrange(
+            target,
+            "b d (h w) (p1 p2) c -> b d c (h p1) (w p2)",
+            h=H,
+            p1=P,
+            p2=P,
+        )  #[:, :, [idx_red, idx_nir], :, :]
+        loss_rec = self.loss_fn(target - pixels_rec[mod_utilisee])
+        loss_rec = torch.masked_select(
+            loss_rec,
+            mask_rec[mod_utilisee],  #[:, :, [0, 1], :, :],
+        ).mean()
+        loss_rec = torch.nan_to_num(weight * loss_rec)
 
-        # return torch.stack(losses_rec).sum() / max(sum(weights), 1)
+        return 0.1 * loss_ndvi + 0.9 * loss_rec, loss_ndvi, loss_rec
 
     def compute_loss_pred(
         self,
@@ -826,7 +892,10 @@ class BaseMIM(nn.Module, ABC):
             x_dec = self.dec_add_encodings(x_dec, dates, ref_date, num_dates)
             x_dec = self.decode(x_dec)
             pixels_rec, mask_loss = self.rec_pixels(
-                x_dec, embed_inds, mask_loss, num_dates
+                x_dec,
+                embed_inds,
+                mask_loss,
+                num_dates,
             )
             if stage == "test":
                 mask_loss.update(
@@ -836,25 +905,37 @@ class BaseMIM(nn.Module, ABC):
                     },
                 )
 
-            loss_rec = self.compute_loss_rec(
-                pixels_rec,
-                mask_loss,
-                batch,
-            )
             nb_pixels_loss = mask_loss["s2_zoom"][:, :, 0, :, :].sum()  # TODO
+            if self.loss_type == "ndvi":
+                loss, loss_ndvi, loss_rec = self.compute_loss_ndvi(
+                    pixels_rec,
+                    mask_loss,
+                    batch,
+                )
+                self.metrics[f"loss_pretrain_{stage}"].update(loss, nb_pixels_loss)
+                self.metrics[f"loss_rec_{stage}"].update(loss_rec, nb_pixels_loss)
+                self.metrics[f"loss_ndvi_{stage}"].update(loss_ndvi, nb_pixels_loss)
+            else:
+                loss = self.compute_loss_rec(
+                    pixels_rec,
+                    mask_loss,
+                    batch,
+                )
+                self.metrics[f"loss_rec_{stage}"].update(loss, nb_pixels_loss)
 
-            # _, mask_rec = self.rec_pixels(x_dec, embed_inds, mask_rec, num_dates)  # ungroup
-
+            _, mask_rec = self.rec_pixels(x_dec, embed_inds, mask_rec, num_dates)
+            mask_log = {
+                "s2_zoom": mask_rec["s2_zoom"].long() + mask_loss["s2_zoom"].long()
+            }
             log_inputs, log_preds, log_targets = self.compute_pixels(
                 pixels_rec,
-                # mask_rec,
-                mask_loss,
+                mask_log,
                 batch,
                 ssl_phase,
                 stage,
             )
-            self.metrics[f"loss_rec_{stage}"].update(loss_rec, nb_pixels_loss)
-            return loss_rec, log_inputs, log_preds, log_targets, None
+
+            return loss, log_inputs, log_preds, log_targets, None
 
         # else, probe or finetune
         loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(

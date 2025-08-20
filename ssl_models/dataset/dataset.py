@@ -282,6 +282,7 @@ class GenericDataset(Dataset, ABC):
         patch_size = patch_size.mae if self.model == "mae" else patch_size.mixmae
         if zoom_window:
             if mask_mod is not None:
+                # mask_mod = cloud_mask_correction(mask_mod)
                 mask_mod_test = mask_mod
                 mask_mod = (
                     self.max_pooling(mask_mod, patch_size)

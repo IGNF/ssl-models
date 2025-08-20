@@ -1,5 +1,6 @@
 """Utils module."""
 
+import math
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -7,7 +8,6 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn.functional as F
 from einops import rearrange
 
 from ssl_models import RNG
@@ -134,15 +134,13 @@ def cloud_mae_masking(
     mae_masking_ratio: float = 0.1,
 ) -> np.ndarray:
     """Add random masked pixels to cloud mask."""
-
     D, C, H, W = cloud_mask.shape  # noqa: N806
-    # cloud_mask = cloud_mask_correction(cloud_mask)  # TODO à mettre dans dataset avant filtrage date
 
     cloud_mask = np.where(cloud_mask <= cloud_threshold, 1, 0)
     cloud_mask = cloud_mask.flatten()
     nb_visible = np.count_nonzero(cloud_mask == 1)
     visible_indices = np.where(cloud_mask == 1)[0]
-    num_mae_masked = round(nb_visible * mae_masking_ratio)
+    num_mae_masked = math.floor(nb_visible * mae_masking_ratio)
     if num_mae_masked > 0:
         mae_masked_indices = RNG.choice(
             visible_indices,
@@ -214,14 +212,14 @@ def mask_local_global_consistency(
     return np.where(mask_global >= mask_value, 0, mask_global)
 
 
-def pad_dates_modalities(batch: list[dict], pad_dim=0):
+def pad_dates_modalities(batch: list[dict], pad_dim: int = 0) -> dict[np.ndarray]:
     max_dates = max(t["s2_zoom"].shape[0] for t in batch)
     min_dates = min(t["s2_zoom"].shape[0] for t in batch)
 
     modalities = list(batch[0].keys())
 
     modalities.remove("ref_date")
-    pad_value = 0  # vérifier que les vrais nuages sont maskés par des 0  TODO
+    pad_value = 0
 
     if min_dates == max_dates:
         return {
@@ -245,10 +243,10 @@ def pad_dates_modalities(batch: list[dict], pad_dim=0):
                             constant_values=pad_value,
                         )
                         for b in batch
-                    ]
-                )
+                    ],
+                ),
             )
         padded_batch["ref_date"] = torch.from_numpy(
-            np.stack([b["ref_date"] for b in batch])
+            np.stack([b["ref_date"] for b in batch]),
         )
         return padded_batch
