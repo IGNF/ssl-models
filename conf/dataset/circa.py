@@ -15,7 +15,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     balance_pretrain: bool = False
     val_pretrain: bool = False
     filter_percent: int | None = None
-    repeats: int = 2  # 68
+    repeats: int = 68  # 68
     crop_meters: float = 163.84 * 2
 
     ref_input: str | None = "s2_zoom"  # defines grid for raster targets
@@ -25,12 +25,12 @@ class CircaConfig(DatasetConfig):  # noqa: D101
 
     filter_inputs: list[str] = field(
         default_factory=lambda: [
-            # "s2_global",
-            # "s1_asc_global",
-            # "s1_des_global",
+            "s2_global",
+            "s1_asc_global",
+            "s1_des_global",
             "s2_zoom",
-            # "s1_asc_zoom",
-            # "s1_des_zoom",
+            "s1_asc_zoom",
+            "s1_des_zoom",
         ],
     )  # selected input modalities
     filter_targets: list[str] = field(
@@ -40,7 +40,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     filter_masks: list[str] = field(
         default_factory=lambda: [
             "s2_zoom_mask",
-            # "s2_global_mask",
+            "s2_global_mask",
         ],
     )
 
@@ -68,8 +68,8 @@ class CircaConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            bands=4,
-            norm_bands=[4],  # [4, 6],
+            bands=10,
+            norm_bands=[4, 6],
             num_dates=4,
             mask_threshold=0.0,
             norm_fac=5000.0,
@@ -111,9 +111,9 @@ class CircaConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=32,
             patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            bands=4,
+            bands=10,
             num_dates=4,
-            norm_bands=[4],  # [4, 6],
+            norm_bands=[4, 6],
             norm_fac=5000.0,
             offset=-1000,
             name_group="all",

@@ -52,7 +52,6 @@ class CircaDataset(GenericDataset):
             balance_pretrain=dataset.balance_pretrain,
             val_pretrain=dataset.val_pretrain,
             filter_percent=dataset.filter_percent,
-            nrows=1,
         )
         self.stage = stage
         self.root_dir = root_dir

@@ -137,26 +137,33 @@ def cloud_mae_masking(
     D, C, H, W = cloud_mask.shape  # noqa: N806
 
     cloud_mask = np.where(cloud_mask <= cloud_threshold, 1, 0)
-    cloud_mask = cloud_mask.flatten()
-    nb_visible = np.count_nonzero(cloud_mask == 1)
-    visible_indices = np.where(cloud_mask == 1)[0]
-    num_mae_masked = math.floor(nb_visible * mae_masking_ratio)
-    if num_mae_masked > 0:
-        mae_masked_indices = RNG.choice(
-            visible_indices,
-            size=num_mae_masked,
-            replace=False,
-        )
-        cloud_mask[mae_masked_indices] = mask_value
-
-    return rearrange(
-        cloud_mask,
-        "(d c h w) -> d c h w",
-        d=D,
-        c=C,
-        h=H,
-        w=W,
+    dates_to_mask = RNG.choice(D, D // 4, replace=False)
+    dates_to_mask = [x for x in dates_to_mask if not np.all(cloud_mask[x, ...] == 0)]
+    cloud_mask[dates_to_mask, ...] = np.where(
+        cloud_mask[dates_to_mask, ...] == 1, mask_value, cloud_mask[dates_to_mask, ...]
     )
+    if len(dates_to_mask) != (D // 4):
+        cloud_mask = cloud_mask.flatten()
+        nb_visible = np.count_nonzero(cloud_mask == 1)
+        visible_indices = np.where(cloud_mask == 1)[0]
+        num_mae_masked = math.floor(nb_visible * mae_masking_ratio)
+        if num_mae_masked > 0:
+            mae_masked_indices = RNG.choice(
+                visible_indices,
+                size=num_mae_masked,
+                replace=False,
+            )
+            cloud_mask[mae_masked_indices] = mask_value
+
+        cloud_mask = rearrange(
+            cloud_mask,
+            "(d c h w) -> d c h w",
+            d=D,
+            c=C,
+            h=H,
+            w=W,
+        )
+    return cloud_mask
 
 
 def cloud_mae_masking_test(

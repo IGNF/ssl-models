@@ -389,7 +389,7 @@ class BaseMIM(nn.Module, ABC):
                 custom_masks = self.group_masks(custom_masks)
                 for name_mod, mod in x.items():
                     x[name_mod] = rearrange(mod, "b d l c -> b (d l) c")
-                    mask[name_mod] = rearrange(mod, "b d l c -> b (d l) c")
+                    mask[name_mod] = rearrange(mask[name_mod], "b d l c -> b (d l) c")
                 mask_rec = {}
                 for name_group in x:
                     (
@@ -491,10 +491,10 @@ class BaseMIM(nn.Module, ABC):
                 0,
                 batch[name_mod],
             )
-            inputs[:, :, [2, 3], :, :] = torch.where(
-                inputs[:, :, [2, 3], :, :] == 0,
+            inputs[:, :, [1, 2], :, :] = torch.where(
+                inputs[:, :, [1, 2], :, :] == 0,
                 1,
-                inputs[:, :, [2, 3], :, :],
+                inputs[:, :, [1, 2], :, :],
             )
             inputs = torch.where(
                 mask_rec[name_mod] == 1,
@@ -645,11 +645,11 @@ class BaseMIM(nn.Module, ABC):
             h=H,
             p1=P,
             p2=P,
-        )  #[:, :, [idx_red, idx_nir], :, :]
+        )  # [:, :, [idx_red, idx_nir], :, :]
         loss_rec = self.loss_fn(target - pixels_rec[mod_utilisee])
         loss_rec = torch.masked_select(
             loss_rec,
-            mask_rec[mod_utilisee],  #[:, :, [0, 1], :, :],
+            mask_rec[mod_utilisee],  # [:, :, [0, 1], :, :],
         ).mean()
         loss_rec = torch.nan_to_num(weight * loss_rec)
 
@@ -894,7 +894,7 @@ class BaseMIM(nn.Module, ABC):
             pixels_rec, mask_loss = self.rec_pixels(
                 x_dec,
                 embed_inds,
-                mask_loss,
+                mask_rec,  # TODO plutot mask_rec pour logger
                 num_dates,
             )
             if stage == "test":
@@ -923,10 +923,10 @@ class BaseMIM(nn.Module, ABC):
                 )
                 self.metrics[f"loss_rec_{stage}"].update(loss, nb_pixels_loss)
 
-            _, mask_rec = self.rec_pixels(x_dec, embed_inds, mask_rec, num_dates)
+            # _, mask_rec = self.rec_pixels(x_dec, embed_inds, mask_rec, num_dates)
             mask_log = {
                 "s2_zoom": mask_rec["s2_zoom"].long() + mask_loss["s2_zoom"].long()
-            }
+            }  # TODO
             log_inputs, log_preds, log_targets = self.compute_pixels(
                 pixels_rec,
                 mask_log,
