@@ -42,7 +42,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
     naip: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=256,
-            patch_size=PatchSizeConfig(mae=16, mixmae=4),
+            patch_size=PatchSizeConfig(vit=16, swin=4),
             bands=4,
             norm_fac=255.0,
         ),
@@ -50,7 +50,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
     landsat_10m: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=32,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            patch_size=PatchSizeConfig(vit=4, swin=1),
             bands=1,
             num_dates=4,
             norm_fac=10000.0,
@@ -59,7 +59,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
     landsat_20m: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=32,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            patch_size=PatchSizeConfig(vit=4, swin=1),
             bands=10,
             num_dates=4,
             norm_fac=10000.0,
@@ -68,7 +68,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
     s2_10m: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=32,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            patch_size=PatchSizeConfig(vit=4, swin=1),
             bands=4,
             num_dates=8,
             norm_fac=10000.0,
@@ -77,7 +77,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
     s2_20m: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            patch_size=PatchSizeConfig(vit=4, swin=1),
             bands=6,
             num_dates=8,
             norm_fac=10000.0,
@@ -86,7 +86,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
     s2_40m: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=8,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            patch_size=PatchSizeConfig(vit=4, swin=1),
             bands=3,
             num_dates=8,
             norm_fac=10000.0,
@@ -95,7 +95,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
     s1: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=32,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            patch_size=PatchSizeConfig(vit=4, swin=1),
             bands=2,
             num_dates=4,
             norm_fac=20.0,

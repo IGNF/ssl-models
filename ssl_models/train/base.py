@@ -143,10 +143,15 @@ class BaseModule(LightningModule, ABC):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Probing/finetuning step."""
-        if stage == "train" or self.ema_model is None:
-            model = self.model
-        else:
+        if (
+            self.trainer.ssl_phase == "finetune"
+            and stage != "train"
+            and self.ema_model is not None
+        ):
             model = self.ema_model
+        else:
+            model = self.model
+
         _, log_inputs, log_preds, log_targets, loss_pred = model(
             batch,
             stage=stage,
@@ -167,31 +172,18 @@ class BaseModule(LightningModule, ABC):
     ) -> dict[str, torch.Tensor]:
         """Shared step for training/validation."""
         # resize
-        for name_mask, mask in self.dataset.masks.items():
-            mask_num_dates = batch[name_mask][0].shape[0]
-            patch_size = (
-                mask.patch_size.mae
-                if isinstance(self.model, MAE)
-                else mask.patch_size.mixmae
-            )
-            batch[name_mask] = F.interpolate(
-                batch[name_mask].flatten(0, 1),
-                size=(mask.image_size // patch_size,) * 2,
-                mode="nearest",
-            ).unflatten(0, (-1, mask_num_dates))
         for name_mod, mod in self.dataset.inputs.items():
-            mod_num_dates = batch[name_mod][0].shape[0]
             batch[name_mod] = F.interpolate(
                 batch[name_mod].flatten(0, 1),
                 size=(mod.image_size,) * 2,
                 mode="nearest",
-            ).unflatten(0, (-1, mod_num_dates))
+            ).unflatten(0, (-1, mod.num_dates))
             batch[f"{name_mod}_dates"] = (
                 F.interpolate(
                     batch[f"{name_mod}_dates"].float().flatten(0, 1),
                     size=(mod.image_size,) * 2,
                     mode="nearest",
-                ).unflatten(0, (-1, mod_num_dates))
+                ).unflatten(0, (-1, mod.num_dates))
                 if batch[f"{name_mod}_dates"].ndim == NDIM_RASTER
                 else batch[f"{name_mod}_dates"].float()
             )

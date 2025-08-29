@@ -5,10 +5,13 @@ from typing import Literal
 
 import numpy as np
 import torch
+from einops import rearrange
 from sympy.ntheory import factorint
 from torch import Tensor
 
 from ssl_models import RNG
+
+NDVI_BANDS = 2
 
 
 def shuffle_enc_to_dec(x: dict[str, Tensor]) -> dict[str, Tensor]:
@@ -208,6 +211,48 @@ def posemb_sincos_2d(
         dim=-1,
     )
     return pos_encoding.to(dtype)
+
+
+def max_pool(
+    x_mod: Tensor | None,
+    patch_size: int,
+) -> Tensor:
+    """Max pool across mask bands and patch_size."""
+    x_mod = rearrange(
+        x_mod,
+        "b d c (h p1) (w p2) -> b d c h p1 w p2",
+        p1=patch_size,
+        p2=patch_size,
+    )
+    x_mod = x_mod.amax(dim=(2, 4, 6))
+    return rearrange(x_mod, "b d h w -> b d (h w) 1")
+
+
+def compute_ndvi(
+    x: Tensor,
+    bands: int | list[list[int]],
+    ndvi_bands: list[int] | None,
+    epsilon: float = 1e-6,
+) -> Tensor:
+    """Compute NDVI."""
+    bands = (
+        list(range(bands))
+        if isinstance(bands, int)
+        else [idx for band in bands for idx in band]
+    )
+    ndvi_bands = (
+        [bands.index(idx) for idx in ndvi_bands if idx in bands]
+        if ndvi_bands is not None
+        else []
+    )
+    if len(ndvi_bands) < NDVI_BANDS:
+        return 0 * x
+    x_ndvi = x[:, :, ndvi_bands]
+    x_ndvi = torch.clamp(x_ndvi, min=0)
+    x_ndvi = (x_ndvi[:, :, 1] - x_ndvi[:, :, 0]) / (
+        x_ndvi[:, :, 1] + x_ndvi[:, :, 0] + epsilon
+    )
+    return x_ndvi[:, :, None]
 
 
 def downsamplings_from_patch_size(unpool_dim: int | None, patch_size: int) -> list[int]:

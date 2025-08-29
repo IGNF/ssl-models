@@ -7,14 +7,16 @@ import torch
 
 from conf.datasets import DatasetsConfig
 from conf.mask import MaskConfig
-from ssl_models.ssl.mae import MAE, mae_large, mae_medium, mae_small, mae_tiny
+from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.ssl.mixmae import (
+    MixMAE,
     mixmae_base,
     mixmae_huge,
     mixmae_large,
     mixmae_small,
     mixmae_tiny,
 )
+from ssl_models.ssl.simmim import simmim_large, simmim_medium, simmim_small, simmim_tiny
 from ssl_models.train.base import BaseModule
 
 torch.set_float32_matmul_precision(precision="medium")
@@ -34,7 +36,6 @@ class SSLModule(BaseModule):
         allmods_depth: int,
         model: Literal["mae", "mixmae"],
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
-        loss_type: Literal["rec", "ndvi"],
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         unpool_dim: int | None = None,
@@ -95,6 +96,18 @@ class SSLModule(BaseModule):
                     "large": mixmae_large,
                     "huge": mixmae_huge,
                 }
+            case "simmim":
+                # for now, SimMIM uses ViTs
+                num_levels = 1
+                fac_abs_enc = 1.0
+                fac_date_enc = 1.0 if use_date_enc else 0.0
+
+                model_map = {
+                    "tiny": simmim_tiny,
+                    "small": simmim_small,
+                    "medium": simmim_medium,
+                    "large": simmim_large,
+                }
             case _:
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)
@@ -122,7 +135,6 @@ class SSLModule(BaseModule):
                 "norm_pix_loss": norm_pix_loss,
                 "fac_abs_enc": fac_abs_enc,
                 "fac_date_enc": fac_date_enc,
-                "loss_type": loss_type,
             }
             self.model = model_map[model_size](**model_args)
         else:
@@ -157,8 +169,8 @@ class SSLModule(BaseModule):
                 grouped_params = self.model.parameters()
                 max_lr = lr
             case _:
-                if not isinstance(self.model, MAE):
-                    msg = "Layer-wise decay only implemented for MAE."
+                if isinstance(self.model, MixMAE):
+                    msg = "Layer-wise decay not implemented for MixMAE."
                     raise NotImplementedError(msg)
 
                 layer_parameters = {}

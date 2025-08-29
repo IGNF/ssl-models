@@ -53,12 +53,13 @@ class ImageLogger(Callback):
     @staticmethod
     def to_numpy(x: Tensor) -> np.ndarray:
         """Move to CPU and convert to numpy."""
-        x_npy = x.detach().cpu().numpy().astype(np.float32)
-        return (
+        x_npy = x.detach().cpu().numpy().astype(np.float32).clip(0, 1)
+        x_npy = (
             x_npy[:3]
             if x_npy.shape[0] >= RGB_BANDS
             else x_npy.mean(axis=0, keepdims=True)
         )
+        return np.nan_to_num(x_npy, nan=1.0)
 
     @rank_zero_only
     def on_batch_end(
@@ -88,19 +89,19 @@ class ImageLogger(Callback):
         for log_title, log_img in outputs["log_inputs"].items():
             trainer.tb_logger.add_image(
                 log_title.replace("/", f"/{prefix_idx}"),
-                ImageLogger.to_numpy(log_img[[3, 2, 1], ...]),
+                ImageLogger.to_numpy(log_img),
                 epoch,
             )
         for log_title, log_img in outputs["log_preds"].items():
             trainer.tb_logger.add_image(
                 log_title.replace("/", f"/{prefix_idx}"),
-                ImageLogger.to_numpy(log_img[[3, 2, 1], ...]),
+                ImageLogger.to_numpy(log_img),
                 epoch,
             )
         for log_title, log_img in outputs["log_targets"].items():
             trainer.tb_logger.add_image(
                 log_title.replace("/", f"/{prefix_idx}"),
-                ImageLogger.to_numpy(log_img[[3, 2, 1], ...]),
+                ImageLogger.to_numpy(log_img),
                 epoch,
             )
 
@@ -212,47 +213,18 @@ class MetricsLogger(Callback):
 
         match trainer.ssl_phase:
             case "pretrain":
-                task = Task.current_task()
                 self.log_metric(
                     pl_module=pl_module,
                     name=f"{trainer.ssl_phase}_loss_rec/{stage}",
                     value=model.metrics[f"loss_rec_{stage}"].compute(),
                 )
-                if task is not None:
-                    task.get_logger().report_scalar(
-                        title=f"{trainer.ssl_phase}_loss_rec_epoch",
-                        series=stage,
-                        value=model.metrics[f"loss_rec_{stage}"].compute(),
-                        iteration=trainer.current_epoch,
-                    )
-                if f"loss_ndvi_{stage}" in model.metrics.keys():
-                    self.log_metric(
-                        pl_module=pl_module,
-                        name=f"{trainer.ssl_phase}_loss_pretrain/{stage}",
-                        value=model.metrics[f"loss_pretrain_{stage}"].compute(),
-                    )
-                    self.log_metric(
-                        pl_module=pl_module,
-                        name=f"{trainer.ssl_phase}_loss_ndvi/{stage}",
-                        value=model.metrics[f"loss_ndvi_{stage}"].compute(),
-                    )
-                    if task is not None:
-                        Task.current_task().get_logger().report_scalar(
-                            title=f"{trainer.ssl_phase}_loss_pretrain_epoch",
-                            series=stage,
-                            value=model.metrics[f"loss_pretrain_{stage}"].compute(),
-                            iteration=trainer.current_epoch,
-                        )
-                        Task.current_task().get_logger().report_scalar(
-                            title=f"{trainer.ssl_phase}_loss_ndvi_epoch",
-                            series=stage,
-                            value=model.metrics[f"loss_ndvi_{stage}"].compute(),
-                            iteration=trainer.current_epoch,
-                        )
-                    model.metrics[f"loss_pretrain_{stage}"].reset()
-                    model.metrics[f"loss_ndvi_{stage}"].reset()
-
+                self.log_metric(
+                    pl_module=pl_module,
+                    name=f"{trainer.ssl_phase}_loss_ndvi/{stage}",
+                    value=model.metrics[f"loss_ndvi_{stage}"].compute(),
+                )
                 model.metrics[f"loss_rec_{stage}"].reset()
+                model.metrics[f"loss_ndvi_{stage}"].reset()
             case "probe" | "finetune":
                 self.log_metric(
                     pl_module=pl_module,
@@ -323,7 +295,7 @@ class MetricsLogger(Callback):
 
         pl_module.log(
             name=f"{trainer.ssl_phase}_{name}/step_train",
-            value=outputs["loss"],
+            value=outputs["loss"] * trainer.accumulate_grad_batches,
             on_step=True,
             on_epoch=False,
             prog_bar=True,

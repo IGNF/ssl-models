@@ -178,33 +178,49 @@ class Pixelify(nn.Module):
 
     def forward(
         self,
-        x: Tensor,
-        mask: Tensor,
+        x_rec: Tensor,
+        mask_rec: Tensor,
+        mask_loss: Tensor,
         inds: list[list[Tensor]],  # noqa: ARG002
     ) -> tuple[Tensor, Tensor]:
-        x = rearrange(x, "b (g d) l c -> g b d l c", g=len(self.num_bands))
-        mask = repeat(
-            mask,
+        x_rec = rearrange(x_rec, "b (g d) l c -> g b d l c", g=len(self.num_bands))
+        mask_rec = repeat(
+            mask_rec,
             "b (g d) (h w) c -> g b d c (h p1) (w p2)",
             g=len(self.num_bands),
             p1=self.patch_size,
             p2=self.patch_size,
-            h=round(mask.shape[2] ** 0.5),
+            h=round(mask_rec.shape[2] ** 0.5),
+        )
+        mask_loss = repeat(
+            mask_loss,
+            "b (g d) (h w) c -> g b d c (h p1) (w p2)",
+            g=len(self.num_bands),
+            p1=self.patch_size,
+            p2=self.patch_size,
+            h=round(mask_loss.shape[2] ** 0.5),
         )
 
-        x_rec, mask_rec = [], []
+        x_recs, mask_recs, mask_losses = [], [], []
         for idx, pixelify in enumerate(self.pixelify_bands):
-            x_rec.append(pixelify(x[idx], inds=[]))
-            mask_rec.append(mask[idx].expand((-1, -1, self.num_bands[idx], -1, -1)))
+            x_recs.append(pixelify(x_rec[idx], inds=[]))
+            mask_recs.append(
+                mask_rec[idx].expand((-1, -1, self.num_bands[idx], -1, -1)),
+            )
+            mask_losses.append(
+                mask_loss[idx].expand((-1, -1, self.num_bands[idx], -1, -1)),
+            )
 
         if len(self.num_bands) > 1:
-            x_rec = torch.cat(x_rec, dim=2)
-            mask_rec = torch.cat(mask_rec, dim=2)
+            x_rec = torch.cat(x_recs, dim=2)
+            mask_rec = torch.cat(mask_recs, dim=2)
+            mask_loss = torch.cat(mask_losses, dim=2)
         else:
-            x_rec = x_rec.pop()
-            mask_rec = mask_rec.pop()
+            x_rec = x_recs.pop()
+            mask_rec = mask_recs.pop()
+            mask_loss = mask_losses.pop()
 
-        return x_rec, mask_rec
+        return x_rec, mask_rec, mask_loss
 
 
 class PixelifyBands(nn.Module):

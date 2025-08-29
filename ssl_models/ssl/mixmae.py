@@ -93,7 +93,7 @@ class MixMAE(BaseMIM):
 
         # encoder layers
         max_patch_grid = max(
-            mod.image_size // mod.patch_size.mixmae
+            mod.image_size // mod.patch_size.swin
             for _, mod in datasets.dataset.inputs.items()
         )
         num_windows = [
@@ -160,17 +160,24 @@ class MixMAE(BaseMIM):
             {name_mod: nn.LayerNorm(decoder_dim) for name_mod in name_models},
         )
 
-    def mask_struct(self, x: dict[str, Tensor]) -> dict[str, None]:
+    def mask_struct(
+        self,
+        x: dict[str, Tensor],
+        mask_rec: dict[str, Tensor],  # noqa: ARG002
+        stage: Literal["train", "val", "test"],  # noqa: ARG002
+    ) -> tuple[dict[str, None], dict[str, None]]:
         """Structural masking of modalities, band groups, dates."""
-        return {name_group: None for name_group in x}
+        return ({name_group: None for name_group in x},) * 2
 
     def mask_seq(
         self,
         x: Tensor,
         mask_token: Tensor,
         mask_rec: None,
+        mask_loss: None,  # noqa: ARG002
+        encoding: Tensor,  # noqa: ARG002
         name_group: str,  # noqa: ARG002
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """Mix sequence."""
         B, L, C = x.shape  # noqa: N806
         H, W = round(L**0.5), round(L**0.5)  # noqa: N806
@@ -222,15 +229,7 @@ class MixMAE(BaseMIM):
         x_enc = x.reshape((B_enc, self.nb_mix_images, L, C))
         x_enc = (x_enc * unmasked).sum(dim=1)
 
-        return x_enc, mask_token, mask_attn, mask_rec
-
-    def custom_mask_seq(
-        self,
-        x: Tensor,
-        mask_token: Tensor,
-        mask: Tensor,
-    ) -> tuple[Tensor, Tensor, None, Tensor]:
-        pass
+        return x_enc, mask_token, mask_attn, mask_rec, mask_rec
 
     def unmask_seq(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
         """Unmask sequence, filling with mask token."""

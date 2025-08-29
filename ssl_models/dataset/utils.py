@@ -1,7 +1,7 @@
 """Utils module."""
 
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -126,134 +126,21 @@ def cloud_mask_correction(input_mask: np.ndarray, threshold: int = 50) -> np.nda
     return np.stack(cloud_masks, axis=0)
 
 
-def cloud_mae_masking(
-    cloud_mask: np.ndarray,
-    cloud_threshold: float,
-    # mask_ratio: float,
-    mask_value: float,
-    mae_masking_ratio: float = 0.1,
-) -> np.ndarray:
-    """Add random masked pixels to cloud mask."""
-    D, C, H, W = cloud_mask.shape  # noqa: N806
-
-    cloud_mask = np.where(cloud_mask <= cloud_threshold, 1, 0)
-    dates_to_mask = RNG.choice(D, D // 4, replace=False)
-    dates_to_mask = [x for x in dates_to_mask if not np.all(cloud_mask[x, ...] == 0)]
-    cloud_mask[dates_to_mask, ...] = np.where(
-        cloud_mask[dates_to_mask, ...] == 1, mask_value, cloud_mask[dates_to_mask, ...]
-    )
-    if len(dates_to_mask) != (D // 4):
-        cloud_mask = cloud_mask.flatten()
-        nb_visible = np.count_nonzero(cloud_mask == 1)
-        visible_indices = np.where(cloud_mask == 1)[0]
-        num_mae_masked = math.floor(nb_visible * mae_masking_ratio)
-        if num_mae_masked > 0:
-            mae_masked_indices = RNG.choice(
-                visible_indices,
-                size=num_mae_masked,
-                replace=False,
-            )
-            cloud_mask[mae_masked_indices] = mask_value
-
-        cloud_mask = rearrange(
-            cloud_mask,
-            "(d c h w) -> d c h w",
-            d=D,
-            c=C,
-            h=H,
-            w=W,
-        )
-    return cloud_mask
-
-
-def cloud_mae_masking_test(
-    cloud_mask: np.ndarray,
-    cloud_threshold: float,
-    mask_value: float,
-) -> np.ndarray:
-    """Process test cloud mask."""
-    cloud_mask = np.where(cloud_mask >= mask_value, mask_value, cloud_mask)
-    return np.where(
-        (cloud_mask <= cloud_threshold) & (cloud_mask != mask_value),
-        1,
-        0,
-    )
-
-
-def mask_local_global_consistency(
-    dates_local: np.ndarray,
-    mask_local: np.ndarray,
-    dates_global: np.ndarray,
-    mask_global: np.ndarray,
-    mask_value: float,
-    cloud_threshold: float,
-) -> np.ndarray:
-    """Mask the global mask with the pixels masked in the local mask."""
-    mask_global = np.where(mask_global >= mask_value, 0, mask_global)
-    mask_global = np.where(mask_global <= cloud_threshold, 1, 0)
-
-    dates_local = dates_local.reshape(-1, 3)
-    dates_global = dates_global.reshape(-1, 3)
-    dtype = np.dtype(
-        [
-            ("f0", dates_local.dtype),
-            ("f1", dates_local.dtype),
-            ("f2", dates_local.dtype),
-        ],
-    )
-    dates_local = dates_local.view(dtype)
-    dates_global = dates_global.view(dtype)
-
-    # common dates
-    _, common_local_indices, common_global_indices = np.intersect1d(
-        dates_local,
-        dates_global,
-        return_indices=True,
-    )
-
-    mask_global[common_global_indices, ...] = mask_local[
-        common_local_indices,
-        ...,
+def filter_dates_ref(
+    dates: np.ndarray,
+    ref_date: np.ndarray,
+    num_dates: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Filter list of dates based on distance to ref date."""
+    diff_dates = [
+        (
+            datetime.strptime(f"{date[0]}0101", "%Y%m%d")  # noqa: DTZ007
+            + timedelta(days=int(date[1]))
+            - datetime.strptime(f"{ref_date[0]}0101", "%Y%m%d")  # noqa: DTZ007
+            - timedelta(days=int(ref_date[1]))
+        ).days
+        for date in dates
     ]
-
-    return np.where(mask_global >= mask_value, 0, mask_global)
-
-
-def pad_dates_modalities(batch: list[dict], pad_dim: int = 0) -> dict[np.ndarray]:
-    max_dates = max(t["s2_zoom"].shape[0] for t in batch)
-    min_dates = min(t["s2_zoom"].shape[0] for t in batch)
-
-    modalities = list(batch[0].keys())
-
-    modalities.remove("ref_date")
-    pad_value = 0
-
-    if min_dates == max_dates:
-        return {
-            key: torch.stack([torch.from_numpy(item[key]) for item in batch])
-            for key in batch[0]
-        }
-    else:
-        padded_batch = {}
-        for name_mod in modalities:
-            padded_batch[name_mod] = torch.from_numpy(
-                np.stack(
-                    [
-                        np.pad(
-                            b[name_mod],
-                            [
-                                (max_dates - b[name_mod].shape[pad_dim], 0)
-                                if i == pad_dim
-                                else (0, 0)
-                                for i in range(b[name_mod].ndim)
-                            ],
-                            constant_values=pad_value,
-                        )
-                        for b in batch
-                    ],
-                ),
-            )
-        padded_batch["ref_date"] = torch.from_numpy(
-            np.stack([b["ref_date"] for b in batch]),
-        )
-        return padded_batch
+    filtered = np.zeros(len(dates), dtype=bool)
+    filtered[np.abs(diff_dates).argsort()[:num_dates]] = True
+    return dates[filtered], filtered

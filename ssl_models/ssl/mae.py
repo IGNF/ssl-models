@@ -36,7 +36,6 @@ class MAE(BaseMIM):
         decoder_mlp_ratio: float,
         type_head: Literal["linear", "attentive"] = "linear",
         loss_fn: Literal[torch.abs, torch.square] = torch.square,
-        loss_type: Literal["rec", "ndvi"] = "rec",
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
@@ -52,7 +51,6 @@ class MAE(BaseMIM):
             decoder_dim=decoder_dim,
             type_head=type_head,
             loss_fn=loss_fn,
-            loss_type=loss_type,
             norm_pix_loss=norm_pix_loss,
             fac_abs_enc=fac_abs_enc,
             fac_date_enc=fac_date_enc,
@@ -74,7 +72,6 @@ class MAE(BaseMIM):
             num_dates_mod[name_mod] += num_dates
             num_dates_group[name_group] += num_dates
 
-        self.mae_mask_value = mask.mae_mask_value
         (
             self.mask_ratio,
             self.mask_mod,
@@ -182,63 +179,24 @@ class MAE(BaseMIM):
         else:
             self.encoder_all = None
 
-    def mask_struct(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
+    def mask_struct(
+        self,
+        x: dict[str, Tensor],
+        mask_rec: dict[str, Tensor],  # noqa: ARG002
+        stage: Literal["train", "val", "test"],  # noqa: ARG002
+    ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
         """Structural masking of modalities, band groups, dates."""
-        mask_group, mask_mod = {}, {}
-        for name_group in x:
-            B, L, _ = x[name_group].shape  # noqa: N806
-            mask_group[name_group] = torch.ones((B, L, 1), dtype=torch.bool)
-            mask_mod[name_group] = torch.ones((B, L, 1), dtype=torch.bool)
-
-        mask_mod = self.ungroup(mask_mod)
-
-        while any(
-            mask_group[name_group].all(dim=(1, 2)).any(dim=0)
-            for name_group in mask_group
-        ):
-            mask = {}
-            for name_mod, len_bands in self.len_bands.items():
-                B, D, L, _ = mask_mod[name_mod].shape  # noqa: N806
-                G = len_bands  # noqa: N806
-                mask[name_mod] = torch.zeros(
-                    (B, G, D // G, L),
-                    dtype=torch.bool,
-                )
-                if self.mask_mod[name_mod]:
-                    mask[name_mod] += torch.rand((B, 1, 1, 1)) < self.mask_mod[name_mod]
-                if self.mask_bands[name_mod]:
-                    mask[name_mod] += (
-                        torch.rand((B, G, 1, 1)) < self.mask_bands[name_mod]
-                    )
-                if self.mask_dates[name_mod]:
-                    mask[name_mod] += (
-                        torch.rand((B, 1, D // G, 1)) < self.mask_dates[name_mod]
-                    )
-                if self.mask_loc[name_mod]:
-                    mask[name_mod] += torch.rand((B, 1, 1, L)) < self.mask_loc[name_mod]
-                mask[name_mod] = mask[name_mod].reshape((B, D, L, 1))
-
-            mask = self.group(mask)
-
-            for name_group in mask_group:
-                mask_group[name_group] = torch.where(
-                    mask_group[name_group].all(dim=1, keepdim=True),
-                    mask[name_group],
-                    mask_group[name_group],
-                )
-
-        return {
-            name_group: mask_group[name_group].to(x[name_group].device)
-            for name_group in mask_group
-        }
+        return self.mask_struct_random(x)
 
     def mask_seq(
         self,
         x: Tensor,
         mask_token: Tensor,
         mask_rec: Tensor,
+        mask_loss: Tensor,  # noqa: ARG002
+        encoding: Tensor,  # noqa: ARG002
         name_group: str,
-    ) -> tuple[Tensor, Tensor, None, Tensor]:
+    ) -> tuple[Tensor, Tensor, None, Tensor, Tensor]:
         """Mask sequence."""
         B, L, _ = x.shape  # noqa: N806
 
@@ -268,35 +226,7 @@ class MAE(BaseMIM):
         x_enc = x[batch_indices, unmasked_indices, :]  # [B L:(1 - mask_ratio) C]
         mask_token = mask_token[batch_indices, masked_indices, :]  # [B L: mask_ratio C]
 
-        return x_enc, mask_token, None, mask_rec
-
-    def custom_mask_seq(
-        self,
-        x: Tensor,
-        mask_token: Tensor,
-        mask: Tensor,
-    ) -> tuple[Tensor, Tensor, None, Tensor]:
-        """Mask sequence."""
-        B, L, C = x.shape  # noqa: N806
-        if torch.is_tensor(mask):
-            mask_rec = (1 - (mask * (mask != self.mae_mask_value))).bool()
-            mask_loss = (mask == self.mae_mask_value).bool()
-            mask = mask_rec.squeeze(-1)
-            masked_indices = mask.nonzero(as_tuple=True)
-            x[masked_indices[0], masked_indices[1], :] = mask_token[
-                masked_indices[0],
-                masked_indices[1],
-                :,
-            ]
-            x_enc = x
-            mask_token = None
-        else:
-            x_enc = x
-            mask_token = None
-            mask_rec = torch.zeros(B, L, 1, dtype=torch.bool, device=x.device)
-            mask_loss = mask_rec
-
-        return x_enc, mask_token, None, mask_rec, mask_loss
+        return x_enc, mask_token, None, mask_rec, mask_rec
 
     def unmask_seq(self, x: Tensor, mask_token: Tensor, mask_rec: Tensor) -> Tensor:
         """Unmask sequence, filling with mask token."""
@@ -309,7 +239,7 @@ class MAE(BaseMIM):
         mask_rec = mask_rec.argsort(dim=1, descending=True)
         masked_indices, unmasked_indices = torch.split(
             mask_rec,
-            [max(L - L_enc, 0), L_enc],
+            [L - L_enc, L_enc],
             dim=1,
         )
         unmasked_indices, _ = unmasked_indices.sort(dim=1)
@@ -317,9 +247,7 @@ class MAE(BaseMIM):
         # collate encoded patches and mask tokens
         batch_indices = rearrange(torch.arange(B, device=x.device), "b -> b 1")
         x_dec = torch.zeros((B, L, C), dtype=x.dtype, device=x.device)
-
-        if torch.is_tensor(mask_token):
-            x_dec[batch_indices, masked_indices, :] = mask_token.to(x.dtype)
+        x_dec[batch_indices, masked_indices, :] = mask_token.to(x.dtype)
         x_dec[batch_indices, unmasked_indices, :] = x
         return x_dec
 

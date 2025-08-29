@@ -8,7 +8,6 @@ from torch.utils.data import DataLoader
 
 from conf.datasets import DatasetsConfig
 from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
-from ssl_models.dataset.utils import pad_dates_modalities
 
 
 class SSLDataModule(LightningDataModule):
@@ -23,7 +22,6 @@ class SSLDataModule(LightningDataModule):
         use_transform: bool,
         random_dates: bool,
         random_crop: bool,
-        model: Literal["mae", "mixmae"],
     ) -> None:
         super().__init__()
 
@@ -36,7 +34,6 @@ class SSLDataModule(LightningDataModule):
             use_transform=use_transform,
             random_dates=random_dates,
             random_crop=random_crop,
-            model=model,
         )
         self.train_loader = DataLoader(
             train_dataset,
@@ -54,7 +51,6 @@ class SSLDataModule(LightningDataModule):
             use_transform=use_transform,
             random_dates=random_dates,
             random_crop=random_crop,
-            model=model,
         )
         self.val_loader = DataLoader(
             val_dataset,
@@ -72,7 +68,6 @@ class SSLDataModule(LightningDataModule):
             use_transform=use_transform,
             random_dates=random_dates,
             random_crop=random_crop,
-            model=model,
         )
         self.test_loader = DataLoader(
             test_dataset,
@@ -80,7 +75,6 @@ class SSLDataModule(LightningDataModule):
             num_workers=num_workers,
             shuffle=True,
             drop_last=True,
-            collate_fn=pad_dates_modalities,
         )
 
     def train_dataloader(self) -> DataLoader:

@@ -17,8 +17,8 @@ ALLOWED_TARGETS = [
 class PatchSizeConfig:
     """Patch size config."""
 
-    mae: int = MISSING
-    mixmae: int = MISSING
+    vit: int = MISSING
+    swin: int = MISSING
     dinov2_imagenat: int = 14
     dinov2_sat: int = 16
     dofa: int = 16
@@ -31,7 +31,10 @@ class RasterConfig:
 
     bands: int | list[list[int]] = MISSING
     norm_bands: list[int] | None = None
-    mask_threshold: float = 0.0
+    ndvi_bands: list[int] | None = None
+    mask_bands: list[int] | None = None
+    fake_cloud_val: float | None = None
+    mask_threshold: float = 100.0
     num_dates: int = 1
     norm_fac: float | None = None
     log_scale: bool = False
@@ -79,7 +82,7 @@ class TargetRasterConfig(RasterConfig, TargetConfig):
 class DatasetConfig:
     """Generic dataset config."""
 
-    def _set_resolutions(self, resolutions_meters: dict[str, int]) -> None:
+    def _set_resolutions(self, resolutions_meters: dict[str, float]) -> None:
         self.sizes = {}
         for name_mod, resolution_meters in resolutions_meters.items():
             if name_mod not in self.__dict__:
@@ -117,7 +120,7 @@ class DatasetConfig:
 
         return groups
 
-    def __post_init__(self, resolutions_meters: dict[str, int]) -> None:
+    def __post_init__(self, resolutions_meters: dict[str, float]) -> None:
         """Check validity of modalities and further define non configurable attrs."""
         self._set_resolutions(resolutions_meters)
 
@@ -142,13 +145,6 @@ class DatasetConfig:
                 raise ValueError(msg)
             self.targets[name_mod] = getattr(self, name_mod)
 
-        self.masks = {}
-        for name_mod in self.filter_masks:
-            if name_mod not in self.__dict__:
-                msg = f"Invalid modality name {name_mod}. Not an attribute."
-                raise ValueError(msg)
-            self.masks[name_mod] = getattr(self, name_mod)
-
         self.rasters = {
             name_mod: mod
             for name_mod, mod in (
@@ -159,4 +155,3 @@ class DatasetConfig:
         }
 
         self.groups = self._set_groups(self.inputs)
-        self.groups_masks = self._set_groups(self.masks)
