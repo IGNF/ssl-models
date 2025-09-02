@@ -49,12 +49,9 @@ class CircaDataset(GenericDataset):
             "test_v2/aleatoire" if dataset.dataset_local else "optique_dataset"
         )
 
-        self.repeats = dataset.repeats
         self.patch_ids = csv_data["patch_id"].tolist()
-        if self.stage == "val":
-            self.norm_min = csv_data["norm_min"].tolist()
-            self.norm_max = csv_data["norm_max"].tolist()
-        self.base_length = len(self.patch_ids)
+        self.norm_min = csv_data["norm_min"].tolist()
+        self.norm_max = csv_data["norm_max"].tolist()
 
         self.num_dates = {
             "s1_asc_zoom": dataset.s1_asc_zoom.num_dates,
@@ -62,8 +59,17 @@ class CircaDataset(GenericDataset):
             "s2_zoom": dataset.s2_zoom.num_dates,
         }
 
+        self.base_length = len(self.patch_ids)
+        if stage == "val":
+            self.repeats = dataset.repeats
+        else:
+            self.repeats = 10
+
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
+
+        idx = idx % (self.base_length * self.repeats**2)
+
         idx, start_gcd = self.sample_gcd(
             idx,
             base_length=self.base_length,
@@ -120,11 +126,7 @@ class CircaDataset(GenericDataset):
         meta["s2_zoom_mask"] = meta["s2_global_path"]
         meta["s2_zoom_dates"] = meta["s2_global_dates"]
 
-        ref_date = (
-            meta["s2_zoom_dates"][len(meta["s2_zoom_dates"]) // 2]
-            if self.stage != "test"
-            else self.ref_dates[idx]
-        )
+        ref_date = meta["s2_zoom_dates"][0]
 
         for name_mod, num_dates in self.num_dates.items():
             meta[f"{name_mod}_dates"], meta[f"{name_mod}_filter_dates"] = (
@@ -156,14 +158,15 @@ class CircaDataset(GenericDataset):
         ):
             if name_mod not in inputs:
                 continue
-            inputs[name_mod] /= np.array([50.0, 50.0, 1.0, 1.0]).reshape([1, 4, 1, 1])
+            inputs[name_mod] /= np.array([50.0, 50.0, 1.0, 1.0]).reshape([1, 4, 1, 1])[
+                :,
+                : inputs[name_mod].shape[1],
+            ]
 
         inputs["ref_date"] = ref_date[None, :]
-        
-        if self.stage == "val":
-            inputs["norm_min"] = self.norm_min[idx]
-            inputs["norm_max"] = self.norm_max[idx]
-            inputs["idx_date_ref"] = np.where((inputs["ref_date"] == inputs["s2_zoom_dates"]).all(axis=1))[0].item()
+
+        inputs["norm_min"] = self.norm_min[idx]
+        inputs["norm_max"] = self.norm_max[idx]
 
         return self.transform_rasters(inputs)
 

@@ -1,6 +1,7 @@
 """Logger module."""
 
 from typing import Literal
+import itertools
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -86,46 +87,32 @@ class ImageLogger(Callback):
         epoch = trainer.current_epoch
         prefix_idx = batch_idx // log_every_n_batches
 
-        if stage == "val":
-            for log_title, log_img in outputs["log_inputs"].items():
-                for b in range(log_img.shape[0]):
-                    trainer.tb_logger.add_image(
-                        log_title.replace("/", f"/{batch_idx}_{b}"),
-                        ImageLogger.to_numpy(log_img[b]),
-                        0,
-                    )
-            for log_title, log_img in outputs["log_preds"].items():
-                for b in range(log_img.shape[0]):
-                    trainer.tb_logger.add_image(
-                        log_title.replace("/", f"/{batch_idx}_{b}"),
-                        ImageLogger.to_numpy(log_img[b]),
-                        0,
-                    )
-            for log_title, log_img in outputs["log_targets"].items():
-                for b in range(log_img.shape[0]):
-                    trainer.tb_logger.add_image(
-                        log_title.replace("/", f"/{batch_idx}_{b}"),
-                        ImageLogger.to_numpy(log_img[b]),
-                        0,
-                    )
-        else:
-            for log_title, log_img in outputs["log_inputs"].items():
+        for log_title, log_img in outputs["log_inputs"].items():
+            for b, d in itertools.product(
+                range(log_img.shape[0]), range(log_img.shape[1])
+            ):
                 trainer.tb_logger.add_image(
-                    log_title.replace("/", f"/{prefix_idx}"),
-                    ImageLogger.to_numpy(log_img),
-                    epoch,
+                    log_title.replace("/", f"/{batch_idx}_{b}_{d}"),
+                    ImageLogger.to_numpy(log_img[b, d]),
+                    0,
                 )
-            for log_title, log_img in outputs["log_preds"].items():
+        for log_title, log_img in outputs["log_preds"].items():
+            for b, d in itertools.product(
+                range(log_img.shape[0]), range(log_img.shape[1])
+            ):
                 trainer.tb_logger.add_image(
-                    log_title.replace("/", f"/{prefix_idx}"),
-                    ImageLogger.to_numpy(log_img),
-                    epoch,
+                    log_title.replace("/", f"/{batch_idx}_{b}_{d}"),
+                    ImageLogger.to_numpy(log_img[b, d]),
+                    0,
                 )
-            for log_title, log_img in outputs["log_targets"].items():
+        for log_title, log_img in outputs["log_targets"].items():
+            for b, d in itertools.product(
+                range(log_img.shape[0]), range(log_img.shape[1])
+            ):
                 trainer.tb_logger.add_image(
-                    log_title.replace("/", f"/{prefix_idx}"),
-                    ImageLogger.to_numpy(log_img),
-                    epoch,
+                    log_title.replace("/", f"/{batch_idx}_{b}_{d}"),
+                    ImageLogger.to_numpy(log_img[b, d]),
+                    0,
                 )
 
     def on_train_batch_end(

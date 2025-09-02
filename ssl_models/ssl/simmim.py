@@ -177,14 +177,11 @@ class SimMIM(BaseMIM):
             if name_mod not in self.fake_cloud_val:
                 mask_rec[name_mod] = mask[name_mod].bool()
                 mask_loss[name_mod] = mask[name_mod].bool()
-            # elif stage == "test":
-            #     mask_rec[name_mod] = mask[name_mod].bool()
-            #     mask_loss[name_mod] = mask[name_mod] == self.fake_cloud_val[name_mod]
             else:
                 B, D, L, _ = mask[name_mod].shape  # noqa: N806
                 G = self.len_bands[name_mod]  # noqa: N806
 
-                mask[name_mod] = mask[name_mod].bool()
+                mask[name_mod] = torch.where(mask[name_mod] != self.fake_cloud_val[name_mod], mask[name_mod], 0).bool()
                 mask_loss[name_mod] = torch.zeros(
                     (B, D, L, 1),
                     dtype=torch.bool,
