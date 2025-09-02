@@ -459,11 +459,13 @@ class BaseMIM(nn.Module, ABC):
     def compute_pixels(
         self,
         pixels_rec: dict[str, Tensor],
-        norm_bounds: tuple[float, float],
+        mask_rec,
         mask_loss: dict[str, Tensor],
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
+        norm_bounds: tuple[float, float],
+        idx_date_ref: int,
     ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
         """Visu of reconstructed images, shared for all MIM modules."""
         log_inputs, log_preds, log_targets = {}, {}, {}
@@ -481,33 +483,50 @@ class BaseMIM(nn.Module, ABC):
                 pixels_rec[name_mod],
                 batch[name_mod],
             )
-            # ids_ref = itertools.product(range(B), range(D))
-            # if mask_loss[name_mod].any():
-            #     ids_ref = [
-            #         ids for ids in ids_ref if mask_loss[name_mod][ids[0], ids[1]].any()
-            #     ]
-            # ids = RNG.choice(ids_ref)
-            # mask_ref = mask_rec[name_mod] & ~mask_loss[name_mod]
-            # mask_ref = mask_ref.all(dim=2, keepdim=True)
-            # mask_ref = mask_ref & ~mask_ref.all(dim=1, keepdim=True)
-            # inputs_ref = torch.where(
-            #     # mask_ref,
-            #     mask_loss,
-            #     torch.nan,
-            #     batch[name_mod],
-            # ).nanmedian(dim=1)[0][ids[0], :RGB_BANDS]
-            # mu, sigma = inputs_ref.min(), inputs_ref.max() - inputs_ref.min()
-            mu, sigma = norm_bounds[0], norm_bounds[1] - norm_bounds[0]
-            log_inputs[f"{ssl_phase}_{stage}/_{name_mod}_input"] = (
-                inputs[:, 0] - mu   # [ids[0], ids[1]]  # - mu
-            ) / sigma
-            log_preds[f"{ssl_phase}_{stage}/_{name_mod}_rec"] = (
-                preds[:, 0] - mu  # [ids[0], ids[1]]  # - mu
-            ) / sigma
-            log_targets[f"{ssl_phase}_{stage}/_{name_mod}_target"] = (
-                batch[name_mod][:, 0] - mu  # [ids[0], ids[1]]  #- mu
-            ) / sigma
+            if stage == "val":
+                ids = idx_date_ref
+                min_b, max_b = norm_bounds[0], norm_bounds[1]
+                mu, sigma = min_b, max_b - min_b
+                mu = mu.view(-1, 1, 1, 1)
+                sigma = sigma.view(-1, 1, 1, 1)
+                batch_indices = torch.arange(B)
+                img_inp = ((inputs[batch_indices, ids, :RGB_BANDS] * 5000 + 1000) - mu) / sigma
+                img_pred = ((preds[batch_indices, ids, :RGB_BANDS] * 5000 + 1000) - mu) / sigma
+                img_target = ((batch[name_mod][batch_indices, ids, :RGB_BANDS] * 5000 + 1000) - mu) / sigma
 
+                img_inp = img_inp.clamp(min=min_b.view(-1,1,1,1), max=max_b.view(-1,1,1,1))
+                img_pred = img_pred.clamp(min=min_b.view(-1,1,1,1), max=max_b.view(-1,1,1,1))
+                img_target = img_target.clamp(min=min_b.view(-1,1,1,1), max=max_b.view(-1,1,1,1))
+
+                log_inputs[f"{ssl_phase}_{stage}/_{name_mod}_input"] = torch.squeeze(img_inp)
+                log_preds[f"{ssl_phase}_{stage}/_{name_mod}_rec"] = torch.squeeze(img_pred)
+                log_targets[f"{ssl_phase}_{stage}/_{name_mod}_target"] = torch.squeeze(img_target)
+
+            else:
+                ids_ref = itertools.product(range(B), range(D))
+                if mask_loss[name_mod].any():
+                    ids_ref = [
+                            ids for ids in ids_ref if mask_loss[name_mod][ids[0], ids[1]].any()
+                        ]
+                    ids = RNG.choice(ids_ref)
+                    mask_ref = mask_rec[name_mod] & ~mask_loss[name_mod]
+                    mask_ref = mask_ref.all(dim=2, keepdim=True)
+                    mask_ref = mask_ref & ~mask_ref.all(dim=1, keepdim=True)
+                    inputs_ref = torch.where(
+                        mask_ref,
+                        torch.nan,
+                        batch[name_mod],
+                    ).nanmedian(dim=1)[0][ids[0], :RGB_BANDS]
+                    mu, sigma = inputs_ref.min(), inputs_ref.max() - inputs_ref.min()
+                    log_inputs[f"{ssl_phase}_{stage}/_{name_mod}_input"] = (
+                        inputs[ids[0], ids[1]] - mu
+                    ) / sigma
+                    log_preds[f"{ssl_phase}_{stage}/_{name_mod}_rec"] = (
+                        preds[ids[0], ids[1]] - mu
+                    ) / sigma
+                    log_targets[f"{ssl_phase}_{stage}/_{name_mod}_target"] = (
+                        batch[name_mod][ids[0], ids[1]] - mu
+                    ) / sigma
         return log_inputs, log_preds, log_targets
 
     def compute_loss_rec(
@@ -839,7 +858,11 @@ class BaseMIM(nn.Module, ABC):
         stage: Literal["train", "val", "test"],
     ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         """Shared forward pass for all MIM modules."""
-        norm_min, norm_max = batch.pop("norm_min"), batch.pop("norm_max")
+        norm_min, norm_max, idx_date_ref = (
+            batch.pop("norm_min", None),
+            batch.pop("norm_max", None),
+            batch.pop("idx_date_ref", None)
+        )
 
         x_enc, mask_token, mask_rec, embed_inds, dates, ref_date = self.embed(batch)
         x_enc, encoding = self.enc_add_encodings(x_enc, dates, ref_date)
@@ -876,11 +899,13 @@ class BaseMIM(nn.Module, ABC):
             )
             log_inputs, log_preds, log_targets = self.compute_pixels(
                 pixels_rec,
-                [norm_min, norm_max],
+                mask_rec,
                 mask_loss,
                 batch,
                 ssl_phase,
                 stage,
+                [norm_min, norm_max],
+                idx_date_ref,
             )
             self.metrics[f"loss_rec_{stage}"].update(loss_rec, weight=weight)
             self.metrics[f"loss_ndvi_{stage}"].update(loss_ndvi, weight=weight)

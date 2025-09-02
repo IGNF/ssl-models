@@ -51,9 +51,9 @@ class CircaDataset(GenericDataset):
 
         self.repeats = dataset.repeats
         self.patch_ids = csv_data["patch_id"].tolist()
-        self.ref_dates = csv_data["ref_date"].tolist()
-        self.norm_min = csv_data["norm_min"].tolist()
-        self.norm_max = csv_data["norm_max"].tolist()
+        if self.stage == "val":
+            self.norm_min = csv_data["norm_min"].tolist()
+            self.norm_max = csv_data["norm_max"].tolist()
         self.base_length = len(self.patch_ids)
 
         self.num_dates = {
@@ -121,8 +121,7 @@ class CircaDataset(GenericDataset):
         meta["s2_zoom_dates"] = meta["s2_global_dates"]
 
         ref_date = (
-            # RNG.choice(meta["s2_zoom_dates"])
-            self.ref_dates[idx]
+            meta["s2_zoom_dates"][len(meta["s2_zoom_dates"]) // 2]
             if self.stage != "test"
             else self.ref_dates[idx]
         )
@@ -160,8 +159,11 @@ class CircaDataset(GenericDataset):
             inputs[name_mod] /= np.array([50.0, 50.0, 1.0, 1.0]).reshape([1, 4, 1, 1])
 
         inputs["ref_date"] = ref_date[None, :]
-        inputs["norm_min"] = self.norm_min[idx]
-        inputs["norm_max"] = self.norm_max[idx]
+        
+        if self.stage == "val":
+            inputs["norm_min"] = self.norm_min[idx]
+            inputs["norm_max"] = self.norm_max[idx]
+            inputs["idx_date_ref"] = np.where((inputs["ref_date"] == inputs["s2_zoom_dates"]).all(axis=1))[0].item()
 
         return self.transform_rasters(inputs)
 
