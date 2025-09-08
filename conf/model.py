@@ -36,6 +36,7 @@ class BaselineConfig:  # noqa: D101
     keep_norm: bool = True
     add_date_enc: bool = True
     use_ema: bool = True
+    version: str = None
 
 
 model_store = store(group="model")

@@ -181,7 +181,6 @@ class BaseModule(Module, ABC):
     ) -> dict[str, Tensor]:
         """Add positional and date encodings before encoder."""
         x_enc = self.ungroup(x_enc)
-
         dates_k = set(dates.keys())
         x_k = set(x_enc.keys())
 
