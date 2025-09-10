@@ -11,6 +11,7 @@ from ssl_models.baselines.dinov2 import Dinov2Baseline
 from ssl_models.baselines.dofa import DOFABaseline
 from ssl_models.baselines.prithvi import PrithviBaseline
 from ssl_models.baselines.terramind import TerramindBaseline
+from ssl_models.baselines.satmae import SatMAEBaseline
 from ssl_models.train.base import BaseModule
 
 torch.set_float32_matmul_precision(precision="medium")
@@ -117,7 +118,20 @@ class BaselineModule(BaseModule):
                 }
 
                 self.model = TerramindBaseline(**model_args)
-
+            case "satmae":
+                unpool_dim = None
+                model_args = {
+                    "datasets": datasets,
+                    "type_head": type_head,
+                    "backbone_size": model_size,
+                    "unpool_dim": unpool_dim,
+                    "freeze": freeze,
+                    "pretrained_path": pretrained_path,
+                    "multimodal": multimodal,
+                    "keep_norm": keep_norm,
+                    "add_date_enc": add_date_enc,
+                }
+                self.model = SatMAEBaseline(**model_args)
             case _:
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)
