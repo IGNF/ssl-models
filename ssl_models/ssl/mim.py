@@ -51,6 +51,7 @@ class BaseMIM(nn.Module, ABC):
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
+        mod_dim: int = 0,
         date_dim: int = 8,
     ) -> None:
         super().__init__()
@@ -107,8 +108,7 @@ class BaseMIM(nn.Module, ABC):
             tensor=posemb_sincos_2d(
                 h=max_grid_size,
                 w=max_grid_size,
-                dim=embed_dim,
-                date_dim=date_dim,
+                dim=embed_dim - date_dim - mod_dim,
             ).float()
             * fac_abs_enc,
             persistent=False,
@@ -118,8 +118,7 @@ class BaseMIM(nn.Module, ABC):
             tensor=posemb_sincos_2d(
                 h=max_grid_size,
                 w=max_grid_size,
-                dim=decoder_dim,
-                date_dim=date_dim,
+                dim=decoder_dim - date_dim - mod_dim,
             ).float(),
             persistent=False,
         )
@@ -135,7 +134,6 @@ class BaseMIM(nn.Module, ABC):
         self.enc_date_encoding = {
             name_mod: partial(
                 encode_dates,
-                dim=embed_dim,
                 date_dim=date_dim,
                 fac_date_enc=fac_date_enc,
                 grid_size=self.grid_size[name_mod],
@@ -146,7 +144,6 @@ class BaseMIM(nn.Module, ABC):
         self.dec_date_encoding = {
             name_mod: partial(
                 encode_dates,
-                dim=decoder_dim,
                 date_dim=date_dim,
                 fac_date_enc=fac_date_enc,
                 grid_size=self.out_grid_size[name_mod],
@@ -180,6 +177,14 @@ class BaseMIM(nn.Module, ABC):
             {
                 name_mod: nn.Parameter(
                     torch.randn(1, len_bands, 1, 1, decoder_dim),
+                )
+                for name_mod, len_bands in self.len_bands.items()
+            },
+        )
+        self.mod_encoding = nn.ParameterDict(
+            {
+                name_mod: nn.Parameter(
+                    torch.randn(1, len_bands, 1, 1, mod_dim),
                 )
                 for name_mod, len_bands in self.len_bands.items()
             },
@@ -293,6 +298,8 @@ class BaseMIM(nn.Module, ABC):
         x_enc = self.ungroup(x_enc)
 
         for name_mod in x_enc:
+            B, D, L, _ = x_enc[name_mod].shape  # noqa: N806
+            G = self.len_bands[name_mod]  # noqa: N806
             pos_encoding = reshape_encoding(
                 self.enc_pos_encoding,
                 self.grid_size[name_mod],
@@ -301,7 +308,14 @@ class BaseMIM(nn.Module, ABC):
                 dates=dates[name_mod],
                 ref_date=ref_date,
             )
-            x_enc[name_mod] = x_enc[name_mod] + pos_encoding + date_encoding
+            mod_encoding = self.mod_encoding[name_mod].to(x_enc[name_mod].dtype)
+
+            pos_encoding = pos_encoding.expand((B, D, L, -1))
+            date_encoding = date_encoding.expand((B, D, L, -1))
+            mod_encoding = mod_encoding.expand((B, G, D // G, L, -1)).flatten(1, 2)
+            encoding = torch.cat([pos_encoding, date_encoding, mod_encoding], dim=-1)
+
+            x_enc[name_mod] = x_enc[name_mod] + encoding
 
         return self.group(x_enc)
 
@@ -315,6 +329,8 @@ class BaseMIM(nn.Module, ABC):
         x_dec = self.ungroup(x_dec)
 
         for name_mod in x_dec:
+            B, D, L, _ = x_dec[name_mod].shape  # noqa: N806
+            G = self.len_bands[name_mod]  # noqa: N806
             pos_encoding = reshape_encoding(
                 self.dec_pos_encoding,
                 self.out_grid_size[name_mod],
@@ -323,7 +339,14 @@ class BaseMIM(nn.Module, ABC):
                 dates=dates[name_mod],
                 ref_date=ref_date,
             )
-            x_dec[name_mod] = x_dec[name_mod] + pos_encoding + date_encoding
+            mod_encoding = self.mod_encoding[name_mod].to(x_dec[name_mod].dtype)
+
+            pos_encoding = pos_encoding.expand((B, D, L, -1))
+            date_encoding = date_encoding.expand((B, D, L, -1))
+            mod_encoding = mod_encoding.expand((B, G, D // G, L, -1)).flatten(1, 2)
+            encoding = torch.cat([pos_encoding, date_encoding, mod_encoding], dim=-1)
+
+            x_dec[name_mod] = x_dec[name_mod] + encoding
 
         return self.group(x_dec)
 

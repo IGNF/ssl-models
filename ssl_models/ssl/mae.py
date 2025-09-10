@@ -39,6 +39,7 @@ class MAE(BaseMIM):
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
+        mod_dim: int = 0,
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
@@ -54,6 +55,7 @@ class MAE(BaseMIM):
             norm_pix_loss=norm_pix_loss,
             fac_abs_enc=fac_abs_enc,
             fac_date_enc=fac_date_enc,
+            mod_dim=mod_dim,
         )
 
         self.len_bands = {

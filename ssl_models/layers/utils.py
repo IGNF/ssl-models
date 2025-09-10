@@ -154,7 +154,6 @@ def reshape_encoding(encoding: Tensor, grid_size: int) -> Tensor:
 def encode_dates(
     dates: Tensor,
     ref_date: Tensor,
-    dim: int,
     date_dim: int,
     fac_date_enc: float,
     grid_size: int,
@@ -188,9 +187,8 @@ def encode_dates(
     date_encoding *= fac_date_enc
 
     diff, date_encoding = torch.split(date_encoding, [1, 4], dim=-1)
-    pad_zeros = torch.zeros_like(diff).expand(-1, -1, -1, dim - date_dim)
     pad_diff = diff.expand(-1, -1, -1, date_dim - 4)
-    date_encoding = torch.cat([pad_zeros, pad_diff, date_encoding], dim=-1)
+    date_encoding = torch.cat([pad_diff, date_encoding], dim=-1)
 
     if len_bands == 1:
         return date_encoding
@@ -203,22 +201,21 @@ def posemb_sincos_2d(
     h: int,
     w: int,
     dim: int,
-    date_dim: int,
     temperature: int = 10000,
     dtype: torch.dtype = torch.float32,
 ) -> Tensor:
     """Create 2d positional encodings."""
     y, x = torch.meshgrid(torch.arange(h), torch.arange(w), indexing="ij")
-    if dim % 4 or date_dim % 4:
-        msg = f"Invalid embedding dimensions {dim}, {date_dim}. Expected multiples of 4"
+    if dim % 4:
+        msg = f"Invalid embedding dimension {dim}. Expected multiple of 4"
         raise ValueError(msg)
-    omega = torch.arange((dim - date_dim) // 4) / ((dim - date_dim) // 4 - 1)
+    omega = torch.arange(dim // 4) / (dim // 4 - 1)
     omega = 1.0 / (temperature**omega)
 
     y = y[:, :, None] * omega[None, None, :]
     x = x[:, :, None] * omega[None, None, :]
     pos_encoding = torch.cat(
-        [x.sin(), x.cos(), y.sin(), y.cos(), torch.zeros((h, w, date_dim))],
+        [x.sin(), x.cos(), y.sin(), y.cos()],
         dim=-1,
     )
     return pos_encoding.to(dtype)

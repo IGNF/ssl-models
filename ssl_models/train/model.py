@@ -38,6 +38,7 @@ class SSLModule(BaseModule):
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         unpool_dim: int | None = None,
         use_date_enc: bool = True,
+        mod_dim: int = 0,
         batch_repeats: int | None = None,
         use_ema: bool = False,
         # mixmae args
@@ -121,6 +122,7 @@ class SSLModule(BaseModule):
                 "norm_pix_loss": norm_pix_loss,
                 "fac_abs_enc": fac_abs_enc,
                 "fac_date_enc": fac_date_enc,
+                "mod_dim": mod_dim,
             }
             self.model = model_map[model_size](**model_args)
         else:

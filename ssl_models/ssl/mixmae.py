@@ -42,6 +42,7 @@ class MixMAE(BaseMIM):
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
+        mod_dim: int = 0,
         decoder_depth: int = 2,
         decoder_dim: int = 512,
         decoder_num_heads: int = 16,
@@ -67,6 +68,7 @@ class MixMAE(BaseMIM):
             norm_pix_loss=norm_pix_loss,
             fac_abs_enc=fac_abs_enc,
             fac_date_enc=fac_date_enc,
+            mod_dim=mod_dim,
         )
         match multimodal:
             case "msgfm" | "shared" | "monotemp":

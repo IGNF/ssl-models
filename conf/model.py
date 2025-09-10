@@ -19,6 +19,7 @@ class ModelConfig:  # noqa: D101
     num_levels: int = 3
     swin_abs_enc: bool = False
     use_date_enc: bool = True
+    mod_dim: int = 8
     batch_repeats: int | None = None
     use_ema: bool = True
 
