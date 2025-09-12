@@ -80,6 +80,10 @@ class SatMAEBaseline(BaseModule):
             **kwargs,
         )
         self.image_size = datasets.dataset.inputs["s2"].image_size
+        mean_pretrain = [0.4182007312774658, 0.4214799106121063, 0.3991275727748871]
+        std_pretrain  = [0.28774282336235046, 0.27541765570640564, 0.2764017581939697]
+        self.mean = torch.tensor(mean_pretrain).view(1, 1, 3, 1, 1)
+        self.std = torch.tensor(std_pretrain).view(1, 1, 3, 1, 1)
 
         self._build_backbone(backbone_size)
 
@@ -180,7 +184,7 @@ class SatMAEBaseline(BaseModule):
             Output tensor of shape (B, embed_dim).
 
         """
-        s2_input = batch["s2"]
+        s2_input = batch["s2"] - self.mean.to(batch["s2"].device) / self.std.to(batch["s2"].device)
         timestamps = batch["s2_dates"]
 
         x = {}
@@ -359,15 +363,12 @@ class MaskedAutoencoderViT(nn.Module):
         x2 = self.patch_embed(x[:, 1])
         x3 = self.patch_embed(x[:, 2])
         x = torch.cat([x1, x2, x3], dim=1)
-        
 
         # print(timestamps.shape, x.shape)
         ts_embed = torch.cat([get_1d_sincos_pos_embed_from_grid_torch(128, timestamps.reshape(-1, 3)[:, 0].float()),
                    get_1d_sincos_pos_embed_from_grid_torch(128, timestamps.reshape(-1, 3)[:, 1].float()),
                    get_1d_sincos_pos_embed_from_grid_torch(128, timestamps.reshape(-1, 3)[:, 2].float())], dim=1).float()
-        
         # print(ts_embed, ts_embed.shape)
-        
         ts_embed = ts_embed.reshape(-1, 3, ts_embed.shape[-1]).unsqueeze(2)
         # print(ts_embed.shape)
         ts_embed = ts_embed.expand(-1, -1, x.shape[1] // 3, -1).reshape(x.shape[0], -1, ts_embed.shape[-1])
