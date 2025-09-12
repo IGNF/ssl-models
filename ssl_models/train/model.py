@@ -37,7 +37,7 @@ class SSLModule(BaseModule):
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         unpool_dim: int | None = None,
-        use_date_enc: bool = True,
+        date_dim: int = 8,
         mod_dim: int = 0,
         batch_repeats: int | None = None,
         use_ema: bool = False,
@@ -70,7 +70,6 @@ class SSLModule(BaseModule):
             case "mae":
                 num_levels = 1
                 fac_abs_enc = 1.0  # abs pos encodings are necessary for MAE
-                fac_date_enc = 1.0 if use_date_enc else 0.0
 
                 model_map = {
                     "tiny": mae_tiny,
@@ -86,7 +85,6 @@ class SSLModule(BaseModule):
                     msg = f"Invalid swin version {swin_version}. Expected '1' or '2'"
                     raise ValueError(msg)
                 fac_abs_enc = 1.0 if swin_abs_enc else 0.0  # optional abs pos encodings
-                fac_date_enc = 1.0 if use_date_enc else 0.0
 
                 model_map = {
                     "tiny": mixmae_tiny,
@@ -121,7 +119,7 @@ class SSLModule(BaseModule):
                 "loss_fn": loss_fn,
                 "norm_pix_loss": norm_pix_loss,
                 "fac_abs_enc": fac_abs_enc,
-                "fac_date_enc": fac_date_enc,
+                "date_dim": date_dim,
                 "mod_dim": mod_dim,
             }
             self.model = model_map[model_size](**model_args)

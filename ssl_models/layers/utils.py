@@ -187,8 +187,11 @@ def encode_dates(
     date_encoding *= fac_date_enc
 
     diff, date_encoding = torch.split(date_encoding, [1, 4], dim=-1)
-    pad_diff = diff.expand(-1, -1, -1, date_dim - 4)
-    date_encoding = torch.cat([pad_diff, date_encoding], dim=-1)
+    if date_dim >= date_encoding.shape[-1]:
+        pad_diff = diff.expand(-1, -1, -1, date_dim - 4)
+        date_encoding = torch.cat([pad_diff, date_encoding], dim=-1)
+    else:
+        date_encoding = date_encoding[:, :, :, :date_dim]
 
     if len_bands == 1:
         return date_encoding

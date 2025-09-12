@@ -38,7 +38,7 @@ class MAE(BaseMIM):
         loss_fn: Literal[torch.abs, torch.square] = torch.square,
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
-        fac_date_enc: float = 1.0,
+        date_dim: int = 8,
         mod_dim: int = 0,
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
@@ -54,7 +54,7 @@ class MAE(BaseMIM):
             loss_fn=loss_fn,
             norm_pix_loss=norm_pix_loss,
             fac_abs_enc=fac_abs_enc,
-            fac_date_enc=fac_date_enc,
+            date_dim=date_dim,
             mod_dim=mod_dim,
         )
 

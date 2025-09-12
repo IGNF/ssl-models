@@ -51,8 +51,8 @@ class BaseMIM(nn.Module, ABC):
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
-        mod_dim: int = 0,
         date_dim: int = 8,
+        mod_dim: int = 0,
     ) -> None:
         super().__init__()
         self.dataset = datasets.dataset

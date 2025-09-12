@@ -41,7 +41,7 @@ class MixMAE(BaseMIM):
         loss_fn: Literal[torch.square, torch.square] = torch.square,
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
-        fac_date_enc: float = 1.0,
+        date_dim: int = 8,
         mod_dim: int = 0,
         decoder_depth: int = 2,
         decoder_dim: int = 512,
@@ -67,7 +67,7 @@ class MixMAE(BaseMIM):
             loss_fn=loss_fn,
             norm_pix_loss=norm_pix_loss,
             fac_abs_enc=fac_abs_enc,
-            fac_date_enc=fac_date_enc,
+            date_dim=date_dim,
             mod_dim=mod_dim,
         )
         match multimodal:
