@@ -21,6 +21,7 @@ class ModelConfig:  # noqa: D101
     use_date_enc: bool = True
     batch_repeats: int | None = None
     use_ema: bool = True
+    dinov2_size: str = "base"
 
 
 @dataclass

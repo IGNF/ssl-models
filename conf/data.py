@@ -7,7 +7,7 @@ from hydra_zen import store
 
 @dataclass
 class DataConfig:  # noqa: D101
-    use_transform: bool = True
+    use_transform: bool = False
     random_dates: bool = True
     random_crop: bool = True
     num_workers: int = 12

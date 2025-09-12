@@ -156,6 +156,7 @@ class BaseModule(LightningModule, ABC):
             batch,
             stage=stage,
             ssl_phase=self.trainer.ssl_phase,
+            trainer=self.trainer,
         )
 
         return {

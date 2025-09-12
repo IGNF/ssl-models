@@ -4,7 +4,9 @@ from abc import ABC, abstractmethod
 from functools import partial, reduce
 from math import gcd
 from typing import Literal
+from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn.functional as F  # noqa: N812
 from einops import rearrange
@@ -29,6 +31,7 @@ from ssl_models.layers.utils import (
     shuffle_enc_to_dec,
     ungroup_mods,
 )
+from ssl_models.ssl.dinov2 import DINOv2
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
 RGB_BANDS = 3
@@ -51,6 +54,7 @@ class BaseMIM(nn.Module, ABC):
         norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
+        dinov2_size: str = "base",
         date_dim: int = 8,
     ) -> None:
         super().__init__()
@@ -184,6 +188,7 @@ class BaseMIM(nn.Module, ABC):
                 for name_mod, len_bands in self.len_bands.items()
             },
         )
+        self.dinov2 = DINOv2(dataset=datasets.dataset, backbone_size=dinov2_size)
 
         # heads
         self.heads = nn.ModuleDict()
@@ -696,6 +701,7 @@ class BaseMIM(nn.Module, ABC):
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
+        trainer,
     ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
         """Shared forward pass for all MIM modules."""
         x_enc, mask_token, embed_inds, dates, ref_date = self.embed(batch)
@@ -726,6 +732,18 @@ class BaseMIM(nn.Module, ABC):
                 ssl_phase,
                 stage,
             )
+            if stage != "train":
+                x_dinov2 = self.dinov2(batch)
+                patch_ids = list(batch["patch_id"])
+                for name_mod in x_dinov2:
+                    np.save(
+                        f"{trainer.tb_logger.log_dir}/{name_mod}_{patch_ids[0]}.npy",
+                        x_dinov2[name_mod].cpu().numpy(),
+                    )
+                np.save(
+                    f"{trainer.tb_logger.log_dir}/patch_ids_{patch_ids[0]}.npy",
+                    np.array(patch_ids),
+                )
 
             self.metrics[f"loss_rec_{stage}"].update(loss_rec)
             return loss_rec, log_inputs, log_preds, log_targets, None

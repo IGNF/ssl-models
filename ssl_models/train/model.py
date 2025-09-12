@@ -40,6 +40,7 @@ class SSLModule(BaseModule):
         use_date_enc: bool = True,
         batch_repeats: int | None = None,
         use_ema: bool = False,
+        dinov2_size: str = "base",
         # mixmae args
         num_levels: Literal[3, 4] = 3,
         swin_version: Literal[1, 2] = 1,
@@ -121,6 +122,7 @@ class SSLModule(BaseModule):
                 "norm_pix_loss": norm_pix_loss,
                 "fac_abs_enc": fac_abs_enc,
                 "fac_date_enc": fac_date_enc,
+                "dinov2_size": dinov2_size,
             }
             self.model = model_map[model_size](**model_args)
         else:
@@ -237,6 +239,7 @@ class SSLModule(BaseModule):
             batch,
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
+            trainer=self.trainer,
         )
 
         return {

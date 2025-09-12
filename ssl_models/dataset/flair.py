@@ -37,7 +37,7 @@ class FLAIRDataset(GenericDataset):
         csv_dir = Path(dataset.csv_dir) if dataset.csv_dir else root_dir
         csv_data = read_csv(
             csv_dir=csv_dir,
-            stage=stage,
+            stage="train" if stage == "val" else stage,
             ssl_phase=ssl_phase,
             version=dataset.version,
             balance_pretrain=dataset.balance_pretrain,
@@ -94,6 +94,7 @@ class FLAIRDataset(GenericDataset):
 
         self.lpis_ignore = (0,)
         self.lpis_missing = dataset.lpis.missing_val
+        self.length = 1000 if stage == "train" else self.base_length * self.repeats**2
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
@@ -148,9 +149,10 @@ class FLAIRDataset(GenericDataset):
         if "dem" in inputs:
             inputs["dem"][:, 0] = (inputs["dem"][:, 0] - inputs["dem"][:, 1]) * 30
         inputs["ref_date"] = meta["aerial_dates"]
+        inputs["patch_id"] = patch_id
 
         return self.transform_rasters(inputs)
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return self.base_length * self.repeats**2
+        return self.length

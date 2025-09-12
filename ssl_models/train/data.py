@@ -39,8 +39,7 @@ class SSLDataModule(LightningDataModule):
             train_dataset,
             batch_size=opt.batch_size,
             num_workers=num_workers,
-            shuffle=True,
-            drop_last=True,
+            shuffle=False,
         )
 
         val_dataset = datasets.dataset_class(
@@ -56,8 +55,7 @@ class SSLDataModule(LightningDataModule):
             val_dataset,
             batch_size=opt.batch_size,
             num_workers=num_workers,
-            shuffle=True,
-            drop_last=True,
+            shuffle=False,
         )
 
         test_dataset = datasets.dataset_class(
@@ -73,8 +71,7 @@ class SSLDataModule(LightningDataModule):
             test_dataset,
             batch_size=opt.batch_size,
             num_workers=num_workers,
-            shuffle=True,
-            drop_last=True,
+            shuffle=False,
         )
 
     def train_dataloader(self) -> DataLoader:
