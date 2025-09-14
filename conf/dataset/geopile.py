@@ -15,6 +15,7 @@ from ssl_models.dataset.geopile import GeoPileDataset
 class GeoPileConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "GeoPileV0"
     crop_meters: float = 256.0
+    grid_pos_enc: int | None = None
 
     ref_input: str | None = None
     log_inputs: list[str] = field(

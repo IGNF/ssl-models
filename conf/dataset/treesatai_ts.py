@@ -18,6 +18,7 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     val_pretrain: bool = True
     filter_percent: int | None = None
     crop_meters: float = 60.0
+    grid_pos_enc: int | None = None
 
     ref_input: str | None = None
     log_inputs: list[str] = field(

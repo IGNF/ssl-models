@@ -37,7 +37,7 @@ RGB_BANDS = 3
 class BaseMIM(nn.Module, ABC):
     """Masked Auto Encoder (MAE)."""
 
-    def __init__(  # noqa: C901
+    def __init__(  # noqa: C901, PLR0912, PLR0915
         self,
         datasets: DatasetsConfig,
         multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
@@ -98,15 +98,18 @@ class BaseMIM(nn.Module, ABC):
             )
 
         # Fix the position encodings to sine & cosine functions
-        max_grid_size = reduce(
-            lambda a, b: a * b // gcd(a, b),
-            self.grid_size.values(),
-        )  # smallest common multiple
+        if self.dataset.grid_pos_enc is not None:
+            grid_pos_enc = self.dataset.grid_pos_enc
+        else:
+            grid_pos_enc = reduce(
+                lambda a, b: a * b // gcd(a, b),
+                self.grid_size.values(),
+            )  # smallest common multiple
         self.register_buffer(
             name="enc_pos_encoding",
             tensor=posemb_sincos_2d(
-                h=max_grid_size,
-                w=max_grid_size,
+                h=grid_pos_enc,
+                w=grid_pos_enc,
                 dim=embed_dim,
                 date_dim=date_dim,
             ).float()
@@ -116,8 +119,8 @@ class BaseMIM(nn.Module, ABC):
         self.register_buffer(
             name="dec_pos_encoding",
             tensor=posemb_sincos_2d(
-                h=max_grid_size,
-                w=max_grid_size,
+                h=grid_pos_enc,
+                w=grid_pos_enc,
                 dim=decoder_dim,
                 date_dim=date_dim,
             ).float(),

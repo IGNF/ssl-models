@@ -21,6 +21,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     filter_percent: int | None = None
     repeats: int = 1
     crop_meters: float = 102.4
+    grid_pos_enc: int | None = None
 
     ref_input: str | None = "aerial"  # defines grid for raster targets
     log_inputs: list[str] = field(
@@ -63,8 +64,8 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     spot: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=64,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            bands=4,
+            patch_size=PatchSizeConfig(mae=8, mixmae=1),
+            bands=3,
             norm_fac=2000.0,
         ),
     )

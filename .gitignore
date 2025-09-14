@@ -138,3 +138,4 @@ dmypy.json
 config/conf.yaml
 
 *.sh
+upload.py

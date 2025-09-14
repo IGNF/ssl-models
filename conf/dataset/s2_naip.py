@@ -16,6 +16,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "s2-naip-urban"
     repeats: int = 2
     crop_meters: float = 256 * 1.25
+    grid_pos_enc: int | None = None
 
     ref_input: str | None = "naip"  # defines grid for raster targets
     log_inputs: list[str] = field(
