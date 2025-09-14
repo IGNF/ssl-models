@@ -145,6 +145,8 @@ class GenericDataset(Dataset, ABC):
         num_dates: int,
         mask_threshold: float,  # threshold on mask percentage cover
         norm_fac: float | None,
+        norm_mean: list[float] | None,
+        norm_std: list[float] | None,
         log_scale: bool,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -176,11 +178,11 @@ class GenericDataset(Dataset, ABC):
                     input_mod = self.unflatten(input_mod, 0, (len(dates_mod), -1))
                     input_mod = input_mod[:, bands]
                 if use_mask and mask is not None:
-                    bands = mask_bands if mask_bands else bands
+                    mask_bands = mask_bands if mask_bands else bands
                     with rasterio.open(mask) as src:
                         mask_mod = src.read(window=window)
                         mask_mod = self.unflatten(mask_mod, 0, (len(dates_mod), -1))
-                        mask_mod = mask_mod[:, bands, :, :]
+                        mask_mod = mask_mod[:, mask_bands, :, :]
             case ".npy":
                 npy_file = np.load(path_mod, mmap_mode="r")
                 if npy_file.ndim < 4:  # noqa: PLR2004
@@ -240,6 +242,12 @@ class GenericDataset(Dataset, ABC):
         if log_scale:
             input_mod = np.log(np.maximum(input_mod, 1e-10))
 
+        if norm_mean is not None:
+            for idx_band, band in enumerate(bands):
+                input_mod[:, idx_band] -= norm_mean[band]
+        if norm_std is not None:
+            for idx_band, band in enumerate(bands):
+                input_mod[:, idx_band] /= norm_std[band]
         if norm_fac is not None:
             input_mod /= norm_fac
 

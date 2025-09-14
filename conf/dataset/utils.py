@@ -34,6 +34,8 @@ class RasterConfig:
     mask_threshold: float = 0.0
     num_dates: int = 1
     norm_fac: float | None = None
+    norm_mean: list[float] | None = None
+    norm_std: list[float] | None = None
     log_scale: bool = False
 
 
