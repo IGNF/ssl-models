@@ -5,6 +5,8 @@ from typing import Literal
 
 import numpy as np
 import torch
+import torch.nn.functional as F  # noqa: N812
+from einops import rearrange
 from sympy.ntheory import factorint
 from torch import Tensor
 
@@ -146,6 +148,13 @@ def reshape_encoding(encoding: Tensor, grid_size: int) -> Tensor:
         # N.B.: expand returns just another view of data and does not clone it,
         # so inplace operations should not be performed after it
     )
+    if encoding.shape[-3] % grid_size:
+        B = encoding.shape[0]
+        resize = grid_size * round(encoding.shape[-3] / float(grid_size))
+        encoding = rearrange(encoding, "b d h w c -> (b d) c h w")
+        encoding = F.interpolate(encoding, (resize, ) * 2, mode="bilinear")
+        encoding = rearrange(encoding, "(b d) c h w -> b d h w c", b=B)
+
     encoding = encoding.unflatten(-3, (grid_size, -1))
     encoding = encoding.unflatten(-2, (grid_size, -1))
     return encoding.mean(dim=(-2, -4)).flatten(-3, -2)

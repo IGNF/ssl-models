@@ -11,6 +11,7 @@ class RunConfig:  # noqa: D101
     exp_name: str = MISSING
     exp_uuid: str | None = None
     load_name: str | None = None
+    load_phase: str = "pretrain"
     load_uuid: str | None = None
     load_ckpt_path: str | None = None
     fit_name: str | None = None
