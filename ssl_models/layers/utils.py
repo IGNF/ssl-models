@@ -152,7 +152,7 @@ def reshape_encoding(encoding: Tensor, grid_size: int) -> Tensor:
         B = encoding.shape[0]
         resize = grid_size * round(encoding.shape[-3] / float(grid_size))
         encoding = rearrange(encoding, "b d h w c -> (b d) c h w")
-        encoding = F.interpolate(encoding, (resize, ) * 2, mode="bilinear")
+        encoding = F.interpolate(encoding, (resize,) * 2, mode="bilinear")
         encoding = rearrange(encoding, "(b d) c h w -> b d h w c", b=B)
 
     encoding = encoding.unflatten(-3, (grid_size, -1))

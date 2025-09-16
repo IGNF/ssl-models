@@ -77,6 +77,7 @@ def read_csv(
     version: str | None = None,
     balance_pretrain: bool = False,
     val_pretrain: bool = False,
+    test_pretrain: bool = False,
     filter_percent: int | None = None,
     fold: int | None = None,
     **kwargs,  # noqa: ANN003
@@ -92,11 +93,12 @@ def read_csv(
     if fold:
         csv_name += [f"fold_{fold}"]
 
-    stages = (
-        ["train", "val"]
-        if stage == "train" and ssl_phase == "pretrain" and val_pretrain
-        else [stage]
-    )
+    stages = [stage]
+    if stage == "train" and ssl_phase == "pretrain" and val_pretrain:
+        stages.append("val")
+    if stage == "train" and ssl_phase == "pretrain" and test_pretrain:
+        stages.append("test")
+
     return pd.concat(
         [
             pd.read_csv(csv_dir / f"{'_'.join([stage, *csv_name])}.csv", **kwargs)
