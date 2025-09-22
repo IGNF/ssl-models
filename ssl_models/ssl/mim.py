@@ -78,19 +78,24 @@ class BaseMIM(nn.Module, ABC):
             for name_mod, mod in datasets.dataset.inputs.items()
         }
 
+        self.mod_embed = {}
         self.grid_size, self.out_grid_size = {}, {}
         self.patch_embed, self.embed_to_rec = nn.ModuleDict(), nn.ModuleDict()
         for name_mod, mod in self.dataset.inputs.items():
+            name_embed = mod.name_embed if mod.name_embed else name_mod
+            self.mod_embed[name_mod] = name_embed
             patch_size = mod.patch_size.mae if model == "mae" else mod.patch_size.mixmae
             self.grid_size[name_mod] = mod.image_size // patch_size
             self.out_grid_size[name_mod] = mod.image_size // (patch_size * self.stride)
-            self.patch_embed[name_mod] = Patchify(
+            if name_embed in self.patch_embed:
+                continue
+            self.patch_embed[name_embed] = Patchify(
                 mod.bands,
                 embed_dim,
                 patch_size,
                 unpool_dim,
             )
-            self.embed_to_rec[name_mod] = Pixelify(
+            self.embed_to_rec[name_embed] = Pixelify(
                 decoder_dim,
                 mod.bands,
                 patch_size * self.stride,
@@ -265,7 +270,8 @@ class BaseMIM(nn.Module, ABC):
         """Embed patches and fetch dates."""
         x_enc, embed_inds, mask_token, dates = {}, {}, {}, {}
         for name_mod in self.dataset.inputs:
-            x_enc[name_mod], embed_inds[name_mod] = self.patch_embed[name_mod](
+            name_embed = self.mod_embed[name_mod]
+            x_enc[name_mod], embed_inds[name_mod] = self.patch_embed[name_embed](
                 batch[name_mod],
             )
             B = x_enc[name_mod].shape[0]  # noqa: N806
@@ -403,7 +409,8 @@ class BaseMIM(nn.Module, ABC):
 
         pixels_rec = {}
         for name_mod in x_dec:
-            pixels_rec[name_mod], mask_rec[name_mod] = self.embed_to_rec[name_mod](
+            name_embed = self.mod_embed[name_mod]
+            pixels_rec[name_mod], mask_rec[name_mod] = self.embed_to_rec[name_embed](
                 x_dec[name_mod],
                 mask_rec[name_mod],
                 embed_inds[name_mod],

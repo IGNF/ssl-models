@@ -36,6 +36,7 @@ class RasterConfig:
     norm_fac: float | None = None
     norm_mean: list[float] | None = None
     norm_std: list[float] | None = None
+    name_embed: str | None = None
     log_scale: bool = False
 
 

@@ -6,6 +6,7 @@ from typing import Literal
 import numpy as np
 
 from conf.dataset.utils import DatasetConfig
+from ssl_models import LOGGER, RNG
 from ssl_models.dataset.dataset import GenericDataset
 from ssl_models.dataset.utils import naip_datetimes, products_datetimes, read_csv
 
@@ -46,6 +47,16 @@ class S2NAIPDataset(GenericDataset):
         self.repeats = dataset.repeats
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
+        for _ in range(10):
+            try:
+                return self.getitem(idx)
+            except:
+                msg = f"Failed fetching of {self.image_ids[idx % self.base_length]}"
+                LOGGER.warning(msg)
+                idx = RNG.integers(low=0, high=self.base_length * self.repeats**2)
+                return self.getitem(idx)
+
+    def getitem(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
         idx, start_gcd = self.sample_gcd(
             idx,
@@ -88,16 +99,14 @@ class S2NAIPDataset(GenericDataset):
             5,
         )
 
-        meta["s1_asc_path"] = self.root_dir / "sentinel1" / f"{image_id}.tif"
-        meta["s1_asc_dates"] = products_datetimes(
+        meta["s1_path"] = meta["s1_asc_path"] = self.root_dir / "sentinel1" / f"{image_id}.tif"
+        meta["s1_dates"] = products_datetimes(
             np.loadtxt(self.root_dir / "dates" / "s1" / f"{image_id}.txt", dtype="str"),
             5,
         )
-        meta["s1_des_path"] = meta["s1_asc_path"]
-        meta["s1_des_dates"] = meta["s1_asc_dates"]
 
         meta["osm_seg_path"] = self.root_dir / "openstreetmap" / f"{image_id}.geojson"
-        meta["osm_seg_dates"] = meta["naip_dates"]
+        meta["osm_seg_dates"] = ref_date
 
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
 

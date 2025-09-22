@@ -44,10 +44,12 @@ class SSLTrainer(pl.Trainer):
             self.lw_decay = opt.lw_decay
             self.final_factor = opt.final_factor
             self.monitor = opt.monitor
+            self.patience = opt.patience
         else:
             self.lw_decay = None
             self.final_factor = 1e7
             self.monitor = None
+            self.patience = None
 
         self.wd = opt.wd
         self.b1 = opt.b1
@@ -105,7 +107,7 @@ class SSLTrainer(pl.Trainer):
             callbacks.append(
                 EarlyStopping(
                     monitor=f"{self.ssl_phase}_{self.monitor}",
-                    patience=5,
+                    patience=self.patience,
                     mode="max",
                 ),
             )

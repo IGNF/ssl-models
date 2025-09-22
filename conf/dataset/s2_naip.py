@@ -22,7 +22,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
 
     ref_input: str | None = None  # defines grid for raster targets
     log_inputs: list[str] = field(
-        default_factory=lambda: ["aerial"],
+        default_factory=lambda: ["aerial", "spot"],
     )  # logged input modalities
     filter_inputs: list[str] = field(
         default_factory=lambda: [
@@ -73,18 +73,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
             norm_fac=5000.0,
         ),
     )
-    s1_asc: InputRasterConfig = field(
-        default_factory=lambda: InputRasterConfig(
-            image_size=12,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
-            bands=2,
-            norm_bands=[1, 1],
-            num_dates=4,
-            norm_fac=20.0,
-            name_group="sen1",
-        ),
-    )
-    s1_des: InputRasterConfig = field(
+    s1: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=12,
             patch_size=PatchSizeConfig(mae=2, mixmae=1),
@@ -113,7 +102,6 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
                 "spot": 1.25,
                 "landsat": 10.0,
                 "s2": 10.0,
-                "s1_asc": 10.0,
-                "s1_des": 10.0,
+                "s1": 10.0,
             },
         )

@@ -222,7 +222,9 @@ class GenericDataset(Dataset, ABC):
             diff_mod = np.mean(diff_mod, axis=(2, 3, 4), keepdims=True)
             median_inds = np.nanargmin(diff_mod, axis=1, keepdims=True)
             input_mod = np.take_along_axis(input_mod, median_inds, axis=1).squeeze(1)
-            dates_mod = np.take_along_axis(dates_mod, median_inds, axis=1).squeeze(1)
+            dates_mod = np.take_along_axis(dates_mod, median_inds, axis=1).squeeze(
+                (1, -2, -1),
+            )
 
         input_mod = input_mod.astype(np.float32)
         if log_scale:
