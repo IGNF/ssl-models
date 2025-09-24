@@ -16,6 +16,7 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "Hi-UCD"
     repeats: int = 1
     crop_meters: float = 512 * 0.1
+    grid_pos_enc: int | None = None
 
     ref_input: str | None = "image_2"  # defines grid for raster targets
     log_inputs: list[str] = field(

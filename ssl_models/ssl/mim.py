@@ -37,7 +37,7 @@ RGB_BANDS = 3
 class BaseMIM(nn.Module, ABC):
     """Masked Auto Encoder (MAE)."""
 
-    def __init__(  # noqa: C901
+    def __init__(  # noqa: C901, PLR0912, PLR0915
         self,
         datasets: DatasetsConfig,
         multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
@@ -78,19 +78,24 @@ class BaseMIM(nn.Module, ABC):
             for name_mod, mod in datasets.dataset.inputs.items()
         }
 
+        self.mod_embed = {}
         self.grid_size, self.out_grid_size = {}, {}
         self.patch_embed, self.embed_to_rec = nn.ModuleDict(), nn.ModuleDict()
         for name_mod, mod in self.dataset.inputs.items():
+            name_embed = mod.name_embed if mod.name_embed else name_mod
+            self.mod_embed[name_mod] = name_embed
             patch_size = mod.patch_size.mae if model == "mae" else mod.patch_size.mixmae
             self.grid_size[name_mod] = mod.image_size // patch_size
             self.out_grid_size[name_mod] = mod.image_size // (patch_size * self.stride)
-            self.patch_embed[name_mod] = Patchify(
+            if name_embed in self.patch_embed:
+                continue
+            self.patch_embed[name_embed] = Patchify(
                 mod.bands,
                 embed_dim,
                 patch_size,
                 unpool_dim,
             )
-            self.embed_to_rec[name_mod] = Pixelify(
+            self.embed_to_rec[name_embed] = Pixelify(
                 decoder_dim,
                 mod.bands,
                 patch_size * self.stride,
@@ -98,15 +103,18 @@ class BaseMIM(nn.Module, ABC):
             )
 
         # Fix the position encodings to sine & cosine functions
-        max_grid_size = reduce(
-            lambda a, b: a * b // gcd(a, b),
-            self.grid_size.values(),
-        )  # smallest common multiple
+        if self.dataset.grid_pos_enc is not None:
+            grid_pos_enc = self.dataset.grid_pos_enc
+        else:
+            grid_pos_enc = reduce(
+                lambda a, b: a * b // gcd(a, b),
+                self.grid_size.values(),
+            )  # smallest common multiple
         self.register_buffer(
             name="enc_pos_encoding",
             tensor=posemb_sincos_2d(
-                h=max_grid_size,
-                w=max_grid_size,
+                h=grid_pos_enc,
+                w=grid_pos_enc,
                 dim=embed_dim,
                 date_dim=date_dim,
             ).float()
@@ -116,8 +124,8 @@ class BaseMIM(nn.Module, ABC):
         self.register_buffer(
             name="dec_pos_encoding",
             tensor=posemb_sincos_2d(
-                h=max_grid_size,
-                w=max_grid_size,
+                h=grid_pos_enc,
+                w=grid_pos_enc,
                 dim=decoder_dim,
                 date_dim=date_dim,
             ).float(),
@@ -262,7 +270,8 @@ class BaseMIM(nn.Module, ABC):
         """Embed patches and fetch dates."""
         x_enc, embed_inds, mask_token, dates = {}, {}, {}, {}
         for name_mod in self.dataset.inputs:
-            x_enc[name_mod], embed_inds[name_mod] = self.patch_embed[name_mod](
+            name_embed = self.mod_embed[name_mod]
+            x_enc[name_mod], embed_inds[name_mod] = self.patch_embed[name_embed](
                 batch[name_mod],
             )
             B = x_enc[name_mod].shape[0]  # noqa: N806
@@ -400,7 +409,8 @@ class BaseMIM(nn.Module, ABC):
 
         pixels_rec = {}
         for name_mod in x_dec:
-            pixels_rec[name_mod], mask_rec[name_mod] = self.embed_to_rec[name_mod](
+            name_embed = self.mod_embed[name_mod]
+            pixels_rec[name_mod], mask_rec[name_mod] = self.embed_to_rec[name_embed](
                 x_dec[name_mod],
                 mask_rec[name_mod],
                 embed_inds[name_mod],

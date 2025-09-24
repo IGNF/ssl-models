@@ -118,8 +118,6 @@ class GenericDataset(Dataset, ABC):
                 meta.get(f"{name_mod}_mask_bands", None),
                 meta.get(f"{name_mod}_h5_name", None),
                 meta.get(f"{name_mod}_h5_mask", None),
-                meta.get(f"{name_mod}_window", None),
-                meta.get("ref_date"),
                 start[name_mod],
                 end[name_mod],
                 **vars(mod),
@@ -129,7 +127,7 @@ class GenericDataset(Dataset, ABC):
 
         return inputs
 
-    def preprocess_raster(  # noqa: PLR0915, C901, PLR0913
+    def preprocess_raster(  # noqa: PLR0915, C901
         self,
         path_mod: Path,
         dates_mod: np.ndarray,
@@ -137,8 +135,6 @@ class GenericDataset(Dataset, ABC):
         mask_bands: list[list[int]],
         h5_name: str | None,
         h5_mask: str | None,
-        window: bool,
-        ref_date: np.array,
         start: tuple[int],
         end: tuple[int],
         bands: int | list[list[int]],
@@ -164,23 +160,22 @@ class GenericDataset(Dataset, ABC):
 
         match path_mod.suffix:
             case ".tif" | ".png" | ".jpg" | ".jpeg":
+                window = Window(
+                    start[1],
+                    start[0],
+                    end[1] - start[1],
+                    end[0] - start[0],
+                )
                 with rasterio.open(path_mod) as src:
-                    input_mod = src.read(
-                        window=Window(
-                            start[1],
-                            start[0],
-                            end[1] - start[1],
-                            end[0] - start[0],
-                        ),
-                    )
+                    input_mod = src.read(window=window)
                     input_mod = self.unflatten(input_mod, 0, (len(dates_mod), -1))
                     input_mod = input_mod[:, bands]
                 if use_mask and mask is not None:
-                    bands = mask_bands if mask_bands else bands
                     with rasterio.open(mask) as src:
+                        mask_bands = mask_bands if mask_bands else range(src.count)
                         mask_mod = src.read(window=window)
                         mask_mod = self.unflatten(mask_mod, 0, (len(dates_mod), -1))
-                        mask_mod = mask_mod[:, bands, :, :]
+                        mask_mod = mask_mod[:, mask_bands, :, :]
             case ".npy":
                 npy_file = np.load(path_mod, mmap_mode="r")
                 if npy_file.ndim < 4:  # noqa: PLR2004
@@ -202,16 +197,7 @@ class GenericDataset(Dataset, ABC):
                 msg = f"File format {path_mod.suffix} not supported."
                 raise NotImplementedError(msg)
 
-        if window:
-            zoom_dates_idx = np.argsort(
-                [np.abs(ref_date[0] + ref_date[1] - (x[0] + x[1])) for x in dates_mod],
-            )[:num_dates]
-            zoom_dates_idx = np.sort(zoom_dates_idx)
-            dates_mod = np.take(dates_mod, zoom_dates_idx, axis=0)
-            dates_mod = np.expand_dims(dates_mod, axis=(2, 3))
-            input_mod = np.take(input_mod, zoom_dates_idx, axis=0)
-
-        elif len(dates_mod) != num_dates:
+        if len(dates_mod) != num_dates:
             input_mod = input_mod[slices[2]]
             input_mod = self.unflatten(input_mod, 0, (num_dates, -1))
             dates_mod = dates_mod[slices[2], :, None, None]
@@ -234,7 +220,9 @@ class GenericDataset(Dataset, ABC):
             diff_mod = np.mean(diff_mod, axis=(2, 3, 4), keepdims=True)
             median_inds = np.nanargmin(diff_mod, axis=1, keepdims=True)
             input_mod = np.take_along_axis(input_mod, median_inds, axis=1).squeeze(1)
-            dates_mod = np.take_along_axis(dates_mod, median_inds, axis=1).squeeze(1)
+            dates_mod = np.take_along_axis(dates_mod, median_inds, axis=1).squeeze(
+                (1, -2, -1),
+            )
 
         input_mod = input_mod.astype(np.float32)
         if log_scale:

@@ -67,6 +67,7 @@ def run_experiment(
         model = SSLModule.load_from_checkpoint(
             run.load_ckpt_path,
             map_location=lambda storage, _: storage,
+            strict=False,
             datasets=datasets,
         )
     else:
@@ -79,7 +80,11 @@ def run_experiment(
             ssl_phase="pretrain",
             opt=opt_pretrain,
         )
-        trainer_pretrain.fit_and_test(model=model, datamodule=data_pretrain)
+        trainer_pretrain.fit_and_test(
+            model=model,
+            datamodule=data_pretrain,
+            ckpt_path=run.fit_ckpt_path,
+        )
 
     if opt_probe.epochs > 0:
         LOGGER.info("Probe")
@@ -88,7 +93,11 @@ def run_experiment(
             ssl_phase="probe",
             opt=opt_probe,
         )
-        trainer_probe.fit_and_test(model=model, datamodule=data_probe)
+        trainer_probe.fit_and_test(
+            model=model,
+            datamodule=data_probe,
+            ckpt_path=run.fit_ckpt_path,
+        )
 
     if opt_finetune.epochs > 0:
         LOGGER.info("Finetune")
@@ -97,4 +106,8 @@ def run_experiment(
             ssl_phase="finetune",
             opt=opt_finetune,
         )
-        trainer_finetune.fit_and_test(model=model, datamodule=data_finetune)
+        trainer_finetune.fit_and_test(
+            model=model,
+            datamodule=data_finetune,
+            ckpt_path=run.fit_ckpt_path,
+        )

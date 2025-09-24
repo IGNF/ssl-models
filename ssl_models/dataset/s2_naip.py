@@ -36,6 +36,8 @@ class S2NAIPDataset(GenericDataset):
             csv_dir=root_dir,
             stage=stage,
             ssl_phase=ssl_phase,
+            val_pretrain=dataset.val_pretrain,
+            test_pretrain=dataset.test_pretrain,
         )
 
         self.root_dir = root_dir
@@ -52,10 +54,7 @@ class S2NAIPDataset(GenericDataset):
         )
 
         image_id = self.image_ids[idx]
-
-        meta = {}
-        meta["naip_path"] = self.root_dir / "naip" / f"{image_id}.png"
-        meta["naip_dates"] = naip_datetimes(
+        ref_date = naip_datetimes(
             str(
                 np.loadtxt(
                     self.root_dir / "dates" / "naip" / f"{image_id}.txt",
@@ -64,44 +63,45 @@ class S2NAIPDataset(GenericDataset):
             ),
         )
 
-        landsat_resolutions = {"10": "8", "20": "16"}
-        for res, suffix in landsat_resolutions.items():
-            meta[f"landsat_{res}m_path"] = (
-                self.root_dir / "landsat" / f"{image_id}_{suffix}.tif"
-            )
-            meta[f"landsat_{res}m_dates"] = products_datetimes(
-                np.loadtxt(
-                    self.root_dir / "dates" / "landsat" / f"{image_id}.txt",
-                    dtype="str",
-                ),
-                4,
-            )
+        meta = {}
+        meta["aerial_path"] = self.root_dir / "naip" / f"{image_id}.png"
+        meta["aerial_dates"] = ref_date
 
-        s2_resolutions = {"10": "8", "20": "16", "40": "32"}
-        for res, suffix in s2_resolutions.items():
-            meta[f"s2_{res}m_path"] = (
-                self.root_dir / "sentinel2" / f"{image_id}_{suffix}.tif"
-            )
-            meta[f"s2_{res}m_dates"] = products_datetimes(
-                np.loadtxt(
-                    self.root_dir / "dates" / "s2" / f"{image_id}.txt",
-                    dtype="str",
-                ),
-                5,
-            )
+        meta["spot_path"] = self.root_dir / "naip" / f"{image_id}.png"
+        meta["spot_dates"] = ref_date
 
-        meta["s1_path"] = self.root_dir / "sentinel1" / f"{image_id}.tif"
+        meta["landsat_path"] = self.root_dir / "landsat" / f"{image_id}_stacked.tif"
+        meta["landsat_dates"] = products_datetimes(
+            np.loadtxt(
+                self.root_dir / "dates" / "landsat" / f"{image_id}.txt",
+                dtype="str",
+            ),
+            4,
+        )
+
+        meta["s2_path"] = self.root_dir / "sentinel2" / f"{image_id}_stacked.tif"
+        meta["s2_dates"] = products_datetimes(
+            np.loadtxt(
+                self.root_dir / "dates" / "s2" / f"{image_id}.txt",
+                dtype="str",
+            ),
+            5,
+        )
+
+        meta["s1_path"] = meta["s1_asc_path"] = (
+            self.root_dir / "sentinel1" / f"{image_id}.tif"
+        )
         meta["s1_dates"] = products_datetimes(
             np.loadtxt(self.root_dir / "dates" / "s1" / f"{image_id}.txt", dtype="str"),
             5,
         )
 
         meta["osm_seg_path"] = self.root_dir / "openstreetmap" / f"{image_id}.geojson"
-        meta["osm_seg_dates"] = meta["naip_dates"]
+        meta["osm_seg_dates"] = ref_date
 
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
 
-        inputs["ref_date"] = inputs["naip_dates"]
+        inputs["ref_date"] = ref_date
 
         return self.transform_rasters(inputs)
 

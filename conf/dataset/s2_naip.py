@@ -14,95 +14,79 @@ from ssl_models.dataset.s2_naip import S2NAIPDataset
 @dataclass
 class S2NAIPConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "s2-naip-urban"
-    repeats: int = 2
-    crop_meters: float = 256 * 1.25
+    val_pretrain: bool = True
+    test_pretrain: bool = True
+    repeats: int = 5
+    crop_meters: float = 120
+    grid_pos_enc: int | None = 192
 
-    ref_input: str | None = "naip"  # defines grid for raster targets
+    ref_input: str | None = None  # defines grid for raster targets
     log_inputs: list[str] = field(
-        default_factory=lambda: ["naip"],
+        default_factory=lambda: ["aerial", "spot"],
     )  # logged input modalities
     filter_inputs: list[str] = field(
         default_factory=lambda: [
-            "naip",
-            "landsat_10m",
-            "landsat_20m",
-            "s2_10m",
-            "s2_20m",
-            "s2_40m",
+            "aerial",
+            "spot",
+            "s2",
             "s1",
         ],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["osm_seg"],
+        default_factory=list,
     )  # selected target modalities
 
-    naip: InputRasterConfig = field(
+    aerial: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=256,
+            image_size=384,
             patch_size=PatchSizeConfig(mae=16, mixmae=4),
-            bands=4,
+            bands=[[3, 0, 1, 2]],
+            norm_bands=[1, 3],
             norm_fac=255.0,
         ),
     )
-    landsat_10m: InputRasterConfig = field(
+    spot: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=32,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            bands=1,
-            num_dates=4,
-            norm_fac=10000.0,
-        ),
-    )
-    landsat_20m: InputRasterConfig = field(
-        default_factory=lambda: InputRasterConfig(
-            image_size=32,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            bands=10,
-            num_dates=4,
-            norm_fac=10000.0,
-        ),
-    )
-    s2_10m: InputRasterConfig = field(
-        default_factory=lambda: InputRasterConfig(
-            image_size=32,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            bands=4,
-            num_dates=8,
-            norm_fac=10000.0,
-        ),
-    )
-    s2_20m: InputRasterConfig = field(
-        default_factory=lambda: InputRasterConfig(
-            image_size=16,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
-            bands=6,
-            num_dates=8,
-            norm_fac=10000.0,
-        ),
-    )
-    s2_40m: InputRasterConfig = field(
-        default_factory=lambda: InputRasterConfig(
-            image_size=8,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            image_size=128,
+            patch_size=PatchSizeConfig(mae=16, mixmae=4),
             bands=3,
-            num_dates=8,
-            norm_fac=10000.0,
+            norm_fac=255.0,
+        ),
+    )
+    landsat: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=12,
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            bands=11,
+            num_dates=16,
+            norm_fac=5000.0,
+        ),
+    )
+    s2: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=12,
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            bands=10,
+            norm_bands=[4, 4, 2],
+            num_dates=16,
+            norm_fac=5000.0,
         ),
     )
     s1: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=32,
-            patch_size=PatchSizeConfig(mae=4, mixmae=1),
+            image_size=12,
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=2,
+            norm_bands=[1, 1],
             num_dates=4,
             norm_fac=20.0,
+            name_group="sen1",
         ),
     )
 
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = S2NAIPDataset
-        self.balance_pretrain = False
         self.total_meters = 512 * 1.25
 
         self.osm_seg = TargetRasterConfig(
@@ -113,12 +97,10 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
         super().__post_init__(
             resolutions_meters={
                 "osm_seg": 1.25,
-                "naip": 1.25,
-                "landsat_10m": 10.0,
-                "landsat_20m": 20.0,
-                "s2_10m": 10.0,
-                "s2_20m": 20.0,
-                "s2_40m": 40.0,
+                "aerial": 1.25,
+                "spot": 1.25,
+                "landsat": 10.0,
+                "s2": 10.0,
                 "s1": 10.0,
             },
         )
