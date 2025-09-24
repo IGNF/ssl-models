@@ -149,7 +149,7 @@ def reshape_encoding(encoding: Tensor, grid_size: int) -> Tensor:
         # so inplace operations should not be performed after it
     )
     if encoding.shape[-3] % grid_size:
-        B = encoding.shape[0]
+        B = encoding.shape[0]  # noqa: N806
         resize = grid_size * round(encoding.shape[-3] / float(grid_size))
         encoding = rearrange(encoding, "b d h w c -> (b d) c h w")
         encoding = F.interpolate(encoding, (resize,) * 2, mode="bilinear")

@@ -6,7 +6,6 @@ from typing import Literal
 import numpy as np
 
 from conf.dataset.utils import DatasetConfig
-from ssl_models import LOGGER, RNG
 from ssl_models.dataset.dataset import GenericDataset
 from ssl_models.dataset.utils import naip_datetimes, products_datetimes, read_csv
 
@@ -89,7 +88,9 @@ class S2NAIPDataset(GenericDataset):
             5,
         )
 
-        meta["s1_path"] = meta["s1_asc_path"] = self.root_dir / "sentinel1" / f"{image_id}.tif"
+        meta["s1_path"] = meta["s1_asc_path"] = (
+            self.root_dir / "sentinel1" / f"{image_id}.tif"
+        )
         meta["s1_dates"] = products_datetimes(
             np.loadtxt(self.root_dir / "dates" / "s1" / f"{image_id}.txt", dtype="str"),
             5,
