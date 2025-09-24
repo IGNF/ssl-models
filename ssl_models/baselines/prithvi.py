@@ -1,12 +1,16 @@
+"""Prithvi module."""
+
 from typing import Literal
 
 import torch
 from terratorch import BACKBONE_REGISTRY
-from torch import Tensor
+from torch import Tensor, nn
 from torch.nn import Module
 
 from conf.datasets import DatasetsConfig
 from ssl_models.baselines.base import BaseModule
+
+ORIG_BANDS = (0, 1, 2, 6, 8, 9)
 
 
 class PrithviBaseline(BaseModule):
@@ -34,12 +38,14 @@ class PrithviBaseline(BaseModule):
         ----------
         datasets: DatasetsConfig
             The dataset config used in the probing/finetuning phase.
-        backbone_size: str
-            Defines the backbone to use. To choose in "small", "base", "large", "huge".
         unpool_dim: int
             Parameter given to the pixelify head.
         freeze: bool
             To freeze or not to freeze the DinoV2 backbone.
+        version: str
+            Prithvi version.
+        backbone_size: str
+            Defines the backbone to use. To choose in "small", "base", "large", "huge".
         type_head: str
            Segmentation head to use. Either "linear" (default) or "attentive".
         multimodal: str
@@ -98,39 +104,80 @@ class PrithviBaseline(BaseModule):
             **kwargs,
         )
 
+        self.std = 0.01
+        bands = datasets.dataset.inputs["s2"].bands
+        self.bands = (
+            list(range(bands))
+            if isinstance(bands, int)
+            else [idx for band in bands for idx in band]
+        )
+        self.num_channels = len(self.bands)
+
         if not self._check_model_version_and_size():
-            raise ValueError(
+            msg = (
                 f"Invalid model version {self.version} and size {self.backbone_size}. "
                 "Supported versions are: 'v1' for base and 'v2' for large."
             )
+            raise ValueError(msg)
 
         self._build_backbone()
+        self._transfer_patch_embedding_to_more_channels()
 
         if self.freeze:
             self.freeze_backbone()
-
-    def _build_backbone(self) -> Module:
-        model_dict = {
-            ("base","v1", False): "terratorch_prithvi_eo_v1_100",
-            ("large","v2", False): "terratorch_prithvi_eo_v2_300",
-            ("large","v2", True): "terratorch_prithvi_eo_v2_300_tl",
-        }
-
-        self.encoder =  BACKBONE_REGISTRY.build(
-                            model_dict[self.backbone_size, self.version, self.add_date_enc],
-                            pretrained=True,
-                            ckpt_path=self.pretrained_path,
-                            num_frames=self.num_dates["s2"],
-                        ).cuda()
 
     def _check_model_version_and_size(self) -> bool:
         model_assoc = [
             ("large", "v2", False),
             ("large", "v2", True),
-            ("base", "v1", False)
+            ("base", "v1", False),
         ]
 
         return (self.backbone_size, self.version, self.add_date_enc) in model_assoc
+
+    def _build_backbone(self) -> Module:
+        model_dict = {
+            ("base", "v1", False): "terratorch_prithvi_eo_v1_100",
+            ("large", "v2", False): "terratorch_prithvi_eo_v2_300",
+            ("large", "v2", True): "terratorch_prithvi_eo_v2_300_tl",
+        }
+
+        self.encoder = BACKBONE_REGISTRY.build(
+            model_dict[self.backbone_size, self.version, self.add_date_enc],
+            pretrained=True,
+            ckpt_path=self.pretrained_path,
+            num_frames=self.num_dates["s2"],
+        )
+
+    def _transfer_patch_embedding_to_more_channels(self) -> None:
+        orig_proj = self.encoder.patch_embed.proj
+        orig_weight = orig_proj.weight  # shape: (out_dim, in_channels, 1, 16, 16)
+
+        # Create new weight tensor
+        new_weight = torch.zeros(
+            (orig_weight.shape[0], self.num_channels, *orig_weight.shape[2:]),
+        )
+
+        # Copy existing channels
+        nn.init.normal_(new_weight, std=self.std)
+        orig_bands = [idx for idx, band in enumerate(ORIG_BANDS) if band in self.bands]
+        new_bands = [self.bands.index(ORIG_BANDS[idx]) for idx in orig_bands]
+        new_weight[:, new_bands] = orig_weight[:, orig_bands]
+
+        # Build new conv3d
+        new_proj = nn.Conv3d(
+            in_channels=self.num_channels,
+            out_channels=orig_weight.shape[0],
+            kernel_size=orig_proj.kernel_size,
+            stride=orig_proj.stride,
+            padding=orig_proj.padding,
+            bias=True,
+        )
+
+        # Assign weights & bias
+        new_proj.weight.data = new_weight
+        new_proj.bias.data = self.encoder.patch_embed.proj.bias.data.clone()
+        self.encoder.patch_embed.proj = new_proj
 
     def freeze_backbone(self) -> None:
         """Freeze the backbone's parameters."""
@@ -142,22 +189,7 @@ class PrithviBaseline(BaseModule):
         base_lr: float,
         rate_decay: float = 0.75,
     ) -> list[dict]:
-        """Return the grouped parameters dictionnary with layerwise learning rate.
-
-        Parameters
-        ----------
-        base_lr: float
-            Base learning rate.
-        rate_decay: float
-            Input's key.
-
-        Returns
-        -------
-        List: A list of dictionnaries, containing "params" and "lr" keys, in which
-        parameters are grouped.
-
-        """
-        pass
+        """Skip implem."""
 
     def format_dates(self, dates: Tensor) -> Tensor:
         year = dates[:, :, 0, 0, 0]
@@ -171,7 +203,8 @@ class PrithviBaseline(BaseModule):
             num_tokens_per_frame = x.shape[1] // self.encoder.num_frames
 
             temporal_encoding = self.encoder.temporal_embed_enc(
-                temporal_coords, num_tokens_per_frame
+                temporal_coords,
+                num_tokens_per_frame,
             )
 
             x = x + temporal_encoding
@@ -201,21 +234,19 @@ class PrithviBaseline(BaseModule):
         tuple: Prithvi's outputs.
 
         """
-        s2_input = batch["s2"].transpose(1,2) # (B, D, C, H, W) -> (B, C, D, H, W)
+        s2_input = batch["s2"].transpose(1, 2)  # (B, D, C, H, W) -> (B, C, D, H, W)
 
         if self.add_date_enc:
             s2_dates = batch["s2_dates"]
             formatted_dates = self.format_dates(s2_dates)
 
-            features_prithvi = self.encoder(x=s2_input,
-                                            temporal_coords=formatted_dates)
+            features_prithvi = self.encoder(x=s2_input, temporal_coords=formatted_dates)
         else:
             features_prithvi = self.encoder(x=s2_input)
 
-        output_prithvi = features_prithvi[-1][:, 1:, :] # remove cls token
+        output_prithvi = features_prithvi[-1][:, 1:, :]  # remove cls token
 
         x = {}
-
         x["s2"] = output_prithvi
 
         loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(

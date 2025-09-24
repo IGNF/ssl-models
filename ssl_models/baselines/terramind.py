@@ -99,7 +99,7 @@ class TerramindBaseline(BaseModule):
         )
 
         self.mod_assoc, self.out_mod_assoc = self._assoc_mods_to_terramind_tokenizers(
-            self.num_dates
+            self.num_dates,
         )
 
         self._build_backbone()
@@ -114,39 +114,45 @@ class TerramindBaseline(BaseModule):
             "spot": ["RGB_spot"],
         }
         dataset_mods = self.datasets.dataset.inputs
-        
+
         if "s2" in dataset_mods and num_dates["s2"] > 0:
-            mod_assoc["s2"] = ["S2L2A_{}".format(r+1) for r in range(num_dates["s2"])]
-        
+            mod_assoc["s2"] = ["S2L2A_{}".format(r + 1) for r in range(num_dates["s2"])]
+
         if "s1_asc" in dataset_mods and num_dates["s1_asc"] > 0:
-            mod_assoc["s1_asc"] = ["S1GRD_asc_{}".format(r+1) for r in range(num_dates["s1_asc"])]
-        
+            mod_assoc["s1_asc"] = [
+                "S1GRD_asc_{}".format(r + 1) for r in range(num_dates["s1_asc"])
+            ]
+
         if "s1_des" in dataset_mods and num_dates["s1_des"] > 0:
-            mod_assoc["s1_des"] = ["S1GRD_des_{}".format(r+1) for r in range(num_dates["s1_des"])]
-        
-        out_mod_assoc = { v: k for k, l in mod_assoc.items() for v in l }
+            mod_assoc["s1_des"] = [
+                "S1GRD_des_{}".format(r + 1) for r in range(num_dates["s1_des"])
+            ]
+
+        out_mod_assoc = {v: k for k, l in mod_assoc.items() for v in l}
 
         return mod_assoc, out_mod_assoc
 
     def _build_backbone(self) -> Module:
         """Build the Terramind backbone."""
         dataset_mods = self.datasets.dataset.inputs
-        list_of_mods = [self.mod_assoc[mod] for mod in dataset_mods if mod in self.mod_assoc]
+        list_of_mods = [
+            self.mod_assoc[mod] for mod in dataset_mods if mod in self.mod_assoc
+        ]
         terramind_mods = []
 
         for mods in list_of_mods:
             terramind_mods.extend(mods)
-        
+
         if "s2" in dataset_mods and self.num_dates["s2"] > 0:
-            s2_bands_list = ["BLUE","GREEN","RED","NIR_NARROW","SWIR_1","SWIR_2"]
-            s2_bands = { k: s2_bands_list for k in self.mod_assoc["s2"] }
-        
+            s2_bands_list = ["BLUE", "GREEN", "RED", "NIR_NARROW", "SWIR_1", "SWIR_2"]
+            s2_bands = {k: s2_bands_list for k in self.mod_assoc["s2"]}
+
         self.encoder = BACKBONE_REGISTRY.build(
-                                f"terratorch_terramind_v1_{self.backbone_size}",
-                                pretrained=True,
-                                merge_method="dict",
-                                modalities=terramind_mods,
-                                bands=s2_bands if "S2L2A_1" in terramind_mods else None,
+            f"terratorch_terramind_v1_{self.backbone_size}",
+            pretrained=True,
+            merge_method="dict",
+            modalities=terramind_mods,
+            bands=s2_bands if "S2L2A_1" in terramind_mods else None,
         )
         self.encoder.output_mod_name_mapping = {mod: mod for mod in terramind_mods}
 
@@ -179,7 +185,7 @@ class TerramindBaseline(BaseModule):
 
         """
         pass
-    
+
     def _smash_dates(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         x_smashed = {}
 
@@ -187,14 +193,15 @@ class TerramindBaseline(BaseModule):
             if mod in x:
                 tn = self.mod_assoc[mod][0]
                 x_smashed[tn] = x[mod]
-        
+
         for mod in ["s2", "s1_asc", "s1_des"]:
             if mod in x:
                 terramind_names = self.mod_assoc[mod]
                 mod_splitted = torch.split(x[mod], 1, dim=1)
 
-                assert len(mod_splitted) == len(terramind_names), \
-                    f"Number of dates for {mod} do not match: {len(mod_splitted)} vs {len(terramind_names)}"
+                assert (
+                    len(mod_splitted) == len(terramind_names)
+                ), f"Number of dates for {mod} do not match: {len(mod_splitted)} vs {len(terramind_names)}"
 
                 for i, tn in enumerate(terramind_names):
                     x_smashed[tn] = mod_splitted[i]
@@ -209,7 +216,7 @@ class TerramindBaseline(BaseModule):
                 terramind_name = self.mod_assoc[mod][0]
                 if terramind_name in x:
                     x_unsmashed[mod] = x[terramind_name]
-        
+
         for mod in ["s2", "s1_asc", "s1_des"]:
             if mod in self.mod_assoc:
                 terramind_names = self.mod_assoc["s2"]
@@ -257,8 +264,8 @@ class TerramindBaseline(BaseModule):
 
             ref_date = batch["ref_date"]
             x_enc = self._add_date_encodings(x_enc, dates, ref_date)
-        
-        #print("x_enc after date enc:", {k: (v.shape, v[0,:,514], torch.isnan(v).any()) for k, v in x_enc.items()})
+
+        # print("x_enc after date enc:", {k: (v.shape, v[0,:,514], torch.isnan(v).any()) for k, v in x_enc.items()})
         loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
             x_enc,
             batch,
