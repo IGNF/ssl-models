@@ -9,6 +9,9 @@ from conf.datasets import DatasetsConfig
 from ssl_models.baselines.croma import CROMABaseline
 from ssl_models.baselines.dinov2 import Dinov2Baseline
 from ssl_models.baselines.dofa import DOFABaseline
+from ssl_models.baselines.prithvi import PrithviBaseline
+from ssl_models.baselines.satmae import SatMAEBaseline
+from ssl_models.baselines.terramind import TerramindBaseline
 from ssl_models.train.base import BaseModule
 
 torch.set_float32_matmul_precision(precision="medium")
@@ -23,7 +26,7 @@ class BaselineModule(BaseModule):
         self,
         # shared args
         datasets: DatasetsConfig,
-        model: Literal["dinov2", "dofa", "croma"],
+        model: Literal["dinov2", "dofa", "croma", "prithvi"],
         model_size: Literal["small", "base", "large"],
         type_head: Literal["linear", "attentive"] = "linear",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
@@ -31,9 +34,10 @@ class BaselineModule(BaseModule):
         pretrained_path: str | None = None,
         freeze: bool = False,
         use_ema: bool = False,
-        multimodal: Literal["shared", "monotemp", "croma-intergroup"] = "shared",
+        multimodal: Literal["shared", "monotemp", "croma-intergroup", "mod"] = "shared",
         keep_norm: bool = True,
         add_date_enc: bool = True,
+        **kwargs,  # noqa: ANN003
     ) -> None:
         super().__init__(datasets, model, loss)
 
@@ -81,7 +85,53 @@ class BaselineModule(BaseModule):
 
                 model_dict = {"dofa": DOFABaseline, "croma": CROMABaseline}
                 self.model = model_dict[model](**model_args)
+            case "prithvi":
+                unpool_dim = None
 
+                model_args = {
+                    "datasets": datasets,
+                    "version": kwargs.get("version", "v2"),
+                    "type_head": type_head,
+                    "backbone_size": model_size,
+                    "unpool_dim": unpool_dim,
+                    "freeze": freeze,
+                    "pretrained_path": pretrained_path,
+                    "multimodal": multimodal,
+                    "keep_norm": keep_norm,
+                    "add_date_enc": add_date_enc,
+                }
+
+                self.model = PrithviBaseline(**model_args)
+            case "terramind":
+                unpool_dim = None
+                model_args = {
+                    "datasets": datasets,
+                    "version": kwargs.get("version", "v2"),
+                    "type_head": type_head,
+                    "backbone_size": model_size,
+                    "unpool_dim": unpool_dim,
+                    "freeze": freeze,
+                    "pretrained_path": pretrained_path,
+                    "multimodal": multimodal,
+                    "keep_norm": keep_norm,
+                    "add_date_enc": add_date_enc,
+                }
+
+                self.model = TerramindBaseline(**model_args)
+            case "satmae":
+                unpool_dim = None
+                model_args = {
+                    "datasets": datasets,
+                    "type_head": type_head,
+                    "backbone_size": model_size,
+                    "unpool_dim": unpool_dim,
+                    "freeze": freeze,
+                    "pretrained_path": pretrained_path,
+                    "multimodal": multimodal,
+                    "keep_norm": keep_norm,
+                    "add_date_enc": add_date_enc,
+                }
+                self.model = SatMAEBaseline(**model_args)
             case _:
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)

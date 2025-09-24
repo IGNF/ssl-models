@@ -19,7 +19,6 @@ class ModelConfig:  # noqa: D101
     num_levels: int = 3
     swin_abs_enc: bool = False
     use_date_enc: bool = True
-    batch_repeats: int | None = None
     use_ema: bool = True
 
 
@@ -28,7 +27,7 @@ class BaselineConfig:  # noqa: D101
     multimodal: str = "shared"
     model: str = "dinov2"
     model_size: str = "small"
-    type_head: str = "linear"
+    type_head: str = "attentive"
     loss: str = "l2_norm"
     freeze: bool = False
     weight_source: str = "imagenat"
@@ -36,6 +35,7 @@ class BaselineConfig:  # noqa: D101
     keep_norm: bool = True
     add_date_enc: bool = True
     use_ema: bool = True
+    version: str = None
 
 
 model_store = store(group="model")

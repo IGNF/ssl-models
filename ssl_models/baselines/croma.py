@@ -256,7 +256,7 @@ class CROMABaseline(BaseModule):
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
     ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
-        """Dinov2 forward pass.
+        """CROMA forward pass.
 
         Parameters
         ----------

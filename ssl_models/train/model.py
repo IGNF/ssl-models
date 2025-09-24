@@ -38,7 +38,6 @@ class SSLModule(BaseModule):
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         unpool_dim: int | None = None,
         use_date_enc: bool = True,
-        batch_repeats: int | None = None,
         use_ema: bool = False,
         # mixmae args
         num_levels: Literal[3, 4] = 3,
@@ -135,7 +134,6 @@ class SSLModule(BaseModule):
             self.ema_model = None
 
         self.dataset = datasets.dataset
-        self.batch_repeats = batch_repeats
         self.save_hyperparameters(ignore=["datasets"])
 
     def configure_optimizers(self) -> dict:

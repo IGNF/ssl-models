@@ -190,15 +190,6 @@ class BaseModule(LightningModule, ABC):
 
         match self.trainer.ssl_phase:
             case "pretrain":
-                if self.batch_repeats:
-                    batch = {
-                        name_mod: torch.repeat_interleave(
-                            batch[name_mod],
-                            self.batch_repeats,
-                            dim=0,
-                        )
-                        for name_mod in batch
-                    }
                 return self.pretrain_step(batch, stage)
             case "probe" | "finetune":
                 return self.probe_or_finetune_step(batch, stage)
