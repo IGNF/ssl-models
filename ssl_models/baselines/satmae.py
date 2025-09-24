@@ -347,7 +347,10 @@ class MaskedAutoencoderViT(nn.Module):
             dim=1,
         ).float()
         ts_embed = ts_embed.reshape(B, D, 1, ts_embed.shape[-1]).expand(
-            -1, -1, self.num_patches, -1,
+            -1,
+            -1,
+            self.num_patches,
+            -1,
         )
         pos_embed = self.pos_embed[:, None, 1:, :].expand(B, D, -1, -1)
 
