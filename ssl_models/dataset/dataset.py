@@ -127,7 +127,7 @@ class GenericDataset(Dataset, ABC):
 
         return inputs
 
-    def preprocess_raster(  # noqa: PLR0915, C901, PLR0913
+    def preprocess_raster(  # noqa: PLR0915, C901
         self,
         path_mod: Path,
         dates_mod: np.ndarray,
@@ -141,8 +141,6 @@ class GenericDataset(Dataset, ABC):
         num_dates: int,
         mask_threshold: float,  # threshold on mask percentage cover
         norm_fac: float | None,
-        norm_mean: list[float] | None,
-        norm_std: list[float] | None,
         log_scale: bool,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -230,12 +228,6 @@ class GenericDataset(Dataset, ABC):
         if log_scale:
             input_mod = np.log(np.maximum(input_mod, 1e-10))
 
-        if norm_mean is not None:
-            for idx_band, band in enumerate(bands):
-                input_mod[:, idx_band] -= norm_mean[band]
-        if norm_std is not None:
-            for idx_band, band in enumerate(bands):
-                input_mod[:, idx_band] /= norm_std[band]
         if norm_fac is not None:
             input_mod /= norm_fac
 
