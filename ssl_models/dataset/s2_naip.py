@@ -47,16 +47,6 @@ class S2NAIPDataset(GenericDataset):
         self.repeats = dataset.repeats
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
-        for _ in range(10):
-            try:
-                return self.getitem(idx)
-            except:
-                msg = f"Failed fetching of {self.image_ids[idx % self.base_length]}"
-                LOGGER.warning(msg)
-                idx = RNG.integers(low=0, high=self.base_length * self.repeats**2)
-                return self.getitem(idx)
-
-    def getitem(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
         idx, start_gcd = self.sample_gcd(
             idx,

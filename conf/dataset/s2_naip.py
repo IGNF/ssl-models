@@ -29,8 +29,7 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
             "aerial",
             "spot",
             "s2",
-            "s1_asc",
-            "s1_des",
+            "s1",
         ],
     )  # selected input modalities
     filter_targets: list[str] = field(
