@@ -457,6 +457,7 @@ class BaseMIM(nn.Module, ABC):
         pixels_rec: dict[str, Tensor],
         mask_rec: dict[str, Tensor],
         batch: dict[str, Tensor],
+        stage: Literal["train", "val", "test"],
     ) -> Tensor:
         """Shared loss computation for all MIM modules."""
         losses_rec = []
@@ -501,18 +502,16 @@ class BaseMIM(nn.Module, ABC):
             loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod]).mean()
             losses_rec.append(weight * loss_rec)
 
-        return torch.stack(losses_rec).sum() / sum(weights)
+        loss_rec = torch.stack(losses_rec).sum() / sum(weights)
+        self.metrics[f"loss_rec_{stage}"].update(loss_rec)
+        return loss_rec
 
-    def compute_loss_pred(  # noqa: PLR0915
+    def compute_logits(
         self,
         x_enc: dict[str, Tensor],
-        batch: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
-        stage: Literal["train", "val", "test"],
-    ) -> Tensor:
-        """Shared loss computation for all MIM modules."""
+    ) -> dict[str, Tensor]:
+        """Compute logits."""
         x_enc = self.ungroup(x_enc)
-
         ref_input = self.dataset.ref_input
         if ref_input is not None:
             x_ref = {}
@@ -543,9 +542,44 @@ class BaseMIM(nn.Module, ABC):
             [x_enc[name_mod].flatten(1, 2) for name_mod in x_enc],
             dim=1,
         )
+        logits = {}
+        for name_target, target in self.dataset.targets.items():
+            match target.type_target:
+                case "segment" | "change_detect":
+                    logits[name_target] = self.heads[name_target](
+                        x_ref,
+                        ssl_phase="finetune",
+                    )
+                case "multilabel_classif" | "classif":
+                    logits[name_target] = self.heads[name_target](
+                        x_enc,
+                        ssl_phase="finetune",
+                    )
+        return logits
+
+    def compute_loss_pred(
+        self,
+        x_enc: dict[str, Tensor],
+        batch: dict[str, Tensor],
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        stage: Literal["train", "val", "test"],
+        compute_loss_pred: bool = True,
+    ) -> tuple[
+        Tensor | None,
+        dict[str, Tensor],
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+    ]:
+        """Shared loss computation for all MIM modules."""
+        logits = self.compute_logits(x_enc)
+        if not compute_loss_pred:
+            return None, logits, None, None, None
+
         loss_pred = 0
         log_inputs, log_preds, log_targets = {}, {}, {}
         for name_target, target in self.dataset.targets.items():
+            logits_target = logits[name_target]
             targets = batch[name_target]
             # image logger
             if target.type_target in ("segment", "change_detect"):
@@ -569,10 +603,9 @@ class BaseMIM(nn.Module, ABC):
                 )
             match target.type_target:
                 case "segment":
-                    logits = self.heads[name_target](x_ref, ssl_phase)
                     # image_logger
                     pred_msk = get_segment_mask_from_logits(
-                        logits[0, 0],
+                        logits_target[0, 0],
                         target.num_classes,
                     )
                     log_preds[f"{ssl_phase}_{name_target}_{stage}/_pred"] = (
@@ -582,11 +615,10 @@ class BaseMIM(nn.Module, ABC):
                             target.num_classes,
                         )
                     )
-                    logits = rearrange(logits, "b 1 c h w -> (b h w) c")
+                    logits_target = rearrange(logits_target, "b 1 c h w -> (b h w) c")
                     targets = rearrange(targets, "b 1 1 h w -> (b h w)")
                     targets = targets.long()
                 case "change_detect":
-                    logits = self.heads[name_target](x_ref, ssl_phase)
                     # image logger
                     input_img = batch[next(input_keys)][0, 0][:RGB_BANDS]
                     pred_msk = get_cd_mask_from_logits(logits)
@@ -597,14 +629,12 @@ class BaseMIM(nn.Module, ABC):
                             target.num_classes,
                         )
                     )
-                    logits = rearrange(logits, "b 1 1 h w -> (b h w)")
+                    logits_target = rearrange(logits_target, "b 1 1 h w -> (b h w)")
                     targets = rearrange(targets, "b 1 1 h w -> (b h w)")
                     targets = targets.float()
                 case "multilabel_classif":
-                    logits = self.heads[name_target](x_enc, ssl_phase)
                     targets = targets.float()
                 case "classif":
-                    logits = self.heads[name_target](x_enc, ssl_phase)
                     targets = targets.long()
 
             if targets.ndim > 1:
@@ -617,7 +647,7 @@ class BaseMIM(nn.Module, ABC):
                 continue
 
             logits_selected = torch.index_select(
-                logits,
+                logits_target,
                 dim=0,
                 index=inds,
             )
@@ -635,8 +665,10 @@ class BaseMIM(nn.Module, ABC):
                 targets_selected,
             )
         if not isinstance(loss_pred, Tensor):
-            loss_pred = 0 * x_enc.mean()
-        return loss_pred, log_inputs, log_preds, log_targets
+            loss_pred = 0 * list(logits.values()).pop().mean()
+        self.metrics[f"loss_pred_{stage}"].update(loss_pred)
+
+        return loss_pred, logits, log_inputs, log_preds, log_targets
 
     def encode_or_decode(
         self,
@@ -666,6 +698,16 @@ class BaseMIM(nn.Module, ABC):
             x[name_group] = x_group
 
         return x
+
+    def resize_batch(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
+        """Resize input rasters based on dataset config."""
+        for name_mod, mod in self.dataset.inputs.items():
+            batch[name_mod] = F.interpolate(
+                batch[name_mod].flatten(0, 1),
+                size=(mod.image_size,) * 2,
+                mode="nearest",
+            ).unflatten(0, (-1, mod.num_dates))
+        return batch
 
     @abstractmethod
     def mask_struct(self, x: Tensor) -> dict[str, Tensor | None]:
@@ -706,8 +748,18 @@ class BaseMIM(nn.Module, ABC):
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
-    ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
+        compute_loss_pred: bool = True,
+    ) -> tuple[
+        Tensor | None,
+        Tensor | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+    ]:
         """Shared forward pass for all MIM modules."""
+        batch = self.resize_batch(batch)
+
         x_enc, mask_token, embed_inds, dates, ref_date = self.embed(batch)
         x_enc = self.enc_add_encodings(x_enc, dates, ref_date)
 
@@ -728,6 +780,7 @@ class BaseMIM(nn.Module, ABC):
                 pixels_rec,
                 mask_rec,
                 batch,
+                stage,
             )
             log_inputs, log_preds, log_targets = self.compute_pixels(
                 pixels_rec,
@@ -736,16 +789,14 @@ class BaseMIM(nn.Module, ABC):
                 ssl_phase,
                 stage,
             )
-
-            self.metrics[f"loss_rec_{stage}"].update(loss_rec)
-            return loss_rec, log_inputs, log_preds, log_targets, None
+            return loss_rec, None, None, log_inputs, log_preds, log_targets
 
         # else, probe or finetune
-        loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
+        loss_pred, logits, log_input, log_pred, log_target = self.compute_loss_pred(
             x_enc,
             batch,
             ssl_phase,
             stage,
+            compute_loss_pred,
         )
-        self.metrics[f"loss_pred_{stage}"].update(loss_pred)
-        return None, log_input, log_pred, log_target, loss_pred
+        return None, loss_pred, logits, log_input, log_pred, log_target

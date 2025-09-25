@@ -1,15 +1,13 @@
 """Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
 
-from abc import ABC
+from abc import ABC, abstractmethod
 from typing import Literal
 
 import torch
 from pytorch_lightning import LightningModule
 from torch import Tensor
 from torch.nn import Module
-from torch.nn import functional as F  # noqa: N812
 
-from conf.datasets import DatasetsConfig
 from ssl_models.ssl.mae import MAE
 
 NDIM_RASTER = 5  # (batch, dates, channels, height, width)
@@ -21,12 +19,10 @@ class BaseModule(LightningModule, ABC):
     def __init__(
         self,
         # shared args
-        datasets: DatasetsConfig,
         model: Module,
         loss: Module,
     ) -> None:
         super().__init__()
-        self.datasets = datasets
         self.model = model
         self.loss = loss
 
@@ -137,6 +133,14 @@ class BaseModule(LightningModule, ABC):
             sync_dist=True,
         )
 
+    @abstractmethod
+    def pretrain_step(
+        self,
+        batch: dict[str, torch.Tensor],
+        stage: Literal["train", "val", "test"],
+    ) -> dict[str, torch.Tensor]:
+        """Abstract method for pretraining step."""
+
     def probe_or_finetune_step(
         self,
         batch: dict[str, torch.Tensor],
@@ -152,7 +156,7 @@ class BaseModule(LightningModule, ABC):
         else:
             model = self.model
 
-        _, log_inputs, log_preds, log_targets, loss_pred = model(
+        _, loss_pred, _, log_inputs, log_preds, log_targets = model(
             batch,
             stage=stage,
             ssl_phase=self.trainer.ssl_phase,
@@ -171,23 +175,6 @@ class BaseModule(LightningModule, ABC):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Shared step for training/validation."""
-        # resize
-        for name_mod, mod in self.dataset.inputs.items():
-            batch[name_mod] = F.interpolate(
-                batch[name_mod].flatten(0, 1),
-                size=(mod.image_size,) * 2,
-                mode="nearest",
-            ).unflatten(0, (-1, mod.num_dates))
-            batch[f"{name_mod}_dates"] = (
-                F.interpolate(
-                    batch[f"{name_mod}_dates"].float().flatten(0, 1),
-                    size=(mod.image_size,) * 2,
-                    mode="nearest",
-                ).unflatten(0, (-1, mod.num_dates))
-                if batch[f"{name_mod}_dates"].ndim == NDIM_RASTER
-                else batch[f"{name_mod}_dates"].float()
-            )
-
         match self.trainer.ssl_phase:
             case "pretrain":
                 return self.pretrain_step(batch, stage)

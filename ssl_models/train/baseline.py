@@ -39,7 +39,7 @@ class BaselineModule(BaseModule):
         add_date_enc: bool = True,
         **kwargs,  # noqa: ANN003
     ) -> None:
-        super().__init__(datasets, model, loss)
+        super().__init__(model, loss)
 
         match model:
             case "dinov2":

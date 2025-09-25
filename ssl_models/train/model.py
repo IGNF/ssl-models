@@ -45,7 +45,7 @@ class SSLModule(BaseModule):
         v2_attn: bool = True,
         swin_abs_enc: bool = False,
     ) -> None:
-        super().__init__(datasets, model, loss)
+        super().__init__(model, loss)
 
         match loss:
             case "l1":
@@ -231,7 +231,7 @@ class SSLModule(BaseModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Pretraining step."""
-        loss_rec, log_inputs, log_preds, log_targets, _ = self.model(
+        loss_rec, _, _, log_inputs, log_preds, log_targets = self.model(
             batch,
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,

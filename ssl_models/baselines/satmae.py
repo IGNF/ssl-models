@@ -179,8 +179,17 @@ class SatMAEBaseline(BaseModule):
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
-    ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
+    ) -> tuple[
+        Tensor | None,
+        Tensor | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+    ]:
         """Forward pass of model."""
+        batch = self.resize_batch(batch)
+
         timestamps = batch["s2_dates"]
         s2_input = batch["s2"]
 
@@ -190,14 +199,14 @@ class SatMAEBaseline(BaseModule):
             self.format_dates(timestamps),
         )
 
-        loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
+        loss_pred, logits, log_input, log_pred, log_target = self.compute_loss_pred(
             x,
             batch,
             ssl_phase,
             stage,
         )
         self.metrics[f"loss_pred_{stage}"].update(loss_pred)
-        return None, log_input, log_pred, log_target, loss_pred
+        return None, loss_pred, logits, log_input, log_pred, log_target
 
 
 class MaskedAutoencoderViT(nn.Module):

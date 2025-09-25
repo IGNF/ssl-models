@@ -229,7 +229,14 @@ class TerramindBaseline(BaseModule):
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
-    ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
+    ) -> tuple[
+        Tensor | None,
+        Tensor | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+    ]:
         """Terramind v1 forward pass.
 
         Parameters
@@ -247,6 +254,8 @@ class TerramindBaseline(BaseModule):
         tuple: Terramind's outputs.
 
         """
+        batch = self.resize_batch(batch)
+
         x_smashed = self._smash_dates(batch)
         x_smashed = self.group(x_smashed)
 
@@ -263,11 +272,11 @@ class TerramindBaseline(BaseModule):
             ref_date = batch["ref_date"]
             x_enc = self._add_date_encodings(x_enc, dates, ref_date)
 
-        loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
+        loss_pred, logits, log_input, log_pred, log_target = self.compute_loss_pred(
             x_enc,
             batch,
             ssl_phase,
             stage,
         )
         self.metrics[f"loss_pred_{stage}"].update(loss_pred)
-        return None, log_input, log_pred, log_target, loss_pred
+        return None, loss_pred, logits, log_input, log_pred, log_target

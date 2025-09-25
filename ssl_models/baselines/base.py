@@ -193,16 +193,12 @@ class BaseModule(Module, ABC):
 
         return self.group(x_enc)
 
-    def compute_loss_pred(  # noqa: PLR0915
+    def compute_logits(
         self,
         x_enc: dict[str, Tensor],
-        batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
-        stage: Literal["train", "val", "test"],
-    ) -> Tensor:
-        """Shared loss computation for all MIM modules."""
+    ) -> dict[str, Tensor]:
         x_enc = self.ungroup(x_enc)
-
         ref_input = self.dataset.ref_input
         if ref_input is not None:
             x_ref = {}
@@ -233,9 +229,36 @@ class BaseModule(Module, ABC):
             [x_enc[name_mod].flatten(1, 2) for name_mod in x_enc],
             dim=1,
         )
+        logits = {}
+        for name_target, target in self.dataset.targets.items():
+            match target.type_target:
+                case "segment" | "change_detect":
+                    logits[name_target] = self.heads[name_target](x_ref, ssl_phase)
+                case "multilabel_classif" | "classif":
+                    logits[name_target] = self.heads[name_target](x_enc, ssl_phase)
+        return logits
+
+    def compute_loss_pred(
+        self,
+        x_enc: dict[str, Tensor],
+        batch: dict[str, Tensor],
+        logits: dict[str, Tensor],
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        stage: Literal["train", "val", "test"],
+    ) -> tuple[
+        Tensor,
+        dict[str, Tensor],
+        dict[str, Tensor],
+        dict[str, Tensor],
+        dict[str, Tensor],
+    ]:
+        """Shared loss computation for all MIM modules."""
+        logits = self.compute_logits(x_enc, ssl_phase)
+
         loss_pred = 0
         log_inputs, log_preds, log_targets = {}, {}, {}
         for name_target, target in self.dataset.targets.items():
+            logits_target = logits[name_target]
             targets = batch[name_target]
             # image logger
             if target.type_target in ("segment", "change_detect"):
@@ -244,58 +267,53 @@ class BaseModule(Module, ABC):
                     0,
                     0,
                 ][:RGB_BANDS]
-                log_inputs[f"{ssl_phase}_{name_target}_{stage}/_input"] = input_img
-                num_classes = target.num_classes
                 target_msk = get_target_mask_from_batch(
                     batch[name_target][0, 0, 0],
-                    num_classes,
+                    target.num_classes,
                     target.missing_val,
                 )
+                log_inputs[f"{ssl_phase}_{name_target}_{stage}/_input"] = input_img
                 log_targets[f"{ssl_phase}_{name_target}_{stage}/_target"] = (
                     create_masked_image(
                         input_img,
                         target_msk,
-                        num_classes,
+                        target.num_classes,
                     )
                 )
             match target.type_target:
                 case "segment":
-                    logits = self.heads[name_target](x_ref, ssl_phase)
                     # image_logger
-                    pred_msk = get_segment_mask_from_logits(logits[0, 0], num_classes)
+                    pred_msk = get_segment_mask_from_logits(
+                        logits_target[0, 0],
+                        target.num_classes,
+                    )
                     log_preds[f"{ssl_phase}_{name_target}_{stage}/_pred"] = (
                         create_masked_image(
                             input_img,
                             pred_msk,
-                            num_classes,
+                            target.num_classes,
                         )
                     )
-                    logits = rearrange(logits, "b 1 c h w -> (b h w) c")
+                    logits_target = rearrange(logits_target, "b 1 c h w -> (b h w) c")
                     targets = rearrange(targets, "b 1 1 h w -> (b h w)")
                     targets = targets.long()
                 case "change_detect":
-                    logits = self.heads[name_target](x_ref, ssl_phase)
                     # image logger
-                    log_inputs[f"{ssl_phase}_{name_target}_{stage}/_image_1"] = (
-                        log_inputs.pop(f"{ssl_phase}_{name_target}_{stage}/_input")
-                    )
                     input_img = batch[next(input_keys)][0, 0][:RGB_BANDS]
                     pred_msk = get_cd_mask_from_logits(logits)
-                    log_preds[f"{ssl_phase}_{name_target}_{stage}/_image_2_pred"] = (
+                    log_preds[f"{ssl_phase}_{name_target}_{stage}/_pred"] = (
                         create_masked_image(
                             input_img,
                             pred_msk,
-                            num_classes,
+                            target.num_classes,
                         )
                     )
-                    logits = rearrange(logits, "b 1 1 h w -> (b h w)")
+                    logits_target = rearrange(logits_target, "b 1 1 h w -> (b h w)")
                     targets = rearrange(targets, "b 1 1 h w -> (b h w)")
                     targets = targets.float()
                 case "multilabel_classif":
-                    logits = self.heads[name_target](x_enc, ssl_phase)
                     targets = targets.float()
                 case "classif":
-                    logits = self.heads[name_target](x_enc, ssl_phase)
                     targets = targets.long()
 
             if targets.ndim > 1:
@@ -308,7 +326,7 @@ class BaseModule(Module, ABC):
                 continue
 
             logits_selected = torch.index_select(
-                logits,
+                logits_target,
                 dim=0,
                 index=inds,
             )
@@ -325,4 +343,18 @@ class BaseModule(Module, ABC):
                 logits_selected,
                 targets_selected,
             )
-        return loss_pred, log_inputs, log_preds, log_targets
+        if not isinstance(loss_pred, Tensor):
+            loss_pred = 0 * list(logits.values()).pop().mean()
+        self.metrics[f"loss_pred_{stage}"].update(loss_pred)
+
+        return loss_pred, logits, log_inputs, log_preds, log_targets
+
+    def resize_batch(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
+        """Resize input rasters based on dataset config."""
+        for name_mod, mod in self.dataset.inputs.items():
+            batch[name_mod] = F.interpolate(
+                batch[name_mod].flatten(0, 1),
+                size=(mod.image_size,) * 2,
+                mode="nearest",
+            ).unflatten(0, (-1, mod.num_dates))
+        return batch

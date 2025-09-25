@@ -375,7 +375,14 @@ class Dinov2Baseline(BaseModule):
         batch: dict[str, Tensor],
         ssl_phase: Literal["probe", "finetune"],
         stage: Literal["train", "val", "test"],
-    ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
+    ) -> tuple[
+        Tensor | None,
+        Tensor | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+    ]:
         """Dinov2 forward pass.
 
         Parameters
@@ -394,6 +401,8 @@ class Dinov2Baseline(BaseModule):
 
         """
         # Forward pass through the dinov2 encoder, get encoder's feature maps.
+        batch = self.resize_batch(batch)
+
         group_batch = self.group(batch)
         x, dates = {}, {}
 
@@ -418,11 +427,10 @@ class Dinov2Baseline(BaseModule):
             ref_date = batch["ref_date"]
             x = self._add_date_encodings(x, dates, ref_date)
 
-        loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
+        loss_pred, logits, log_input, log_pred, log_target = self.compute_loss_pred(
             x,
             batch,
             ssl_phase,
             stage,
         )
-        self.metrics[f"loss_pred_{stage}"].update(loss_pred)
-        return None, log_input, log_pred, log_target, loss_pred
+        return None, loss_pred, logits, log_input, log_pred, log_target

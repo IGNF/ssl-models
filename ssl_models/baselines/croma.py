@@ -255,7 +255,14 @@ class CROMABaseline(BaseModule):
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
-    ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
+    ) -> tuple[
+        Tensor | None,
+        Tensor | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+    ]:
         """CROMA forward pass.
 
         Parameters
@@ -273,6 +280,8 @@ class CROMABaseline(BaseModule):
         tuple: CROMA's outputs.
 
         """
+        batch = self.resize_batch(batch)
+
         batch["s1"] = torch.concat((batch["s1_asc"], batch["s1_des"]), dim=1)
         group_batch = self.group(batch)
 
@@ -300,14 +309,13 @@ class CROMABaseline(BaseModule):
             ref_date = batch["ref_date"]
             x = self._add_date_encodings(x, dates, ref_date)
 
-        loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
+        loss_pred, logits, log_input, log_pred, log_target = self.compute_loss_pred(
             x,
             batch,
             ssl_phase,
             stage,
         )
-        self.metrics[f"loss_pred_{stage}"].update(loss_pred)
-        return None, log_input, log_pred, log_target, loss_pred
+        return None, loss_pred, logits, log_input, log_pred, log_target
 
 
 # The following lines are adapted from https://github.com/antofuller/CROMA

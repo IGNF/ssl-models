@@ -216,7 +216,14 @@ class PrithviBaseline(BaseModule):
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
-    ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
+    ) -> tuple[
+        Tensor | None,
+        Tensor | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
+    ]:
         """Prithvi v1/v2 forward pass.
 
         Parameters
@@ -234,6 +241,8 @@ class PrithviBaseline(BaseModule):
         tuple: Prithvi's outputs.
 
         """
+        batch = self.resize_batch(batch)
+
         s2_input = batch["s2"].transpose(1, 2)  # (B, D, C, H, W) -> (B, C, D, H, W)
 
         if self.add_date_enc:
@@ -249,11 +258,11 @@ class PrithviBaseline(BaseModule):
         x = {}
         x["s2"] = output_prithvi
 
-        loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
+        loss_pred, logits, log_input, log_pred, log_target = self.compute_loss_pred(
             x,
             batch,
             ssl_phase,
             stage,
         )
         self.metrics[f"loss_pred_{stage}"].update(loss_pred)
-        return None, log_input, log_pred, log_target, loss_pred
+        return None, loss_pred, logits, log_input, log_pred, log_target
