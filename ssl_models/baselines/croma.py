@@ -253,14 +253,11 @@ class CROMABaseline(BaseModule):
     def forward(
         self,
         batch: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
-        stage: Literal["train", "val", "test"],
+        ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
     ) -> tuple[
-        Tensor | None,
-        Tensor | None,
         dict[str, Tensor] | None,
-        dict[str, Tensor] | None,
-        dict[str, Tensor] | None,
+        None,
+        None,
         dict[str, Tensor] | None,
     ]:
         """CROMA forward pass.
@@ -272,8 +269,6 @@ class CROMABaseline(BaseModule):
         ssl_phase: str
             SSL phase (pretrain, probe, finetune). Only probing and finetuning
             are needed for baselines.
-        stage: str
-            Learning stage: train, val, test.
 
         Returns
         -------
@@ -283,6 +278,7 @@ class CROMABaseline(BaseModule):
         batch = self.resize_batch(batch)
 
         batch["s1"] = torch.concat((batch["s1_asc"], batch["s1_des"]), dim=1)
+
         group_batch = self.group(batch)
 
         sar_input = group_batch["s1"]
@@ -290,16 +286,15 @@ class CROMABaseline(BaseModule):
 
         output_croma = self.encoder(sar_images=sar_input, optical_images=optical_input)
 
-        x = {}
-
+        x_enc = {}
         if self.croma_modality in ["both", "optical"]:
-            x["s2"] = output_croma["optical_encodings"]
+            x_enc["s2"] = output_croma["optical_encodings"]
         if self.croma_modality in ["both", "SAR"]:
-            s1_outputs = output_croma["SAR_encodings"]
-            x["s1_asc"], x["s1_des"] = self._ungroup_s1(s1_outputs)
-
+            x_enc["s1_asc"], x_enc["s1_des"] = self._ungroup_s1(
+                output_croma["SAR_encodings"],
+            )
         if self.multimodal == "croma-intergroup":
-            x["joint"] = output_croma["joint_encodings"]
+            x_enc["joint"] = output_croma["joint_encodings"]
 
         if self.add_date_enc:
             dates = {}
@@ -307,15 +302,10 @@ class CROMABaseline(BaseModule):
                 dates[name_mod] = batch[f"{name_mod}_dates"]
 
             ref_date = batch["ref_date"]
-            x = self._add_date_encodings(x, dates, ref_date)
+            x_enc = self._add_date_encodings(x_enc, dates, ref_date)
 
-        loss_pred, logits, log_input, log_pred, log_target = self.compute_loss_pred(
-            x,
-            batch,
-            ssl_phase,
-            stage,
-        )
-        return None, loss_pred, logits, log_input, log_pred, log_target
+        logits = self.compute_logits(x_enc)
+        return batch, None, None, logits
 
 
 # The following lines are adapted from https://github.com/antofuller/CROMA

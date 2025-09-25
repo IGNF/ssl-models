@@ -227,14 +227,11 @@ class TerramindBaseline(BaseModule):
     def forward(
         self,
         batch: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
-        stage: Literal["train", "val", "test"],
+        ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
     ) -> tuple[
-        Tensor | None,
-        Tensor | None,
         dict[str, Tensor] | None,
-        dict[str, Tensor] | None,
-        dict[str, Tensor] | None,
+        None,
+        None,
         dict[str, Tensor] | None,
     ]:
         """Terramind v1 forward pass.
@@ -246,8 +243,6 @@ class TerramindBaseline(BaseModule):
         ssl_phase: str
             SSL phase (pretrain, probe, finetune). Only probing and finetuning
             are needed for baselines.
-        stage: str
-            Learning stage: train, val, test.
 
         Returns
         -------
@@ -272,11 +267,5 @@ class TerramindBaseline(BaseModule):
             ref_date = batch["ref_date"]
             x_enc = self._add_date_encodings(x_enc, dates, ref_date)
 
-        loss_pred, logits, log_input, log_pred, log_target = self.compute_loss_pred(
-            x_enc,
-            batch,
-            ssl_phase,
-            stage,
-        )
-        self.metrics[f"loss_pred_{stage}"].update(loss_pred)
-        return None, loss_pred, logits, log_input, log_pred, log_target
+        logits = self.compute_logits(x_enc)
+        return batch, None, None, logits

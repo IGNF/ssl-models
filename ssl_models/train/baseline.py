@@ -29,7 +29,6 @@ class BaselineModule(BaseModule):
         model: Literal["dinov2", "dofa", "croma", "prithvi"],
         model_size: Literal["small", "base", "large"],
         type_head: Literal["linear", "attentive"] = "linear",
-        loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
         weight_source: str = "imagenat",
         pretrained_path: str | None = None,
         freeze: bool = False,
@@ -39,7 +38,7 @@ class BaselineModule(BaseModule):
         add_date_enc: bool = True,
         **kwargs,  # noqa: ANN003
     ) -> None:
-        super().__init__(model, loss)
+        super().__init__(datasets)
 
         match model:
             case "dinov2":

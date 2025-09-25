@@ -121,7 +121,12 @@ class DatasetConfig:
         """Check validity of modalities and further define non configurable attrs."""
         self._set_resolutions(resolutions_meters)
 
-        if not any(log_input in self.filter_inputs for log_input in self.log_inputs):
+        self.log_inputs = [
+            log_input
+            for log_input in self.log_inputs
+            if log_input in self.filter_inputs
+        ]
+        if not self.log_inputs:
             self.log_inputs = self.filter_inputs
 
         if self.ref_input and self.ref_input not in self.filter_inputs:

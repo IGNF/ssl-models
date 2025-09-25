@@ -27,6 +27,7 @@ class MixMAE(BaseMIM):
         self,
         datasets: DatasetsConfig,
         mask: MaskConfig,
+        interpolate: Literal["nearest", "bilinear", "bicubic"],
         multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         model: Literal["mixmae"],
         num_levels: Literal[3, 4],
@@ -38,8 +39,6 @@ class MixMAE(BaseMIM):
         swin_version: Literal[1, 2],
         v2_attn: bool,
         type_head: Literal["linear", "attentive"] = "linear",
-        loss_fn: Literal[torch.square, torch.square] = torch.square,
-        norm_pix_loss: bool = True,
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
         decoder_depth: int = 2,
@@ -56,6 +55,7 @@ class MixMAE(BaseMIM):
     ) -> None:
         super().__init__(
             datasets=datasets,
+            interpolate=interpolate,
             multimodal=multimodal,
             model=model,
             num_levels=num_levels,
@@ -63,8 +63,6 @@ class MixMAE(BaseMIM):
             embed_dim=embed_dim,
             decoder_dim=decoder_dim,
             type_head=type_head,
-            loss_fn=loss_fn,
-            norm_pix_loss=norm_pix_loss,
             fac_abs_enc=fac_abs_enc,
             fac_date_enc=fac_date_enc,
         )

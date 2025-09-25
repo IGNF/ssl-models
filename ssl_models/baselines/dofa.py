@@ -345,66 +345,76 @@ class DOFABaseline(BaseModule, ABC):
     def forward(
         self,
         batch: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
-        stage: Literal["train", "val", "test"],
+        ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
     ) -> tuple[
-        Tensor | None,
-        Tensor | None,
         dict[str, Tensor] | None,
-        dict[str, Tensor] | None,
-        dict[str, Tensor] | None,
+        None,
+        None,
         dict[str, Tensor] | None,
     ]:
-        # append cls token
+        """DOFA forward pass.
+
+        Parameters
+        ----------
+        batch: dict
+            Dictionary containing the data.
+        ssl_phase: str
+            SSL phase (pretrain, probe, finetune). Only probing and finetuning
+            are needed for baselines.
+
+        Returns
+        -------
+        tuple: DOFA's outputs.
+
+        """
         batch = self.resize_batch(batch)
 
         group_batch = self.group(batch)
-        x, dates = {}, {}
 
+        x_enc, dates = {}, {}
         for name_mod in self.dataset.inputs:
-            input_mod = group_batch[name_mod]
-            _, _, height, width = input_mod.shape
+            _, _, H, W = group_batch[name_mod].shape  # noqa: N806
 
             waves_mod = torch.tensor(
                 self.wavelengths[name_mod],
-                device=input_mod.device,
+                device=group_batch[name_mod].device,
             ).float()
 
-            x_tokenized, _ = self.patch_embed[name_mod](input_mod, waves_mod)
+            x_tokenized, _ = self.patch_embed[name_mod](
+                group_batch[name_mod],
+                waves_mod,
+            )
 
             cls_pos_embed, patch_pos_embed = interpolate_pos_encoding(
                 self.pos_embed[name_mod],
-                height,
-                width,
+                H,
+                W,
                 self.patch_size,
             )
 
             x_tokenized = x_tokenized + patch_pos_embed
             cls_token = self.cls_token + cls_pos_embed
             cls_tokens = cls_token.expand(x_tokenized.shape[0], -1, -1)
-            x_enc = torch.cat((cls_tokens, x_tokenized), dim=1)
+            x_mod = torch.cat((cls_tokens, x_tokenized), dim=1)  # append CLS token
 
             encoder_mod = "shared" if self.multimodal == "shared" else name_mod
             for block in self.encoder[encoder_mod]:
-                x_enc = block(x_enc)
+                x_mod = block(x_mod)
 
             if self.keep_norm:
-                x_enc = self.layernorm(x_enc)
+                x_mod = self.layernorm(x_mod)
 
-            x[name_mod] = x_enc[:, 1:]
+            x_mod = x_mod[:, 1:]  # ignore CLS token
+
+            x_enc[name_mod] = x_mod
             dates[name_mod] = batch[f"{name_mod}_dates"]
 
         if self.add_date_enc:
             ref_date = batch["ref_date"]
-            x = self._add_date_encodings(x, dates, ref_date)
+            x_enc = self._add_date_encodings(x_enc, dates, ref_date)
 
-        loss_pred, logits, log_input, log_pred, log_target = self.compute_loss_pred(
-            x,
-            batch,
-            ssl_phase,
-            stage,
-        )
-        return None, loss_pred, logits, log_input, log_pred, log_target
+        logits = self.compute_logits(x_enc)
+        return batch, None, None, logits
 
 
 # Copyright (c) Microsoft Corporation. All rights reserved.
