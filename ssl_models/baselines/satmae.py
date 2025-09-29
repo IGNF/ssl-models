@@ -168,36 +168,49 @@ class SatMAEBaseline(BaseModule):
         """Skip implem."""
 
     def format_dates(self, dates: Tensor) -> Tensor:
-        year = dates[:, :, 0:1, 0, 0]
-        month = dates[:, :, 1:2, 0, 0]
-        hour = dates[:, :, 2:3, 0, 0]
+        year = dates[:, :, 0:1]
+        month = dates[:, :, 1:2]
+        hour = dates[:, :, 2:3]
 
         return torch.stack([year, month, hour], dim=-1)
 
     def forward(
         self,
         batch: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
-        stage: Literal["train", "val", "test"],
-    ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
-        """Forward pass of model."""
-        timestamps = batch["s2_dates"]
-        s2_input = batch["s2"]
+        ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
+    ) -> tuple[
+        dict[str, Tensor] | None,
+        None,
+        None,
+        dict[str, Tensor] | None,
+    ]:
+        """SatMAE forward pass.
 
-        x = {}
-        x["s2"] = self.encoder.forward_encoder(
-            s2_input,
-            self.format_dates(timestamps),
+        Parameters
+        ----------
+        batch: dict
+            Dictionary containing the data.
+        ssl_phase: str
+            SSL phase (pretrain, probe, finetune). Only probing and finetuning
+            are needed for baselines.
+
+        Returns
+        -------
+        tuple: SatMAE's outputs.
+
+        """
+        batch = self.resize_batch(batch)
+
+        output_satmae = self.encoder.forward_encoder(
+            batch["s2"],
+            self.format_dates(batch["s2_dates"]),
         )
 
-        loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
-            x,
-            batch,
-            ssl_phase,
-            stage,
-        )
-        self.metrics[f"loss_pred_{stage}"].update(loss_pred)
-        return None, log_input, log_pred, log_target, loss_pred
+        x_enc = {}
+        x_enc["s2"] = output_satmae
+
+        logits = self.compute_logits(x_enc)
+        return batch, None, None, logits
 
 
 class MaskedAutoencoderViT(nn.Module):

@@ -192,8 +192,8 @@ class PrithviBaseline(BaseModule):
         """Skip implem."""
 
     def format_dates(self, dates: Tensor) -> Tensor:
-        year = dates[:, :, 0, 0, 0]
-        doy = dates[:, :, 1, 0, 0] / 365.25
+        year = dates[:, :, 0]
+        doy = dates[:, :, 1] / 365.25
 
         return torch.stack([year, doy], dim=-1)
 
@@ -214,9 +214,13 @@ class PrithviBaseline(BaseModule):
     def forward(
         self,
         batch: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
-        stage: Literal["train", "val", "test"],
-    ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
+        ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
+    ) -> tuple[
+        dict[str, Tensor] | None,
+        None,
+        None,
+        dict[str, Tensor] | None,
+    ]:
         """Prithvi v1/v2 forward pass.
 
         Parameters
@@ -226,34 +230,29 @@ class PrithviBaseline(BaseModule):
         ssl_phase: str
             SSL phase (pretrain, probe, finetune). Only probing and finetuning
             are needed for baselines.
-        stage: str
-            Learning stage: train, val, test.
 
         Returns
         -------
         tuple: Prithvi's outputs.
 
         """
+        batch = self.resize_batch(batch)
+
         s2_input = batch["s2"].transpose(1, 2)  # (B, D, C, H, W) -> (B, C, D, H, W)
 
         if self.add_date_enc:
-            s2_dates = batch["s2_dates"]
-            formatted_dates = self.format_dates(s2_dates)
-
-            features_prithvi = self.encoder(x=s2_input, temporal_coords=formatted_dates)
+            features_prithvi = self.encoder(
+                x=s2_input,
+                temporal_coords=self.format_dates(batch["s2_dates"]),
+            )
         else:
             features_prithvi = self.encoder(x=s2_input)
 
-        output_prithvi = features_prithvi[-1][:, 1:, :]  # remove cls token
+        output_prithvi = features_prithvi[-1]
+        output_prithvi = output_prithvi[:, 1:, :]  # ignore cls token
 
-        x = {}
-        x["s2"] = output_prithvi
+        x_enc = {}
+        x_enc["s2"] = output_prithvi
 
-        loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
-            x,
-            batch,
-            ssl_phase,
-            stage,
-        )
-        self.metrics[f"loss_pred_{stage}"].update(loss_pred)
-        return None, log_input, log_pred, log_target, loss_pred
+        logits = self.compute_logits(x_enc)
+        return batch, None, None, logits

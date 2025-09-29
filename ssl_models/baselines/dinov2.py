@@ -373,9 +373,13 @@ class Dinov2Baseline(BaseModule):
     def forward(
         self,
         batch: dict[str, Tensor],
-        ssl_phase: Literal["probe", "finetune"],
-        stage: Literal["train", "val", "test"],
-    ) -> tuple[Tensor | None, Tensor | None, Tensor | None, Tensor | None]:
+        ssl_phase: Literal["probe", "finetune"],  # noqa: ARG002
+    ) -> tuple[
+        dict[str, Tensor] | None,
+        None,
+        None,
+        dict[str, Tensor] | None,
+    ]:
         """Dinov2 forward pass.
 
         Parameters
@@ -385,44 +389,34 @@ class Dinov2Baseline(BaseModule):
         ssl_phase: str
             SSL phase (pretrain, probe, finetune). Only probing and finetuning
             are needed for baselines.
-        stage: str
-            Learning stage: train, val, test.
 
         Returns
         -------
         tuple: DinoV2's outputs.
 
         """
-        # Forward pass through the dinov2 encoder, get encoder's feature maps.
+        batch = self.resize_batch(batch)
+
         group_batch = self.group(batch)
-        x, dates = {}, {}
 
+        x_enc, dates = {}, {}
         for name_mod in self.dataset.inputs:
-            input_mod = group_batch[name_mod]
-
-            x_tokenized = self.patch_embed[name_mod](input_mod)
-
             encoder_mod = "shared" if self.multimodal == "shared" else name_mod
 
-            x_enc = self.encoder[encoder_mod](x_tokenized)["last_hidden_state"]
+            x_tokenized = self.patch_embed[name_mod](group_batch[name_mod])
+            x_mod = self.encoder[encoder_mod](x_tokenized)["last_hidden_state"]
 
             if self.keep_norm:
-                x_enc = self.layernorm(x_enc)
+                x_mod = self.layernorm(x_mod)
 
-            x_enc = x_enc[:, 1:]
+            x_mod = x_mod[:, 1:]  # ignore CLS token
 
-            x[name_mod] = x_enc
+            x_enc[name_mod] = x_mod
             dates[name_mod] = batch[f"{name_mod}_dates"]
 
         if self.add_date_enc:
             ref_date = batch["ref_date"]
-            x = self._add_date_encodings(x, dates, ref_date)
+            x_enc = self._add_date_encodings(x_enc, dates, ref_date)
 
-        loss_pred, log_input, log_pred, log_target = self.compute_loss_pred(
-            x,
-            batch,
-            ssl_phase,
-            stage,
-        )
-        self.metrics[f"loss_pred_{stage}"].update(loss_pred)
-        return None, log_input, log_pred, log_target, loss_pred
+        logits = self.compute_logits(x_enc)
+        return batch, None, None, logits

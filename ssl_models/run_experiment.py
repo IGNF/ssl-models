@@ -73,7 +73,11 @@ def run_experiment(
     else:
         model = model_partial()
 
-    if opt_pretrain.epochs > 0:
+    if (
+        opt_pretrain.epochs > 0
+        and not run.load_ckpt_path
+        and (not run.fit_ckpt_path or run.fit_phase == "pretrain")
+    ):
         LOGGER.info("Pretrain")
         data_pretrain = data_partial(ssl_phase="pretrain", opt=opt_pretrain)
         trainer_pretrain = trainer_partial(
@@ -86,7 +90,11 @@ def run_experiment(
             ckpt_path=run.fit_ckpt_path,
         )
 
-    if opt_probe.epochs > 0:
+    if (
+        opt_probe.epochs > 0
+        and (not run.load_ckpt_path or run.load_phase == "pretrain")
+        and (not run.fit_ckpt_path or run.fit_phase == "probe")
+    ):
         LOGGER.info("Probe")
         data_probe = data_partial(ssl_phase="probe", opt=opt_probe)
         trainer_probe = trainer_partial(

@@ -27,6 +27,7 @@ def test_mae(datasets_geopile, mask, model_map, model_size, multimodal):
     model_args = {
         "datasets": datasets_geopile,
         "mask": mask,
+        "interpolate": "nearest",
         "multimodal": multimodal,
         "model": "mae",
         "allmods_depth": 0,
@@ -38,6 +39,7 @@ def test_mae(datasets_geopile, mask, model_map, model_size, multimodal):
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
     }
+    model_map[model_size](**model_args)
 
 
 @pytest.mark.parametrize(
@@ -59,6 +61,7 @@ def test_mae_loss(
     model_args = {
         "datasets": datasets_geopile,
         "mask": mask,
+        "interpolate": "nearest",
         "multimodal": "mod",
         "model": "mae",
         "allmods_depth": 0,
@@ -74,9 +77,10 @@ def test_mae_loss(
 
 
 @pytest.mark.parametrize(
-    "model_size, unpool_dim, type_head, fac_abs_enc, fac_date_enc",
+    "model_size, interpolate, unpool_dim, type_head, fac_abs_enc, fac_date_enc",
     itertools.product(
         ("tiny",),
+        ("nearest", "bilinear"),
         (128, None),
         ("attentive", "linear"),
         (1.0, 0.0),
@@ -88,6 +92,7 @@ def test_mae_arch(
     mask,
     model_map,
     model_size,
+    interpolate,
     unpool_dim,
     type_head,
     fac_abs_enc,
@@ -96,6 +101,7 @@ def test_mae_arch(
     model_args = {
         "datasets": datasets_geopile,
         "mask": mask,
+        "interpolate": interpolate,
         "multimodal": "mod",
         "model": "mae",
         "allmods_depth": 0,
