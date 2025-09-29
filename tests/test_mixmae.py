@@ -40,6 +40,7 @@ def test_mixmae(
     model_args = {
         "datasets": datasets_geopile,
         "mask": mask,
+        "interpolate": "nearest",
         "multimodal": multimodal,
         "model": "mixmae",
         "unpool_dim": None,
@@ -74,6 +75,7 @@ def test_mixmae_loss(
     model_args = {
         "datasets": datasets_geopile,
         "mask": mask,
+        "interpolate": "nearest",
         "multimodal": "shared",
         "model": "mixmae",
         "unpool_dim": None,
@@ -90,9 +92,10 @@ def test_mixmae_loss(
 
 
 @pytest.mark.parametrize(
-    "model_size, num_levels, swin_version, v2_attn, type_head",
+    "model_size, interpolate, num_levels, swin_version, v2_attn, type_head",
     itertools.product(
         ("tiny",),
+        ("nearest", "bilinear"),
         (3, 4),
         (1, 2),
         (True, False),
@@ -104,6 +107,7 @@ def test_mixmae_arch(
     mask,
     model_map,
     model_size,
+    interpolate,
     num_levels,
     swin_version,
     v2_attn,
@@ -112,6 +116,7 @@ def test_mixmae_arch(
     model_args = {
         "datasets": datasets_geopile,
         "mask": mask,
+        "interpolate": interpolate,
         "multimodal": "shared",
         "model": "mixmae",
         "unpool_dim": None,
@@ -132,6 +137,7 @@ def test_mod_mixmae_should_fail(datasets_geopile, mask):
     model_args = {
         "datasets": datasets_geopile,
         "mask": mask,
+        "interpolate": "nearest",
         "multimodal": "mod",
         "model": "mixmae",
         "unpool_dim": None,
@@ -152,6 +158,7 @@ def test_group_mixmae_should_fail(datasets_geopile, mask):
     model_args = {
         "datasets": datasets_geopile,
         "mask": mask,
+        "interpolate": "nearest",
         "multimodal": "group",
         "model": "mixmae",
         "unpool_dim": None,

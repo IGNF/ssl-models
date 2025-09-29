@@ -6,8 +6,9 @@ from ssl_models.train.model import SSLModule
 
 
 @pytest.mark.parametrize(
-    "multimodal, allmods_depth, stage, model_size",
+    "interpolate, multimodal, allmods_depth, stage, model_size",
     itertools.product(
+        ("nearest",),
         ("msgfm", "shared", "mod", "group"),
         (0,),
         ("train", "val", "test"),
@@ -17,6 +18,7 @@ from ssl_models.train.model import SSLModule
 def test_ssl_mae(
     datasets_geopile,
     mask,
+    interpolate,
     multimodal,
     allmods_depth,
     stage,
@@ -25,6 +27,7 @@ def test_ssl_mae(
     ssl_module = SSLModule(
         datasets=datasets_geopile,
         mask=mask,
+        interpolate=interpolate,
         multimodal=multimodal,
         allmods_depth=allmods_depth,
         model="mae",
@@ -34,8 +37,9 @@ def test_ssl_mae(
 
 
 @pytest.mark.parametrize(
-    "multimodal, allmods_depth, stage, model_size",
+    "interpolate, multimodal, allmods_depth, stage, model_size",
     itertools.product(
+        ("nearest",),
         ("mod", "group"),
         (3,),
         ("train", "val", "test"),
@@ -45,6 +49,7 @@ def test_ssl_mae(
 def test_ssl_allmods_mae(
     datasets_geopile,
     mask,
+    interpolate,
     multimodal,
     allmods_depth,
     stage,
@@ -53,6 +58,7 @@ def test_ssl_allmods_mae(
     ssl_module = SSLModule(
         datasets=datasets_geopile,
         mask=mask,
+        interpolate=interpolate,
         multimodal=multimodal,
         allmods_depth=allmods_depth,
         model="mae",
@@ -62,8 +68,9 @@ def test_ssl_allmods_mae(
 
 
 @pytest.mark.parametrize(
-    "multimodal, allmods_depth, stage, model_size, type_head, loss",
+    "interpolate, multimodal, allmods_depth, stage, model_size, type_head, loss",
     itertools.product(
+        ("nearest",),
         ("mod",),
         (0,),
         ("train", "val", "test"),
@@ -75,6 +82,7 @@ def test_ssl_allmods_mae(
 def test_ssl_head_loss(
     datasets_geopile,
     mask,
+    interpolate,
     multimodal,
     allmods_depth,
     stage,
@@ -85,6 +93,7 @@ def test_ssl_head_loss(
     ssl_module = SSLModule(
         datasets=datasets_geopile,
         mask=mask,
+        interpolate=interpolate,
         multimodal=multimodal,
         allmods_depth=allmods_depth,
         model="mae",
@@ -96,8 +105,9 @@ def test_ssl_head_loss(
 
 
 @pytest.mark.parametrize(
-    "multimodal, allmods_depth, stage, model_size, num_levels, swin_version, swin_abs_enc",
+    "interpolate, multimodal, allmods_depth, stage, model_size, num_levels, swin_version, swin_abs_enc",
     itertools.product(
+        ("nearest",),
         ("msgfm", "shared"),
         (0,),
         ("train",),
@@ -110,6 +120,7 @@ def test_ssl_head_loss(
 def test_ssl_mixmae(
     datasets_geopile,
     mask,
+    interpolate,
     multimodal,
     allmods_depth,
     stage,
@@ -121,6 +132,7 @@ def test_ssl_mixmae(
     ssl_module = SSLModule(
         datasets=datasets_geopile,
         mask=mask,
+        interpolate=interpolate,
         multimodal=multimodal,
         allmods_depth=allmods_depth,
         model="mixmae",
@@ -138,7 +150,7 @@ def test_model_mod_mixmae_should_fail(datasets_geopile, mask):
         datasets=datasets_geopile,
         mask=mask,
         multimodal="mod",
-        allmods_depth=allmods_depth,
+        allmods_depth=0,
         model="mixmae",
         model_size="tiny",
     )
@@ -150,7 +162,7 @@ def test_model_group_mixmae_should_fail(datasets_geopile, mask):
         datasets=datasets_geopile,
         mask=mask,
         multimodal="group",
-        allmods_depth=allmods_depth,
+        allmods_depth=0,
         model="mixmae",
         model_size="tiny",
     )
