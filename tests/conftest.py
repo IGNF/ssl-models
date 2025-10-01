@@ -12,7 +12,6 @@ def datasets_geopile():
     return DatasetsConfig(
         root_dir=TEST_DATA_DIR,
         geopile=GeoPileConfig(rel_dir=""),
-        filter_allowed=["geopile"],
         filter_pretrain=["geopile"],
         filter_finetune=["geopile"],
     )

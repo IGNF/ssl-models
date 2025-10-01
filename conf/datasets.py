@@ -12,17 +12,6 @@ from conf.dataset.pastis_hd import PASTISHDConfig
 from conf.dataset.s2_naip import S2NAIPConfig
 from conf.dataset.treesatai_ts import TreeSatAITSConfig
 
-ALL_DATASETS = [
-    "flair",
-    "geopile",
-    "hi_ucd",
-    "pastis_hd",
-    "s2_naip",
-    "treesatai_ts",
-    "circa",
-    "bdfv2",
-]
-
 
 # It does not seems possible to have nested dataclasses at all config levels,
 # so we do not use a dataclass at the top level.
@@ -32,9 +21,8 @@ class DatasetsConfig:
     def __init__(
         self,
         root_dir: str,
-        filter_allowed: list[str] = ALL_DATASETS,
-        filter_pretrain: list[str] = ALL_DATASETS,
-        filter_finetune: list[str] = ALL_DATASETS,
+        filter_pretrain: list[str],
+        filter_finetune: list[str],
         geopile: GeoPileConfig = GeoPileConfig(),
         flair: FLAIRConfig = FLAIRConfig(),
         pastis_hd: PASTISHDConfig = PASTISHDConfig(),
@@ -45,14 +33,11 @@ class DatasetsConfig:
         bdfv2: BDFV2Config = BDFV2Config(),
     ) -> None:
         """Assign args to config attributes."""
-        self.kwargs = {
+        self.__dict__ = {
             name_arg: val_arg
             for name_arg, val_arg in locals().items()
-            if not isinstance(val_arg, DatasetsConfig)
+            if val_arg is not self
         }
-        for name_arg, val_arg in self.kwargs.items():
-            self.__dict__[name_arg] = val_arg
-
         self.__post_init__()
 
     def __post_init__(self) -> None:
@@ -61,10 +46,7 @@ class DatasetsConfig:
             if name_dataset not in self.__dict__:
                 msg = f"Invalid dataset name {name_dataset}. Not an attribute."
                 raise ValueError(msg)
-        self.allowed = {
-            name_dataset: getattr(self, name_dataset)
-            for name_dataset in self.filter_allowed
-        }
+
         self.pretrain = {
             name_dataset: getattr(self, name_dataset)
             for name_dataset in self.filter_pretrain
@@ -90,6 +72,8 @@ class DatasetsConfig:
 dataset_build = builds(
     DatasetsConfig,
     root_dir=MISSING,
+    filter_pretrain=MISSING,
+    filter_finetune=MISSING,
 )
 
 dataset_store = store(group="datasets")

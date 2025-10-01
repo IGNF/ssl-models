@@ -20,16 +20,6 @@
     "decoder_mlp_ratio": 2,
     "datasets": {
         "root_dir": "/home/ALabatie/Bureau/ssl-models/tests/data",
-        "filter_allowed": [
-            "flair",
-            "geopile",
-            "hi_ucd",
-            "pastis_hd",
-            "s2_naip",
-            "treesatai_ts",
-            "circa",
-            "bdfv2"
-        ],
         "filter_pretrain": [
             "bdfv2"
         ],
@@ -865,7 +855,7 @@
             "aerial": {
                 "image_size": 250,
                 "patch_size": {
-                    "mae": 10,
+                    "mae": 5,
                     "mixmae": 2,
                     "dinov2_imagenat": 14,
                     "dinov2_sat": 16,
@@ -894,8 +884,8 @@
             "dem": {
                 "image_size": 250,
                 "patch_size": {
-                    "mae": 25,
-                    "mixmae": 5,
+                    "mae": 5,
+                    "mixmae": 2,
                     "dinov2_imagenat": 14,
                     "dinov2_sat": 16,
                     "dofa": 16,
