@@ -31,14 +31,14 @@ def model_map():
     ),
 )
 def test_mixmae(
-    datasets_geopile,
+    datasets_treesat,
     mask,
     model_map,
     model_size,
     multimodal,
 ):
     model_args = {
-        "datasets": datasets_geopile,
+        "datasets": datasets_treesat,
         "mask": mask,
         "interpolate": "nearest",
         "multimodal": multimodal,
@@ -66,7 +66,7 @@ def test_mixmae(
     ),
 )
 def test_mixmae_arch(
-    datasets_geopile,
+    datasets_treesat,
     mask,
     model_map,
     model_size,
@@ -77,7 +77,7 @@ def test_mixmae_arch(
     type_head,
 ):
     model_args = {
-        "datasets": datasets_geopile,
+        "datasets": datasets_treesat,
         "mask": mask,
         "interpolate": interpolate,
         "multimodal": "shared",
@@ -94,9 +94,9 @@ def test_mixmae_arch(
 
 
 @pytest.mark.xfail
-def test_mod_mixmae_should_fail(datasets_geopile, mask):
+def test_mod_mixmae_should_fail(datasets_treesat, mask):
     model_args = {
-        "datasets": datasets_geopile,
+        "datasets": datasets_treesat,
         "mask": mask,
         "interpolate": "nearest",
         "multimodal": "mod",
@@ -113,9 +113,9 @@ def test_mod_mixmae_should_fail(datasets_geopile, mask):
 
 
 @pytest.mark.xfail
-def test_group_mixmae_should_fail(datasets_geopile, mask):
+def test_group_mixmae_should_fail(datasets_treesat, mask):
     model_args = {
-        "datasets": datasets_geopile,
+        "datasets": datasets_treesat,
         "mask": mask,
         "interpolate": "nearest",
         "multimodal": "group",
