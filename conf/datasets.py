@@ -1,3 +1,4 @@
+# ruff: noqa: B008
 """Dataset class."""
 
 from hydra_zen import MISSING, builds, store
@@ -9,7 +10,6 @@ from conf.dataset.hi_ucd import HiUCDConfig
 from conf.dataset.pastis_hd import PASTISHDConfig
 from conf.dataset.s2_naip import S2NAIPConfig
 from conf.dataset.treesatai_ts import TreeSatAITSConfig
-from conf.dataset.utils import DatasetConfig
 
 ALL_DATASETS = [
     "flair",
@@ -33,13 +33,13 @@ class DatasetsConfig:
         filter_allowed: list[str] = ALL_DATASETS,
         filter_pretrain: list[str] = ALL_DATASETS,
         filter_finetune: list[str] = ALL_DATASETS,
-        geopile: DatasetConfig = GeoPileConfig(),
-        flair: DatasetConfig = FLAIRConfig(),
-        pastis_hd: DatasetConfig = PASTISHDConfig(),
-        treesatai_ts: DatasetConfig = TreeSatAITSConfig(),
-        s2_naip: DatasetConfig = S2NAIPConfig(),
-        hi_ucd: DatasetConfig = HiUCDConfig(),
-        circa: DatasetConfig = CircaConfig(),
+        geopile: GeoPileConfig = GeoPileConfig(),
+        flair: FLAIRConfig = FLAIRConfig(),
+        pastis_hd: PASTISHDConfig = PASTISHDConfig(),
+        treesatai_ts: TreeSatAITSConfig = TreeSatAITSConfig(),
+        s2_naip: S2NAIPConfig = S2NAIPConfig(),
+        hi_ucd: HiUCDConfig = HiUCDConfig(),
+        circa: CircaConfig = CircaConfig(),
     ) -> None:
         """Assign args to config attributes."""
         self.kwargs = {
