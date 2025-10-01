@@ -23,9 +23,9 @@ def model_map():
         ("msgfm", "shared", "mod", "group"),
     ),
 )
-def test_mae(datasets_geopile, mask, model_map, model_size, multimodal):
+def test_mae(datasets_treesat, mask, model_map, model_size, multimodal):
     model_args = {
-        "datasets": datasets_geopile,
+        "datasets": datasets_treesat,
         "mask": mask,
         "interpolate": "nearest",
         "multimodal": multimodal,
@@ -52,7 +52,7 @@ def test_mae(datasets_geopile, mask, model_map, model_size, multimodal):
     ),
 )
 def test_mae_arch(
-    datasets_geopile,
+    datasets_treesat,
     mask,
     model_map,
     model_size,
@@ -63,7 +63,7 @@ def test_mae_arch(
     fac_date_enc,
 ):
     model_args = {
-        "datasets": datasets_geopile,
+        "datasets": datasets_treesat,
         "mask": mask,
         "interpolate": interpolate,
         "multimodal": "mod",

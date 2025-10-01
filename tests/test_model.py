@@ -16,7 +16,7 @@ from ssl_models.train.model import SSLModule
     ),
 )
 def test_ssl_mae(
-    datasets_geopile,
+    datasets_treesat,
     mask,
     interpolate,
     multimodal,
@@ -25,7 +25,7 @@ def test_ssl_mae(
     model_size,
 ):
     ssl_module = SSLModule(
-        datasets=datasets_geopile,
+        datasets=datasets_treesat,
         mask=mask,
         interpolate=interpolate,
         multimodal=multimodal,
@@ -47,7 +47,7 @@ def test_ssl_mae(
     ),
 )
 def test_ssl_allmods_mae(
-    datasets_geopile,
+    datasets_treesat,
     mask,
     interpolate,
     multimodal,
@@ -56,7 +56,7 @@ def test_ssl_allmods_mae(
     model_size,
 ):
     ssl_module = SSLModule(
-        datasets=datasets_geopile,
+        datasets=datasets_treesat,
         mask=mask,
         interpolate=interpolate,
         multimodal=multimodal,
@@ -80,7 +80,7 @@ def test_ssl_allmods_mae(
     ),
 )
 def test_ssl_head_loss(
-    datasets_geopile,
+    datasets_treesat,
     mask,
     interpolate,
     multimodal,
@@ -91,7 +91,7 @@ def test_ssl_head_loss(
     loss,
 ):
     ssl_module = SSLModule(
-        datasets=datasets_geopile,
+        datasets=datasets_treesat,
         mask=mask,
         interpolate=interpolate,
         multimodal=multimodal,
@@ -118,7 +118,7 @@ def test_ssl_head_loss(
     ),
 )
 def test_ssl_mixmae(
-    datasets_geopile,
+    datasets_treesat,
     mask,
     interpolate,
     multimodal,
@@ -130,7 +130,7 @@ def test_ssl_mixmae(
     swin_abs_enc,
 ):
     ssl_module = SSLModule(
-        datasets=datasets_geopile,
+        datasets=datasets_treesat,
         mask=mask,
         interpolate=interpolate,
         multimodal=multimodal,
@@ -145,9 +145,9 @@ def test_ssl_mixmae(
 
 
 @pytest.mark.xfail
-def test_model_mod_mixmae_should_fail(datasets_geopile, mask):
+def test_model_mod_mixmae_should_fail(datasets_treesat, mask):
     _ = SSLModule(
-        datasets=datasets_geopile,
+        datasets=datasets_treesat,
         mask=mask,
         multimodal="mod",
         allmods_depth=0,
@@ -157,9 +157,9 @@ def test_model_mod_mixmae_should_fail(datasets_geopile, mask):
 
 
 @pytest.mark.xfail
-def test_model_group_mixmae_should_fail(datasets_geopile, mask):
+def test_model_group_mixmae_should_fail(datasets_treesat, mask):
     _ = SSLModule(
-        datasets=datasets_geopile,
+        datasets=datasets_treesat,
         mask=mask,
         multimodal="group",
         allmods_depth=0,
@@ -169,9 +169,9 @@ def test_model_group_mixmae_should_fail(datasets_geopile, mask):
 
 
 @pytest.mark.xfail
-def test_levels_should_fail(datasets_geopile, mask):
+def test_levels_should_fail(datasets_treesat, mask):
     _ = SSLModule(
-        datasets=datasets_geopile,
+        datasets=datasets_treesat,
         mask=mask,
         multimodal="shared",
         allmods_depth=0,
@@ -182,9 +182,9 @@ def test_levels_should_fail(datasets_geopile, mask):
 
 
 @pytest.mark.xfail
-def test_model_should_fail(datasets_geopile, mask):
+def test_model_should_fail(datasets_treesat, mask):
     _ = SSLModule(
-        datasets=datasets_geopile,
+        datasets=datasets_treesat,
         mask=mask,
         multimodal="shared",
         allmods_depth=0,
