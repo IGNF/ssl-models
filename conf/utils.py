@@ -1,44 +1,47 @@
 """Utils to convert between configs and dicts."""
 
-from dataclasses import asdict, is_dataclass
+import inspect
+from dataclasses import asdict
 
 from dacite.core import from_dict
 
+from conf.dataset.utils import DatasetConfig
 from conf.datasets import DatasetsConfig
 from conf.mask import MaskConfig
+
+DATASETS_TYPES = {
+    name_arg: val_arg.annotation
+    for name_arg, val_arg in inspect.signature(
+        DatasetsConfig.__init__,
+    ).parameters.items()
+    if val_arg.annotation != inspect._empty  # noqa: SLF001
+}
 
 
 def datasets_from_dict(datasets_dict: dict) -> DatasetsConfig:
     """Convert dict to datasets config."""
-    datasets = DatasetsConfig(
-        **{
-            name_arg: val_arg
-            for name_arg, val_arg in datasets_dict.items()
-            if not isinstance(val_arg, dict)
-        },
-    )
-    for name_arg, val_arg in datasets.kwargs.items():
-        if not is_dataclass(val_arg):
-            continue
-        setattr(
-            datasets,
-            name_arg,
-            from_dict(data_class=type(val_arg), data=datasets_dict[name_arg]),
-        )
-    return datasets
+    kwargs = {}
+    for name_arg, type_arg in DATASETS_TYPES.items():
+        if issubclass(type_arg, DatasetConfig):
+            kwargs[name_arg] = from_dict(
+                data_class=type_arg,
+                data=datasets_dict[name_arg],
+            )
+        else:
+            kwargs[name_arg] = datasets_dict[name_arg]
+
+    return DatasetsConfig(**kwargs)
 
 
 def datasets_to_dict(datasets: DatasetsConfig) -> dict:
     """Convert datasets config to dict."""
-    datasets_dict = {
-        name_arg: val_arg
-        for name_arg, val_arg in datasets.kwargs.items()
-        if not is_dataclass(val_arg)
-    }
-    for name_arg, val_arg in datasets.kwargs.items():
-        if not is_dataclass(val_arg):
-            continue
-        datasets_dict[name_arg] = asdict(val_arg)
+    datasets_dict = {}
+    for name_arg, type_arg in DATASETS_TYPES.items():
+        attr = getattr(datasets, name_arg)
+        if issubclass(type_arg, DatasetConfig):
+            datasets_dict[name_arg] = asdict(attr)
+        else:
+            datasets_dict[name_arg] = attr
     return datasets_dict
 
 

@@ -132,7 +132,7 @@ class GenericDataset(Dataset, ABC):
         path_mod: Path,
         dates_mod: np.ndarray,
         mask: Path | None,
-        mask_bands: list[list[int]],
+        mask_bands: list[list[int]] | None,
         h5_name: str | None,
         h5_mask: str | None,
         start: tuple[int],
@@ -172,7 +172,11 @@ class GenericDataset(Dataset, ABC):
                     input_mod = input_mod[:, bands]
                 if use_mask and mask is not None:
                     with rasterio.open(mask) as src:
-                        mask_bands = mask_bands if mask_bands else range(src.count)
+                        mask_bands = (
+                            mask_bands
+                            if mask_bands
+                            else range(src.count // len(dates_mod))
+                        )
                         mask_mod = src.read(window=window)
                         mask_mod = self.unflatten(mask_mod, 0, (len(dates_mod), -1))
                         mask_mod = mask_mod[:, mask_bands, :, :]

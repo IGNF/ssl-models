@@ -267,7 +267,7 @@ class MetricsLogger(Callback):
 
         pl_module.log(
             name=f"{trainer.ssl_phase}_{name}/step_train",
-            value=outputs["loss"],
+            value=outputs["loss"] * trainer.accumulate_grad_batches,
             on_step=True,
             on_epoch=False,
             prog_bar=True,
