@@ -1,3 +1,4 @@
+# ruff: noqa: B008
 """Dataset class."""
 
 from hydra_zen import MISSING, builds, store
@@ -28,10 +29,27 @@ class DatasetsConfig:
 
     def __init__(
         self,
-        **kwargs,  # noqa: ANN003
+        root_dir: str,
+        filter_allowed: list[str] = ALL_DATASETS,
+        filter_pretrain: list[str] = ALL_DATASETS,
+        filter_finetune: list[str] = ALL_DATASETS,
+        geopile: GeoPileConfig = GeoPileConfig(),
+        flair: FLAIRConfig = FLAIRConfig(),
+        pastis_hd: PASTISHDConfig = PASTISHDConfig(),
+        treesatai_ts: TreeSatAITSConfig = TreeSatAITSConfig(),
+        s2_naip: S2NAIPConfig = S2NAIPConfig(),
+        hi_ucd: HiUCDConfig = HiUCDConfig(),
+        circa: CircaConfig = CircaConfig(),
     ) -> None:
         """Assign args to config attributes."""
-        self.__dict__ = kwargs
+        self.kwargs = {
+            name_arg: val_arg
+            for name_arg, val_arg in locals().items()
+            if not isinstance(val_arg, DatasetsConfig)
+        }
+        for name_arg, val_arg in self.kwargs.items():
+            self.__dict__[name_arg] = val_arg
+
         self.__post_init__()
 
     def __post_init__(self) -> None:
@@ -69,16 +87,6 @@ class DatasetsConfig:
 dataset_build = builds(
     DatasetsConfig,
     root_dir=MISSING,
-    filter_allowed=ALL_DATASETS,
-    filter_pretrain=ALL_DATASETS,
-    filter_finetune=ALL_DATASETS,
-    geopile=GeoPileConfig(),
-    flair=FLAIRConfig(),
-    pastis_hd=PASTISHDConfig(),
-    treesatai_ts=TreeSatAITSConfig(),
-    s2_naip=S2NAIPConfig(),
-    hi_ucd=HiUCDConfig(),
-    circa=CircaConfig(),
 )
 
 dataset_store = store(group="datasets")

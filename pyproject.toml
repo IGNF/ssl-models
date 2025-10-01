@@ -36,6 +36,7 @@ matplotlib = "^3.10.0"
 odeon = {git = "https://github.com/IGNF/odeon"}
 timm = "^1.0.19"
 terratorch = "1.0.1"
+dacite = "^1.9.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.1.1"

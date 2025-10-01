@@ -48,43 +48,6 @@ def test_mixmae(
         "swin_version": 1,
         "v2_attn": True,
         "type_head": "attentive",
-        "loss_fn": torch.square,
-        "norm_pix_loss": True,
-        "fac_abs_enc": 1.0,
-        "fac_date_enc": 1.0,
-    }
-    model_map[model_size](**model_args)
-
-
-@pytest.mark.parametrize(
-    "model_size, loss_fn, norm_pix_loss",
-    itertools.product(
-        ("tiny",),
-        (torch.square, torch.abs),
-        (True, False),
-    ),
-)
-def test_mixmae_loss(
-    datasets_geopile,
-    mask,
-    model_map,
-    model_size,
-    loss_fn,
-    norm_pix_loss,
-):
-    model_args = {
-        "datasets": datasets_geopile,
-        "mask": mask,
-        "interpolate": "nearest",
-        "multimodal": "shared",
-        "model": "mixmae",
-        "unpool_dim": None,
-        "num_levels": 3,
-        "swin_version": 1,
-        "v2_attn": True,
-        "type_head": "attentive",
-        "loss_fn": loss_fn,
-        "norm_pix_loss": norm_pix_loss,
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
     }
@@ -124,8 +87,6 @@ def test_mixmae_arch(
         "swin_version": swin_version,
         "v2_attn": v2_attn,
         "type_head": type_head,
-        "loss_fn": torch.square,
-        "norm_pix_loss": True,
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
     }
@@ -145,8 +106,6 @@ def test_mod_mixmae_should_fail(datasets_geopile, mask):
         "swin_version": 1,
         "v2_attn": True,
         "type_head": "attentive",
-        "loss_fn": torch.square,
-        "norm_pix_loss": True,
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
     }
@@ -166,8 +125,6 @@ def test_group_mixmae_should_fail(datasets_geopile, mask):
         "swin_version": 1,
         "v2_attn": True,
         "type_head": "attentive",
-        "loss_fn": torch.square,
-        "norm_pix_loss": True,
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
     }
