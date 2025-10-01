@@ -12,6 +12,17 @@ from conf.dataset.pastis_hd import PASTISHDConfig
 from conf.dataset.s2_naip import S2NAIPConfig
 from conf.dataset.treesatai_ts import TreeSatAITSConfig
 
+ALL_DATASETS = [
+    "flair",
+    "geopile",
+    "hi_ucd",
+    "pastis_hd",
+    "s2_naip",
+    "treesatai_ts",
+    "circa",
+    "bdfv2",
+]
+
 
 # It does not seems possible to have nested dataclasses at all config levels,
 # so we do not use a dataclass at the top level.
