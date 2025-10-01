@@ -17,7 +17,7 @@ from ssl_models.train.data import SSLDataModule
     ),
 )
 def test_data(
-    datasets_geopile,
+    datasets_treesat,
     opt_finetune,
     stage,
     ssl_phase,
@@ -26,7 +26,7 @@ def test_data(
     random_crop,
 ):
     data_module = SSLDataModule(
-        datasets=datasets_geopile,
+        datasets=datasets_treesat,
         ssl_phase=ssl_phase,
         opt=opt_finetune,
         num_workers=1,

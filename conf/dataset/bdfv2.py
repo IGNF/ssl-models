@@ -16,7 +16,7 @@ class BDFV2Config(DatasetConfig):  # noqa: D101
     rel_dir: str = "BDFV2"
     csv_dir: str | None = None
     val_pretrain: bool = True
-    test_pretrain: bool = False
+    test_pretrain: bool = True
     repeats: int = 1
     crop_meters: float = 50
     grid_pos_enc: int | None = 80

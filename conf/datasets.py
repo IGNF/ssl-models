@@ -1,4 +1,3 @@
-# ruff: noqa: B008
 """Dataset class."""
 
 from hydra_zen import MISSING, builds, store
@@ -23,14 +22,14 @@ class DatasetsConfig:
         root_dir: str,
         filter_pretrain: list[str],
         filter_finetune: list[str],
-        geopile: GeoPileConfig = GeoPileConfig(),
-        flair: FLAIRConfig = FLAIRConfig(),
-        pastis_hd: PASTISHDConfig = PASTISHDConfig(),
-        treesatai_ts: TreeSatAITSConfig = TreeSatAITSConfig(),
-        s2_naip: S2NAIPConfig = S2NAIPConfig(),
-        hi_ucd: HiUCDConfig = HiUCDConfig(),
-        circa: CircaConfig = CircaConfig(),
-        bdfv2: BDFV2Config = BDFV2Config(),
+        geopile: GeoPileConfig,
+        flair: FLAIRConfig,
+        pastis_hd: PASTISHDConfig,
+        treesatai_ts: TreeSatAITSConfig,
+        s2_naip: S2NAIPConfig,
+        hi_ucd: HiUCDConfig,
+        circa: CircaConfig,
+        bdfv2: BDFV2Config,
     ) -> None:
         """Assign args to config attributes."""
         self.__dict__ = {
@@ -74,6 +73,14 @@ dataset_build = builds(
     root_dir=MISSING,
     filter_pretrain=MISSING,
     filter_finetune=MISSING,
+    geopile=GeoPileConfig(),
+    flair=FLAIRConfig(),
+    pastis_hd=PASTISHDConfig(),
+    treesatai_ts=TreeSatAITSConfig(),
+    s2_naip=S2NAIPConfig(),
+    hi_ucd=HiUCDConfig(),
+    circa=CircaConfig(),
+    bdfv2=BDFV2Config(),
 )
 
 dataset_store = store(group="datasets")
