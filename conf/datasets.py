@@ -3,6 +3,7 @@
 
 from hydra_zen import MISSING, builds, store
 
+from conf.dataset.bdfv2 import BDFV2Config
 from conf.dataset.circa import CircaConfig
 from conf.dataset.flair import FLAIRConfig
 from conf.dataset.geopile import GeoPileConfig
@@ -19,6 +20,7 @@ ALL_DATASETS = [
     "s2_naip",
     "treesatai_ts",
     "circa",
+    "bdfv2",
 ]
 
 
@@ -40,6 +42,7 @@ class DatasetsConfig:
         s2_naip: S2NAIPConfig = S2NAIPConfig(),
         hi_ucd: HiUCDConfig = HiUCDConfig(),
         circa: CircaConfig = CircaConfig(),
+        bdfv2: BDFV2Config = BDFV2Config(),
     ) -> None:
         """Assign args to config attributes."""
         self.kwargs = {
