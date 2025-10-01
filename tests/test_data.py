@@ -2,11 +2,8 @@ import itertools
 
 import pytest
 
-from conf.dataset.geopile import GeoPileConfig
-from conf.datasets import DatasetsConfig
 from ssl_models import LOGGER
 from ssl_models.train.data import SSLDataModule
-from tests import TEST_DATA_DIR
 
 
 @pytest.mark.parametrize(
