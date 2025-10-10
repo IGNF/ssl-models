@@ -59,6 +59,7 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             patch_size=PatchSizeConfig(mae=32, mixmae=8),
             bands=2,
             norm_fac=1000.0,
+            rescale_elev=True,
         ),
     )
     spot: InputRasterConfig = field(

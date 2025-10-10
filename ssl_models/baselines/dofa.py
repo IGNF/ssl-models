@@ -367,7 +367,7 @@ class DOFABaseline(BaseModule, ABC):
         tuple: DOFA's outputs.
 
         """
-        batch = self.resize_batch(batch)
+        batch = self.resize_and_rescale(batch)
 
         group_batch = self.group(batch)
 

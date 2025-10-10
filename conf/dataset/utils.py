@@ -34,8 +34,9 @@ class RasterConfig:
     mask_threshold: float = 0.0
     num_dates: int = 1
     norm_fac: float | None = None
-    name_embed: str | None = None
     log_scale: bool = False
+    rescale_elev: bool = False
+    name_embed: str | None = None
 
 
 @dataclass

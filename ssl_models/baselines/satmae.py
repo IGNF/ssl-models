@@ -199,7 +199,7 @@ class SatMAEBaseline(BaseModule):
         tuple: SatMAE's outputs.
 
         """
-        batch = self.resize_batch(batch)
+        batch = self.resize_and_rescale(batch)
 
         output_satmae = self.encoder.forward_encoder(
             batch["s2"],

@@ -275,7 +275,7 @@ class CROMABaseline(BaseModule):
         tuple: CROMA's outputs.
 
         """
-        batch = self.resize_batch(batch)
+        batch = self.resize_and_rescale(batch)
 
         batch["s1"] = torch.concat((batch["s1_asc"], batch["s1_des"]), dim=1)
 

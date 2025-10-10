@@ -236,7 +236,7 @@ class PrithviBaseline(BaseModule):
         tuple: Prithvi's outputs.
 
         """
-        batch = self.resize_batch(batch)
+        batch = self.resize_and_rescale(batch)
 
         s2_input = batch["s2"].transpose(1, 2)  # (B, D, C, H, W) -> (B, C, D, H, W)
 

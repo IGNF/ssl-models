@@ -54,6 +54,7 @@ class BDFV2Config(DatasetConfig):  # noqa: D101
             patch_size=PatchSizeConfig(mae=25, mixmae=5),
             bands=2,
             norm_fac=1000.0,
+            rescale_elev=True,
         ),
     )
     s2: InputRasterConfig = field(

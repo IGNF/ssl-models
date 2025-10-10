@@ -125,9 +125,6 @@ class BDFV2Dataset(GenericDataset):
 
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
 
-        if "dem" in inputs:
-            inputs["dem"][:, 0] = (inputs["dem"][:, 0] - inputs["dem"][:, 1]) * 30
-
         inputs["bdfv2"] = np.array(self.target[idx])
         inputs["ref_date"] = meta["aerial_dates"]
 
