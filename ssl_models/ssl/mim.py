@@ -494,6 +494,7 @@ class BaseMIM(nn.Module, ABC):
         dict[str, Tensor] | None,
         dict[str, Tensor] | None,
         dict[str, Tensor] | None,
+        dict[str, Tensor] | None,
     ]:
         """Shared forward pass for all MIM modules."""
         batch = self.resize_and_rescale(batch)
@@ -514,8 +515,8 @@ class BaseMIM(nn.Module, ABC):
             x_dec = self.decode(x_dec)
 
             pixels_rec, mask_rec = self.rec_pixels(x_dec, mask_rec)
-            return batch, pixels_rec, mask_rec, None
+            return batch, pixels_rec, mask_rec, None, None
 
         # else, probe or finetune
         logits = self.compute_logits(x_enc)
-        return batch, None, None, logits
+        return batch, None, None, x_enc, logits
