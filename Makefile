@@ -31,7 +31,7 @@ _update:
 	@git checkout -b "chore/release-v${NEXT_VERSION}"
 	@git stash apply
 	@git-changelog -c conventional -o CHANGELOG.md .
-	@git add -A
+	@git add -u
 	@git commit -m "chore: bump to v${NEXT_VERSION}"
 	@git push --set-upstream origin "chore/release-v${NEXT_VERSION}"
 	@git tag -a "v${NEXT_VERSION}" -m "Release v${NEXT_VERSION}"
