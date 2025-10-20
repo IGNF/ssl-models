@@ -43,8 +43,8 @@ class BDFV2Config(DatasetConfig):  # noqa: D101
         default_factory=lambda: InputRasterConfig(
             image_size=250,
             patch_size=PatchSizeConfig(mae=10, mixmae=2),
-            bands=[[3, 0, 1, 2]],
-            norm_bands=[1, 3],
+            bands=[[0, 1, 2, 3]],
+            norm_bands=[3, 1],
             norm_fac=255.0,
         ),
     )
@@ -59,8 +59,8 @@ class BDFV2Config(DatasetConfig):  # noqa: D101
     )
     s2: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=5,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            image_size=10,
+            patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=10,
             norm_bands=[4, 4, 2],
             num_dates=12,
