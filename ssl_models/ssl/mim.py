@@ -445,14 +445,18 @@ class BaseMIM(nn.Module, ABC):
 
         return x
 
-    def resize_batch(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
-        """Resize input rasters based on dataset config."""
+    def resize_and_rescale(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
+        """Resize and/or rescale input rasters based on dataset config."""
         for name_mod, mod in self.dataset.inputs.items():
             batch[name_mod] = F.interpolate(
                 batch[name_mod].flatten(0, 1),
                 size=(mod.image_size,) * 2,
                 mode=self.interpolate,
             ).unflatten(0, (-1, mod.num_dates))
+            if mod.rescale_elev:
+                batch[name_mod][:, :, 1:] = 30 * (
+                    batch[name_mod][:, :, :1] - batch[name_mod][:, :, 1:]
+                )
         return batch
 
     @abstractmethod
@@ -500,7 +504,7 @@ class BaseMIM(nn.Module, ABC):
         dict[str, Tensor] | None,
     ]:
         """Shared forward pass for all MIM modules."""
-        batch = self.resize_batch(batch)
+        batch = self.resize_and_rescale(batch)
 
         x_enc, mask_token, embed_inds, dates, ref_date = self.embed(batch)
         x_enc = self.enc_add_encodings(x_enc, dates, ref_date)

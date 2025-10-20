@@ -395,7 +395,7 @@ class Dinov2Baseline(BaseModule):
         tuple: DinoV2's outputs.
 
         """
-        batch = self.resize_batch(batch)
+        batch = self.resize_and_rescale(batch)
 
         group_batch = self.group(batch)
 

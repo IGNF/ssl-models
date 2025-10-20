@@ -249,7 +249,7 @@ class TerramindBaseline(BaseModule):
         tuple: Terramind's outputs.
 
         """
-        batch = self.resize_batch(batch)
+        batch = self.resize_and_rescale(batch)
 
         x_smashed = self._smash_dates(batch)
         x_smashed = self.group(x_smashed)

@@ -8,7 +8,6 @@ from conf.dataset.hi_ucd import HiUCDConfig
 from conf.dataset.pastis_hd import PASTISHDConfig
 from conf.dataset.s2_naip import S2NAIPConfig
 from conf.dataset.treesatai_ts import TreeSatAITSConfig
-
 from conf.datasets import DatasetsConfig
 from conf.mask import MaskConfig
 from conf.opt import OptFinetuneConfig
