@@ -1,4 +1,4 @@
-"""Base module for foundation model baselines."""
+"""Base module for baseline FMs."""
 
 from abc import ABC, abstractmethod
 from functools import partial
@@ -15,8 +15,6 @@ from conf.datasets import DatasetsConfig
 from ssl_models.layers.head import ClassificationHead, PixelifyHead
 from ssl_models.layers.utils import encode_dates, group_mods, ungroup_mods
 
-RGB_BANDS = 3
-
 
 class BaseModule(Module, ABC):
     """Base Module for baselines."""
@@ -24,12 +22,11 @@ class BaseModule(Module, ABC):
     def __init__(
         self,
         datasets: DatasetsConfig,
-        interpolate: Literal["nearest", "bilinear", "bicubic"],
+        fusion_mode: Literal["shared", "monotemp", "mod", "late-croma", "inter-croma"],
         patch_size: int,
         embed_dim: int,
-        unpool_dim: int,
-        type_head: Literal["linear", "attentive"] = "linear",
-        multimodal: Literal["shared", "monotemp", "croma-intergroup"] = "shared",
+        type_head: Literal["linear", "attentive"] = "attentive",
+        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         add_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
@@ -42,7 +39,7 @@ class BaseModule(Module, ABC):
         self.interpolate = interpolate
         self.type_head = type_head
         self.patch_size = patch_size
-        self.multimodal = multimodal
+        self.fusion_mode = fusion_mode
         self.keep_norm = keep_norm
         self.add_date_enc = add_date_enc
 
@@ -85,7 +82,6 @@ class BaseModule(Module, ABC):
                 self.heads[name_target] = PixelifyHead(
                     type_head,
                     embed_dim,
-                    unpool_dim,
                     target.num_classes,
                     target_image_size // ref_grid_size,
                 )
@@ -99,12 +95,12 @@ class BaseModule(Module, ABC):
         # flattening/unflattening of date dimensions
         self.group = partial(
             group_mods,
-            multimodal=self.multimodal,
+            fusion_mode=self.fusion_mode,
             groups=self.dataset.groups,
         )
         self.ungroup = partial(
             ungroup_mods,
-            multimodal=self.multimodal,
+            fusion_mode=self.fusion_mode,
             groups=self.dataset.groups,
             num_dates=self.num_dates,
             grid_size=self.grid_size,

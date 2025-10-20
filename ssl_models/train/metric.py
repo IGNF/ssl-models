@@ -1,4 +1,4 @@
-"""Code adapted from IGN's bdf-model."""
+"""Metrics module."""
 
 from typing import Literal
 

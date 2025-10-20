@@ -1,6 +1,5 @@
 """Generic dataset module."""
 
-import warnings
 from abc import ABC
 from pathlib import Path
 from typing import Literal
@@ -13,8 +12,6 @@ from torch.utils.data import Dataset
 
 from conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.osm_to_seg import process_geojson_file
-
-warnings.filterwarnings("ignore", category=rasterio.errors.NotGeoreferencedWarning)
 
 
 class GenericDataset(Dataset, ABC):
@@ -115,7 +112,6 @@ class GenericDataset(Dataset, ABC):
                 meta[f"{name_mod}_path"],
                 meta[f"{name_mod}_dates"],
                 meta.get(f"{name_mod}_mask", None),
-                meta.get(f"{name_mod}_mask_bands", None),
                 meta.get(f"{name_mod}_h5_name", None),
                 meta.get(f"{name_mod}_h5_mask", None),
                 start[name_mod],
@@ -132,7 +128,6 @@ class GenericDataset(Dataset, ABC):
         path_mod: Path,
         dates_mod: np.ndarray,
         mask: Path | None,
-        mask_bands: list[list[int]] | None,
         h5_name: str | None,
         h5_mask: str | None,
         start: tuple[int],
@@ -172,14 +167,8 @@ class GenericDataset(Dataset, ABC):
                     input_mod = input_mod[:, bands]
                 if use_mask and mask is not None:
                     with rasterio.open(mask) as src:
-                        mask_bands = (
-                            mask_bands
-                            if mask_bands
-                            else range(src.count // len(dates_mod))
-                        )
                         mask_mod = src.read(window=window)
                         mask_mod = self.unflatten(mask_mod, 0, (len(dates_mod), -1))
-                        mask_mod = mask_mod[:, mask_bands, :, :]
             case ".npy":
                 npy_file = np.load(path_mod, mmap_mode="r")
                 if npy_file.ndim < 4:  # noqa: PLR2004
