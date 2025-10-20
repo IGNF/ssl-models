@@ -33,6 +33,7 @@ class SSLTrainer(pl.Trainer):
         num_nodes: int,
     ) -> None:
         self.ssl_phase = ssl_phase
+        self.save_weights_only = run.save_weights_only
         self.exp_dir = run.exp_dir
         self.exp_name = run.exp_name
         self.exp_version = get_hydra_timestamp()
@@ -100,7 +101,7 @@ class SSLTrainer(pl.Trainer):
                     else None
                 ),
                 mode="max",
-                save_weights_only=False,
+                save_weights_only=self.save_weights_only,
             ),
         )
         if self.monitor is not None:
