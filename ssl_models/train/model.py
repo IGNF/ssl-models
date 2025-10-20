@@ -283,7 +283,7 @@ class SSLModule(BaseModule):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Pretraining step."""
-        batch, pixels_rec, mask_rec, _ = self.model(
+        batch, pixels_rec, mask_rec, _, _ = self.model(
             batch,
             ssl_phase=self.trainer.ssl_phase,
         )

@@ -227,7 +227,7 @@ class BaseModule(LightningModule, ABC):
         else:
             model = self.model
 
-        batch, _, _, logits = model(
+        batch, _, _, _, logits = model(
             batch,
             ssl_phase=self.trainer.ssl_phase,
         )

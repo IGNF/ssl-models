@@ -18,6 +18,7 @@ class RunConfig:  # noqa: D101
     fit_phase: str = "pretrain"
     fit_uuid: str | None = None
     fit_ckpt_path: str | None = None
+    save_weights_only: bool = True
     reproducible: bool = True
     seed: int = 42
     logged_images_per_epoch: int = 5

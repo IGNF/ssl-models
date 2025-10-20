@@ -12,7 +12,7 @@ class ModelConfig:  # noqa: D101
     model: str = "mae"
     model_size: str = "tiny"
     type_head: str = "attentive"
-    interpolate: str = "nearest"
+    interpolate: str = "bilinear"
     loss: str = "l1_norm"
     swin_version: int = 1
     v2_attn: bool = True
