@@ -1,7 +1,6 @@
 import itertools
 
 import pytest
-import torch
 
 from ssl_models.ssl.mixmae import (
     mixmae_base,
@@ -24,7 +23,7 @@ def model_map():
 
 
 @pytest.mark.parametrize(
-    "model_size, multimodal",
+    "model_size, fusion_mode",
     itertools.product(
         ("tiny",),
         ("msgfm", "shared"),
@@ -35,19 +34,18 @@ def test_mixmae(
     mask,
     model_map,
     model_size,
-    multimodal,
+    fusion_mode,
 ):
     model_args = {
         "datasets": datasets_treesat,
         "mask": mask,
-        "interpolate": "nearest",
-        "multimodal": multimodal,
+        "fusion_mode": fusion_mode,
         "model": "mixmae",
-        "unpool_dim": None,
         "num_levels": 3,
         "swin_version": 1,
         "v2_attn": True,
         "type_head": "attentive",
+        "interpolate": "nearest",
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
     }
@@ -79,14 +77,13 @@ def test_mixmae_arch(
     model_args = {
         "datasets": datasets_treesat,
         "mask": mask,
-        "interpolate": interpolate,
-        "multimodal": "shared",
+        "fusion_mode": "shared",
         "model": "mixmae",
-        "unpool_dim": None,
         "num_levels": num_levels,
         "swin_version": swin_version,
         "v2_attn": v2_attn,
         "type_head": type_head,
+        "interpolate": interpolate,
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
     }
@@ -98,14 +95,13 @@ def test_mod_mixmae_should_fail(datasets_treesat, mask):
     model_args = {
         "datasets": datasets_treesat,
         "mask": mask,
-        "interpolate": "nearest",
-        "multimodal": "mod",
+        "fusion_mode": "mod",
         "model": "mixmae",
-        "unpool_dim": None,
         "num_levels": 3,
         "swin_version": 1,
         "v2_attn": True,
         "type_head": "attentive",
+        "interpolate": "nearest",
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
     }
@@ -117,14 +113,13 @@ def test_group_mixmae_should_fail(datasets_treesat, mask):
     model_args = {
         "datasets": datasets_treesat,
         "mask": mask,
-        "interpolate": "nearest",
-        "multimodal": "group",
+        "fusion_mode": "group",
         "model": "mixmae",
-        "unpool_dim": None,
         "num_levels": 3,
         "swin_version": 1,
         "v2_attn": True,
         "type_head": "attentive",
+        "interpolate": "nearest",
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
     }

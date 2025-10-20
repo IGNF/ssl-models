@@ -27,11 +27,9 @@ class MixMAE(BaseMIM):
         self,
         datasets: DatasetsConfig,
         mask: MaskConfig,
-        interpolate: Literal["nearest", "bilinear", "bicubic"],
-        multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         model: Literal["mixmae"],
         num_levels: Literal[3, 4],
-        unpool_dim: int | None,
         embed_dim: int,
         depths: tuple,
         num_heads: tuple,
@@ -39,6 +37,7 @@ class MixMAE(BaseMIM):
         swin_version: Literal[1, 2],
         v2_attn: bool,
         type_head: Literal["linear", "attentive"] = "linear",
+        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
         decoder_depth: int = 2,
@@ -55,29 +54,28 @@ class MixMAE(BaseMIM):
     ) -> None:
         super().__init__(
             datasets=datasets,
-            interpolate=interpolate,
-            multimodal=multimodal,
+            fusion_mode=fusion_mode,
             model=model,
             num_levels=num_levels,
-            unpool_dim=unpool_dim,
             embed_dim=embed_dim,
             decoder_dim=decoder_dim,
             type_head=type_head,
+            interpolate=interpolate,
             fac_abs_enc=fac_abs_enc,
             fac_date_enc=fac_date_enc,
         )
-        match multimodal:
+        match fusion_mode:
             case "msgfm" | "shared" | "monotemp":
                 name_models = (
                     list(datasets.dataset.inputs.keys())
-                    if multimodal == "monotemp"
+                    if fusion_mode == "monotemp"
                     else ["shared"]
                 )
             case "mod" | "group":
-                msg = "Multimodal/multitemporal SSL not yet implemented with MixMAE."
+                msg = f"Fusion mode {fusion_mode} not supported yet with MixMAE."
                 raise NotImplementedError(msg)
             case _:
-                msg = f"Invalid multimodal mode {multimodal}."
+                msg = f"Invalid fusion mode {fusion_mode}."
                 raise ValueError(msg)
 
         self.nb_mix_images = mask.nb_mix_images

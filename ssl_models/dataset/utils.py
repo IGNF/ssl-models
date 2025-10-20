@@ -1,5 +1,6 @@
 """Utils module."""
 
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -61,8 +62,10 @@ def naip_datetimes(datetime_str: str) -> np.ndarray:
     return dates_numpy(datetimes)
 
 
-def dict_datetimes(datetime_dict: dict, start: int = 0) -> np.ndarray:
+def dict_datetimes(datetime_dict: dict | str, start: int = 0) -> np.ndarray:
     """Convert list of datetime strings to list of datetimes."""
+    if not isinstance(datetime_dict, dict):
+        datetime_dict = json.loads(datetime_dict)
     datetimes = [
         datetime.strptime(  # noqa: DTZ007
             str(datetime_dict[str(idx)]),
@@ -79,10 +82,10 @@ def read_csv(
     ssl_phase: Literal["pretrain", "probe", "finetune"],
     version: str | None = None,
     balance_pretrain: bool = False,
-    val_pretrain: bool = False,
-    test_pretrain: bool = False,
     filter_percent: int | None = None,
     fold: int | None = None,
+    val_pretrain: bool = False,
+    test_pretrain: bool = False,
     **kwargs,  # noqa: ANN003
 ) -> Path:
     """Read dataset csv."""

@@ -10,7 +10,7 @@ from torch.nn import Module
 from conf.datasets import DatasetsConfig
 from ssl_models.baselines.base import BaseModule
 
-ORIG_BANDS = (0, 1, 2, 6, 8, 9)
+ORIG_BANDS = (0, 1, 2, 6, 8, 9)  # S2 bands included in original model
 
 
 class PrithviBaseline(BaseModule):
@@ -19,14 +19,14 @@ class PrithviBaseline(BaseModule):
     def __init__(
         self,
         datasets: DatasetsConfig,
-        unpool_dim: int,
-        freeze: bool = False,
+        backbone_size: Literal["base", "large"] = "large",
         version: str = "v2",
-        backbone_size: str = "large",
-        type_head: Literal["linear", "attentive"] = "linear",
-        multimodal: Literal["mod"] = "mod",
+        freeze: bool = False,
         pretrained_path: str | None = None,
-        add_date_enc: bool = False,
+        type_head: Literal["linear", "attentive"] = "attentive",
+        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
+        fusion_mode: Literal["mod"] = "mod",
+        add_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -38,71 +38,59 @@ class PrithviBaseline(BaseModule):
         ----------
         datasets: DatasetsConfig
             The dataset config used in the probing/finetuning phase.
-        unpool_dim: int
-            Parameter given to the pixelify head.
-        freeze: bool
-            To freeze or not to freeze the DinoV2 backbone.
+        backbone_size: str
+            Backbone size to use. To choose in "base", "large".
         version: str
             Prithvi version.
-        backbone_size: str
-            Defines the backbone to use. To choose in "small", "base", "large", "huge".
-        type_head: str
-           Segmentation head to use. Either "linear" (default) or "attentive".
-        multimodal: str
-           Multimodal strategy. Either "monotemp" (default) or "croma-intergroup".
+        freeze: bool
+            Whether to freeze the backbone.
         pretrained_path: str
-           Path to the location of the pretrained weights.
+            Path to the location of the pretrained weights.
+        type_head: str
+            Segmentation head to use. Either "linear" or "attentive".
+        interpolate: str
+            Interpolation used in the image resizing before patchification.
+        fusion_mode: str
+            Fusion strategy. Necessarily "mod".
         add_date_enc: bool
-           Whether to add the date encodings to the embeddings.
+            Whether to add the date encodings to the embeddings.
         fac_date_enc: float
-           Factor used to compute the date encodings.
+            Factor used to compute the date encodings.
         date_dim: int
-           Dimension of the date embeddings.
+            Dimension of the date embeddings.
         keep_norm: bool
-           Choose to keep the final layernorm layer.
+            Whether to keep the final layernorm layer.
         kwargs:
-           Arguments to pass to `BaseModel` constructor.
+            Arguments to pass to `BaseModel` constructor.
 
         """
-        self.datasets = datasets
         self.version = version
         self.backbone_size = backbone_size
         self.freeze = freeze
         self.type_head = type_head
-        self.multimodal = multimodal
+        self.interpolate = interpolate
+        self.fusion_mode = fusion_mode
 
-        self.unpool_dim = unpool_dim
         self.pretrained_path = pretrained_path
         self.add_date_enc = add_date_enc
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
         self.keep_norm = keep_norm
 
-        if self.backbone_size == "base":
-            self.encoder_dim = 768
-            self.encoder_depth = 12
-            self.num_heads = 16
-            self.patch_size = 16
-        else:
-            # large by default
-            self.encoder_dim = 1024
-            self.encoder_depth = 24
-            self.num_heads = 16
-            self.patch_size = 16
-
-        super().__init__(
-            datasets,
-            self.patch_size,
-            self.encoder_dim,
-            self.unpool_dim,
-            self.type_head,
-            self.multimodal,
-            self.add_date_enc,
-            self.fac_date_enc,
-            self.date_dim,
-            self.keep_norm,
-            **kwargs,
-        )
+        match self.backbone_size:
+            case "base":
+                self.encoder_dim = 768
+                self.encoder_depth = 12
+                self.num_heads = 16
+                self.patch_size = 16
+            case "large":
+                self.encoder_dim = 1024
+                self.encoder_depth = 24
+                self.num_heads = 16
+                self.patch_size = 16
+            case _:
+                msg = "Backbone's size should be `base` or `large`"
+                raise ValueError(msg)
 
         self.std = 0.01
         bands = datasets.dataset.inputs["s2"].bands
@@ -119,6 +107,20 @@ class PrithviBaseline(BaseModule):
                 "Supported versions are: 'v1' for base and 'v2' for large."
             )
             raise ValueError(msg)
+
+        super().__init__(
+            datasets,
+            self.fusion_mode,
+            self.patch_size,
+            self.encoder_dim,
+            self.type_head,
+            self.interpolate,
+            self.add_date_enc,
+            self.fac_date_enc,
+            self.date_dim,
+            self.keep_norm,
+            **kwargs,
+        )
 
         self._build_backbone()
         self._transfer_patch_embedding_to_more_channels()

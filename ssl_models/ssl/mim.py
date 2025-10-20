@@ -30,14 +30,13 @@ class BaseMIM(nn.Module, ABC):
     def __init__(
         self,
         datasets: DatasetsConfig,
-        interpolate: Literal["nearest", "bilinear", "bicubic"],
-        multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         model: Literal["mae", "mixmae"],
         num_levels: Literal[1, 3, 4],
-        unpool_dim: int | None,
         embed_dim: int,
         decoder_dim: int,
-        type_head: Literal["linear", "attentive"] = "linear",
+        type_head: Literal["linear", "attentive"] = "attentive",
+        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
@@ -73,13 +72,11 @@ class BaseMIM(nn.Module, ABC):
                 mod.bands,
                 embed_dim,
                 patch_size,
-                unpool_dim,
             )
             self.embed_to_rec[name_embed] = Pixelify(
                 decoder_dim,
                 mod.bands,
                 patch_size * self.stride,
-                unpool_dim,
             )
 
         # Fix the position encodings to sine & cosine functions
@@ -111,7 +108,7 @@ class BaseMIM(nn.Module, ABC):
             ).float(),
             persistent=False,
         )
-        # Freeze the weights of position encoding
+        # Freeze weights of positional encoding
         self.enc_pos_encoding = self.enc_pos_encoding.requires_grad_(
             requires_grad=False,
         )
@@ -146,12 +143,12 @@ class BaseMIM(nn.Module, ABC):
         # flattening/unflattening of date dimensions
         self.group = partial(
             group_mods,
-            multimodal=multimodal,
+            fusion_mode=fusion_mode,
             groups=self.dataset.groups,
         )
         self.ungroup = partial(
             ungroup_mods,
-            multimodal=multimodal,
+            fusion_mode=fusion_mode,
             groups=self.dataset.groups,
             num_dates={
                 name_mod: mod.num_dates * self.len_bands[name_mod]
@@ -161,7 +158,7 @@ class BaseMIM(nn.Module, ABC):
         )
 
         # shuffling of modalities
-        self.shuffle_mods = multimodal == "msgfm"
+        self.shuffle_mods = fusion_mode == "msgfm"
 
         # mask tokens
         self.mask_token = nn.ParameterDict(
@@ -193,7 +190,6 @@ class BaseMIM(nn.Module, ABC):
                 self.heads[name_target] = PixelifyHead(
                     type_head,
                     embed_dim * self.stride,
-                    unpool_dim,
                     target.num_classes,
                     target_image_size // ref_grid_size,
                 )
@@ -210,15 +206,14 @@ class BaseMIM(nn.Module, ABC):
     ) -> tuple[
         dict[str, Tensor],
         dict[str, Tensor],
-        dict[str, list[Tensor]],
         dict[str, Tensor],
         Tensor,
     ]:
         """Embed patches and fetch dates."""
-        x_enc, embed_inds, mask_token, dates = {}, {}, {}, {}
+        x_enc, mask_token, dates = {}, {}, {}
         for name_mod in self.dataset.inputs:
             name_embed = self.mod_embed[name_mod]
-            x_enc[name_mod], embed_inds[name_mod] = self.patch_embed[name_embed](
+            x_enc[name_mod] = self.patch_embed[name_embed](
                 batch[name_mod],
             )
             B = x_enc[name_mod].shape[0]  # noqa: N806
@@ -234,7 +229,6 @@ class BaseMIM(nn.Module, ABC):
         return (
             self.group(x_enc),
             self.group(mask_token),
-            embed_inds,
             dates,
             batch["ref_date"],
         )
@@ -294,7 +288,7 @@ class BaseMIM(nn.Module, ABC):
         dict[str, Tensor | None],
         dict[str, Tensor | None],
     ]:
-        """Mask multimodal."""
+        """Mask."""
         if ssl_phase == "pretrain":
             mask_rec = self.mask_struct(x)
 
@@ -323,7 +317,7 @@ class BaseMIM(nn.Module, ABC):
         mask: dict[str, Tensor],
         mask_rec: dict[str, Tensor],
     ) -> dict[str, Tensor]:
-        """Unmask multimodal."""
+        """Unmask."""
         x_dec = {}
         for name_group in x:
             x_dec[name_group] = self.unmask_seq(
@@ -348,7 +342,6 @@ class BaseMIM(nn.Module, ABC):
     def rec_pixels(
         self,
         x_dec: dict[str, Tensor],
-        embed_inds: dict[str, list[Tensor]],
         mask_rec: dict[str, Tensor],
     ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
         """Reconstruct pixels from embeddings."""
@@ -360,7 +353,6 @@ class BaseMIM(nn.Module, ABC):
             pixels_rec[name_mod], mask_rec[name_mod] = self.embed_to_rec[name_embed](
                 x_dec[name_mod],
                 mask_rec[name_mod],
-                embed_inds[name_mod],
             )
         return pixels_rec, mask_rec
 
@@ -506,7 +498,7 @@ class BaseMIM(nn.Module, ABC):
         """Shared forward pass for all MIM modules."""
         batch = self.resize_and_rescale(batch)
 
-        x_enc, mask_token, embed_inds, dates, ref_date = self.embed(batch)
+        x_enc, mask_token, dates, ref_date = self.embed(batch)
         x_enc = self.enc_add_encodings(x_enc, dates, ref_date)
 
         x_enc, mask_token, mask_attn, mask_rec = self.mask(x_enc, mask_token, ssl_phase)
@@ -521,7 +513,7 @@ class BaseMIM(nn.Module, ABC):
 
             x_dec = self.decode(x_dec)
 
-            pixels_rec, mask_rec = self.rec_pixels(x_dec, embed_inds, mask_rec)
+            pixels_rec, mask_rec = self.rec_pixels(x_dec, mask_rec)
             return batch, pixels_rec, mask_rec, None
 
         # else, probe or finetune

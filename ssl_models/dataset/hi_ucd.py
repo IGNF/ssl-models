@@ -72,7 +72,7 @@ class HiUCDDataset(GenericDataset):
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
         inputs["ref_date"] = strs_datetimes(["2019-07-01"])
 
-        for target in ["hi_ucd_change_detect", "hi_ucd_seg_1", "hi_ucd_seg_2"]:
+        for target in ("hi_ucd_change_detect", "hi_ucd_seg_1", "hi_ucd_seg_2"):
             if target in inputs:
                 inputs[target] = inputs[target] - 1  # to start labels at 0
 

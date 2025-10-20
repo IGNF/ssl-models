@@ -1,4 +1,4 @@
-"""Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
+"""Baseline Lightning Module."""
 
 import copy
 from typing import Literal
@@ -16,8 +16,6 @@ from ssl_models.train.base import BaseModule
 
 torch.set_float32_matmul_precision(precision="medium")
 
-NDIM_RASTER = 5  # (batch, dates, channels, height, width)
-
 
 class BaselineModule(BaseModule):
     """Baseline module for fine-tuning."""
@@ -26,114 +24,70 @@ class BaselineModule(BaseModule):
         self,
         # shared args
         datasets: DatasetsConfig,
-        model: Literal["dinov2", "dofa", "croma", "prithvi"],
+        model: Literal["dinov2", "dofa", "croma", "prithvi", "satmae", "terramind"],
+        fusion_mode: Literal["shared", "monotemp", "mod", "late-croma", "inter-croma"],
         model_size: Literal["small", "base", "large"],
-        type_head: Literal["linear", "attentive"] = "linear",
+        type_head: Literal["linear", "attentive"] = "attentive",
+        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         weight_source: str = "imagenat",
         pretrained_path: str | None = None,
         freeze: bool = False,
         use_ema: bool = False,
-        multimodal: Literal["shared", "monotemp", "croma-intergroup", "mod"] = "shared",
         keep_norm: bool = True,
         add_date_enc: bool = True,
         **kwargs,  # noqa: ANN003
     ) -> None:
         super().__init__(datasets)
 
+        model_args = {
+            "datasets": datasets,
+            "fusion_mode": fusion_mode,
+            "backbone_size": model_size,
+            "freeze": freeze,
+            "pretrained_path": pretrained_path,
+            "type_head": type_head,
+            "interpolate": interpolate,
+            "add_date_enc": add_date_enc,
+            "keep_norm": keep_norm,
+        }
         match model:
-            case "dinov2":
-                unpool_dim = None
-
-                if len(datasets.filter_finetune) > 1:
-                    msg = "Too many datasets given."
-                    raise NotImplementedError(msg)
-
-                model_args = {
-                    "datasets": datasets,
-                    "type_head": type_head,
-                    "backbone_size": model_size,
-                    "unpool_dim": unpool_dim,
-                    "weight_source": weight_source,
-                    "pretrained_path": pretrained_path,
-                    "freeze": freeze,
-                    "multimodal": multimodal,
-                    "keep_norm": keep_norm,
-                    "add_date_enc": add_date_enc,
-                }
-
-                self.model = Dinov2Baseline(**model_args)
-
-            case "dofa" | "croma":
-                unpool_dim = None
-
-                if len(datasets.filter_finetune) > 1:
-                    msg = "Too many datasets given."
-                    raise NotImplementedError(msg)
-
-                model_args = {
-                    "datasets": datasets,
-                    "type_head": type_head,
-                    "backbone_size": model_size,
-                    "unpool_dim": unpool_dim,
-                    "freeze": freeze,
-                    "pretrained_path": pretrained_path,
-                    "multimodal": multimodal,
-                    "keep_norm": keep_norm,
-                    "add_date_enc": add_date_enc,
-                }
-
-                model_dict = {"dofa": DOFABaseline, "croma": CROMABaseline}
-                self.model = model_dict[model](**model_args)
-            case "prithvi":
-                unpool_dim = None
-
-                model_args = {
-                    "datasets": datasets,
-                    "version": kwargs.get("version", "v2"),
-                    "type_head": type_head,
-                    "backbone_size": model_size,
-                    "unpool_dim": unpool_dim,
-                    "freeze": freeze,
-                    "pretrained_path": pretrained_path,
-                    "multimodal": multimodal,
-                    "keep_norm": keep_norm,
-                    "add_date_enc": add_date_enc,
-                }
-
-                self.model = PrithviBaseline(**model_args)
+            case "dinov2" | "dofa":
+                if fusion_mode not in ("shared", "monotemp"):
+                    msg = f"Fusion mode {fusion_mode} not supported with {model}."
+                    raise ValueError(msg)
+            case "croma":
+                if fusion_mode not in ("late-croma", "inter-croma"):
+                    msg = f"Fusion mode {fusion_mode} not supported with {model}."
+                    raise ValueError(msg)
+            case "satmae" | "prithvi":
+                if fusion_mode != "mod":
+                    msg = f"Fusion mode {fusion_mode} not supported with {model}."
+                    raise ValueError(msg)
             case "terramind":
-                unpool_dim = None
-                model_args = {
-                    "datasets": datasets,
-                    "version": kwargs.get("version", "v2"),
-                    "type_head": type_head,
-                    "backbone_size": model_size,
-                    "unpool_dim": unpool_dim,
-                    "freeze": freeze,
-                    "pretrained_path": pretrained_path,
-                    "multimodal": multimodal,
-                    "keep_norm": keep_norm,
-                    "add_date_enc": add_date_enc,
-                }
-
-                self.model = TerramindBaseline(**model_args)
-            case "satmae":
-                unpool_dim = None
-                model_args = {
-                    "datasets": datasets,
-                    "type_head": type_head,
-                    "backbone_size": model_size,
-                    "unpool_dim": unpool_dim,
-                    "freeze": freeze,
-                    "pretrained_path": pretrained_path,
-                    "multimodal": multimodal,
-                    "keep_norm": keep_norm,
-                    "add_date_enc": add_date_enc,
-                }
-                self.model = SatMAEBaseline(**model_args)
+                if fusion_mode != "shared":
+                    msg = f"Fusion mode {fusion_mode} not supported with {model}."
+                    raise ValueError(msg)
             case _:
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)
+
+        match model:
+            case "dinov2":
+                model_args = {**model_args, "weight_source": weight_source}
+                self.model = Dinov2Baseline(**model_args)
+            case "dofa" | "croma" | "satmae":
+                model_dict = {
+                    "dofa": DOFABaseline,
+                    "croma": CROMABaseline,
+                    "satmae": SatMAEBaseline,
+                }
+                self.model = model_dict[model](**model_args)
+            case "prithvi":
+                model_args = {**model_args, "version": kwargs.get("version", "v2")}
+                self.model = PrithviBaseline(**model_args)
+            case "terramind":
+                model_args = {**model_args, "version": kwargs.get("version", "v2")}
+                self.model = TerramindBaseline(**model_args)
 
         if use_ema:
             self.ema_model = copy.deepcopy(self.model).to("cpu")

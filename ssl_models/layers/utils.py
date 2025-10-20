@@ -7,7 +7,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F  # noqa: N812
 from einops import rearrange
-from sympy.ntheory import factorint
 from torch import Tensor
 
 from ssl_models import RNG
@@ -46,19 +45,20 @@ def shuffle_enc_to_dec(x: dict[str, Tensor]) -> dict[str, Tensor]:
 
 def group_mods(
     x: dict[str, Tensor],
-    multimodal: Literal[
+    fusion_mode: Literal[
         "msgfm",
         "shared",
         "monotemp",
         "mod",
         "group",
-        "croma-intergroup",
+        "late-croma",
+        "inter-croma",
     ],
     groups: list[tuple],
 ) -> dict[str, Tensor]:
     """Group modality sequences."""
-    match multimodal:
-        case "msgfm" | "shared" | "monotemp" | "croma-intergroup":
+    match fusion_mode:
+        case "msgfm" | "shared" | "monotemp" | "late-croma" | "inter-croma":
             dim = 0
             groups = None
         case "mod":
@@ -84,21 +84,22 @@ def group_mods(
 
 def ungroup_mods(
     x_group: dict[str, Tensor],
-    multimodal: Literal[
+    fusion_mode: Literal[
         "msgfm",
         "shared",
         "monotemp",
         "mod",
         "group",
-        "croma-intergroup",
+        "late-croma",
+        "inter-croma",
     ],
     groups: list[tuple],
     num_dates: dict[str, int],
     grid_size: dict[str, int],
 ) -> dict[str, Tensor]:
     """Ungroup modality sequences."""
-    match multimodal:
-        case "msgfm" | "shared" | "monotemp" | "croma-intergroup":
+    match fusion_mode:
+        case "msgfm" | "shared" | "monotemp" | "late-croma" | "inter-croma":
             dim = 0
             groups = None
         case "mod":
@@ -231,12 +232,3 @@ def posemb_sincos_2d(
         dim=-1,
     )
     return pos_encoding.to(dtype)
-
-
-def downsamplings_from_patch_size(unpool_dim: int | None, patch_size: int) -> list[int]:
-    """Infer downsamplings associated with a given patch size."""
-    downsamplings = []
-    if unpool_dim:
-        for prime, power in factorint(patch_size).items():
-            downsamplings += [prime] * power
-    return downsamplings[::-1]

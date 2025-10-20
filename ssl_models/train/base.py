@@ -12,15 +12,14 @@ from torch import Tensor, nn
 from torchmetrics import MeanMetric
 
 from conf.datasets import DatasetsConfig
-from ssl_models.layers.mask import (
-    create_masked_image,
-    get_cd_mask_from_logits,
-    get_segment_mask_from_logits,
-    get_target_mask_from_batch,
+from ssl_models.layers.overlay import (
+    create_overlay,
+    onehot_cd_from_logits,
+    onehot_pred_from_logits,
+    onehot_target_from_batch,
 )
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
-NDIM_RASTER = 5  # (batch, dates, channels, height, width)
 RGB_BANDS = 3
 
 
@@ -79,40 +78,40 @@ class BaseModule(LightningModule, ABC):
         log_inputs, log_preds, log_targets = {}, {}, {}
         for name_target, target in self.dataset.targets.items():
             if target.type_target in ("segment", "change_detect"):
-                input_img = batch[self.dataset.log_inputs[0]][0, 0, :RGB_BANDS]
-                target_msk = get_target_mask_from_batch(
+                overlay_img = batch[self.dataset.log_inputs[0]][0, 0, :RGB_BANDS]
+                onehot_target = onehot_target_from_batch(
                     batch[name_target][0, 0, 0],
                     target.num_classes,
                     target.missing_val,
                 )
-                log_inputs[f"{ssl_phase}_{name_target}_{stage}/_input"] = input_img
+                log_inputs[f"{ssl_phase}_{name_target}_{stage}/_input"] = overlay_img
                 log_targets[f"{ssl_phase}_{name_target}_{stage}/_target"] = (
-                    create_masked_image(
-                        input_img,
-                        target_msk,
+                    create_overlay(
+                        overlay_img,
+                        onehot_target,
                         target.num_classes,
                     )
                 )
             match target.type_target:
                 case "segment":
-                    pred_msk = get_segment_mask_from_logits(
+                    onehot_pred = onehot_pred_from_logits(
                         logits[name_target][0, 0],
                         target.num_classes,
                     )
                     log_preds[f"{ssl_phase}_{name_target}_{stage}/_pred"] = (
-                        create_masked_image(
-                            input_img,
-                            pred_msk,
+                        create_overlay(
+                            overlay_img,
+                            onehot_pred,
                             target.num_classes,
                         )
                     )
                 case "change_detect":
-                    input_img = batch[self.dataset.log_inputs[1]][0, 0, :RGB_BANDS]
-                    pred_msk = get_cd_mask_from_logits(logits)
+                    overlay_img = batch[self.dataset.log_inputs[1]][0, 0, :RGB_BANDS]
+                    onehot_pred = onehot_cd_from_logits(logits)
                     log_preds[f"{ssl_phase}_{name_target}_{stage}/_pred"] = (
-                        create_masked_image(
-                            input_img,
-                            pred_msk,
+                        create_overlay(
+                            overlay_img,
+                            onehot_pred,
                             target.num_classes,
                         )
                     )

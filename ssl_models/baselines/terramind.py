@@ -17,13 +17,13 @@ class TerramindBaseline(BaseModule):
     def __init__(
         self,
         datasets: DatasetsConfig,
-        unpool_dim: int,
-        freeze: bool = False,
-        version: str = "v1",
         backbone_size: str = "large",
-        type_head: Literal["linear", "attentive"] = "linear",
-        multimodal: Literal["mod"] = "shared",
+        version: str = "v1",
+        freeze: bool = False,
         pretrained_path: str | None = None,
+        type_head: Literal["linear", "attentive"] = "linear",
+        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
+        fusion_mode: Literal["mod"] = "shared",
         add_date_enc: bool = False,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
@@ -36,65 +36,69 @@ class TerramindBaseline(BaseModule):
         ----------
         datasets: DatasetsConfig
             The dataset config used in the probing/finetuning phase.
-        unpool_dim: int
-            Parameter given to the pixelify head.
-        freeze: bool
-            To freeze or not to freeze the DinoV2 backbone.
+        backbone_size: str
+            Backbone size to use. To choose in "base", "large".
         version: str
             TerraMind version. Currently, only TerraMind v1 exists.
-        backbone_size: str
-            Defines the backbone to use. To choose in "small", "base", "large", "huge".
-        type_head: str
-           Segmentation head to use. Either "linear" (default) or "attentive".
-        multimodal: str
-           Multimodal strategy: "shared" (default).
+        freeze: bool
+            Whether to freeze the backbone.
         pretrained_path: str
-           Path to the location of the pretrained weights.
+            Path to the location of the pretrained weights.
+        type_head: str
+            Segmentation head to use. Either "linear" or "attentive".
+        interpolate: str
+            Interpolation used in the image resizing before patchification.
+        fusion_mode: str
+            Fusion strategy. Necessarily "shared".
         add_date_enc: bool
-           Whether to add the date encodings to the embeddings.
+            Whether to add the date encodings to the embeddings.
         fac_date_enc: float
-           Factor used to compute the date encodings.
+            Factor used to compute the date encodings.
         date_dim: int
-           Dimension of the date embeddings.
+            Dimension of the date embeddings.
         keep_norm: bool
-           Choose to keep the final layernorm layer.
+            Whether to keep the final layernorm layer.
         kwargs:
-           Arguments to pass to `BaseModel` constructor.
+            Arguments to pass to `BaseModel` constructor.
 
         """
-        self.datasets = datasets
-        self.version = version
+        self.dataset = datasets.dataset
         self.backbone_size = backbone_size
+        self.version = version
         self.freeze = freeze
-        self.type_head = type_head
-        self.multimodal = multimodal
 
-        self.unpool_dim = unpool_dim
         self.pretrained_path = pretrained_path
+        self.type_head = type_head
+        self.interpolate = interpolate
+        self.fusion_mode = fusion_mode
+
         self.add_date_enc = add_date_enc
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
         self.keep_norm = keep_norm
 
-        if self.backbone_size == "base":
-            self.encoder_dim = 768
-            self.encoder_depth = 12
-            self.num_heads = 16
-            self.patch_size = 16
-        else:
-            # large by default
-            self.encoder_dim = 1024
-            self.encoder_depth = 24
-            self.num_heads = 16
-            self.patch_size = 16
+        match self.backbone_size:
+            case "base":
+                self.encoder_dim = 768
+                self.encoder_depth = 12
+                self.num_heads = 16
+                self.patch_size = 16
+            case "large":
+                self.encoder_dim = 1024
+                self.encoder_depth = 24
+                self.num_heads = 16
+                self.patch_size = 16
+            case _:
+                msg = "Backbone's size should be `base` or `large`"
+                raise ValueError(msg)
 
         super().__init__(
             datasets,
+            self.fusion_mode,
             self.patch_size,
             self.encoder_dim,
-            self.unpool_dim,
             self.type_head,
-            self.multimodal,
+            self.interpolate,
             self.add_date_enc,
             self.fac_date_enc,
             self.date_dim,
@@ -120,7 +124,7 @@ class TerramindBaseline(BaseModule):
             "dem": ["DEM"],
             "spot": ["RGB_spot"],
         }
-        dataset_mods = self.datasets.dataset.inputs
+        dataset_mods = self.dataset.inputs
 
         if "s2" in dataset_mods and num_dates["s2"] > 0:
             mod_assoc["s2"] = [f"S2L2A_{idx+1}" for idx in range(num_dates["s2"])]
@@ -145,7 +149,7 @@ class TerramindBaseline(BaseModule):
 
     def _build_backbone(self) -> Module:
         """Build the Terramind backbone."""
-        dataset_mods = self.datasets.dataset.inputs
+        dataset_mods = self.dataset.inputs
         list_of_mods = [
             self.mod_assoc[mod] for mod in dataset_mods if mod in self.mod_assoc
         ]
@@ -184,12 +188,12 @@ class TerramindBaseline(BaseModule):
     def _smash_dates(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         x_smashed = {}
 
-        for mod in ["aerial", "dem", "spot"]:
+        for mod in ("aerial", "dem", "spot"):
             if mod in x:
                 tn = self.mod_assoc[mod][0]
                 x_smashed[tn] = x[mod]
 
-        for mod in ["s2", "s1_asc", "s1_des"]:
+        for mod in ("s2", "s1_asc", "s1_des"):
             if mod in x:
                 terramind_names = self.mod_assoc[mod]
                 mod_splitted = torch.split(x[mod], 1, dim=1)
@@ -209,13 +213,13 @@ class TerramindBaseline(BaseModule):
     def _unsmash_dates(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         x_unsmashed = {}
 
-        for mod in ["aerial", "dem", "spot"]:
+        for mod in ("aerial", "dem", "spot"):
             if mod in self.mod_assoc:
                 terramind_name = self.mod_assoc[mod][0]
                 if terramind_name in x:
                     x_unsmashed[mod] = x[terramind_name]
 
-        for mod in ["s2", "s1_asc", "s1_des"]:
+        for mod in ("s2", "s1_asc", "s1_des"):
             if mod in self.mod_assoc:
                 terramind_names = self.mod_assoc["s2"]
                 mod_splitted = [x[name] for name in terramind_names if name in x]
@@ -242,7 +246,7 @@ class TerramindBaseline(BaseModule):
             Dictionary containing the data.
         ssl_phase: str
             SSL phase (pretrain, probe, finetune). Only probing and finetuning
-            are needed for baselines.
+            are used for baselines.
 
         Returns
         -------

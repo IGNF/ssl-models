@@ -1,22 +1,21 @@
 {
-    "interpolate": "nearest",
-    "multimodal": "mod",
+    "fusion_mode": "mod",
     "model": "mae",
-    "allmods_depth": 0,
-    "unpool_dim": null,
+    "inter_depth": 0,
     "num_levels": 1,
     "type_head": "attentive",
+    "interpolate": "nearest",
     "fac_abs_enc": 0,
     "fac_date_enc": 1,
-    "embed_dim": 32,
+    "embed_dim": 16,
     "depth": 2,
     "heads": 2,
-    "dim_head": 16,
+    "dim_head": 8,
     "mlp_ratio": 2,
-    "decoder_dim": 32,
+    "decoder_dim": 16,
     "decoder_depth": 1,
     "decoder_heads": 2,
-    "decoder_dim_head": 16,
+    "decoder_dim_head": 8,
     "decoder_mlp_ratio": 2,
     "datasets": {
         "root_dir": "/home/ALabatie/Bureau/ssl-models/tests/data",
@@ -59,8 +58,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 1,
                 "norm_fac": 255.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             }
         },
         "flair": {
@@ -113,8 +113,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 1,
                 "norm_fac": 255.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "dem": {
                 "image_size": 512,
@@ -132,8 +133,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 1,
                 "norm_fac": 1000.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": true,
+                "name_embed": null
             },
             "spot": {
                 "image_size": 128,
@@ -151,8 +153,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 1,
                 "norm_fac": 2000.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s2": {
                 "image_size": 10,
@@ -174,8 +177,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 16,
                 "norm_fac": 5000.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s1_asc": {
                 "image_size": 10,
@@ -196,8 +200,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": 5.0,
-                "name_embed": null,
-                "log_scale": true
+                "log_scale": true,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s1_des": {
                 "image_size": 10,
@@ -218,8 +223,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": 5.0,
-                "name_embed": null,
-                "log_scale": true
+                "log_scale": true,
+                "rescale_elev": false,
+                "name_embed": null
             }
         },
         "pastis_hd": {
@@ -260,8 +266,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 1,
                 "norm_fac": 255.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s2": {
                 "image_size": 16,
@@ -283,8 +290,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 16,
                 "norm_fac": 10000.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s1_asc": {
                 "image_size": 16,
@@ -310,8 +318,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": 20.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s1_des": {
                 "image_size": 16,
@@ -337,8 +346,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": 20.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             }
         },
         "treesatai_ts": {
@@ -380,8 +390,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 1,
                 "norm_fac": 255.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s2": {
                 "image_size": 6,
@@ -403,8 +414,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 16,
                 "norm_fac": 5000.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s1_asc": {
                 "image_size": 6,
@@ -425,8 +437,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": 5.0,
-                "name_embed": null,
-                "log_scale": true
+                "log_scale": true,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s1_des": {
                 "image_size": 6,
@@ -447,8 +460,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": 5.0,
-                "name_embed": null,
-                "log_scale": true
+                "log_scale": true,
+                "rescale_elev": false,
+                "name_embed": null
             }
         },
         "s2_naip": {
@@ -496,8 +510,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 1,
                 "norm_fac": 255.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "spot": {
                 "image_size": 128,
@@ -515,8 +530,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 1,
                 "norm_fac": 255.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "landsat": {
                 "image_size": 12,
@@ -534,8 +550,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 16,
                 "norm_fac": 5000.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s2": {
                 "image_size": 12,
@@ -557,8 +574,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 16,
                 "norm_fac": 5000.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s1": {
                 "image_size": 12,
@@ -579,8 +597,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": 20.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             }
         },
         "hi_ucd": {
@@ -618,8 +637,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 1,
                 "norm_fac": 255.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "image_2": {
                 "image_size": 512,
@@ -637,8 +657,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 1,
                 "norm_fac": 255.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             }
         },
         "circa": {
@@ -681,8 +702,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": 1.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s1_des_global": {
                 "image_size": 16,
@@ -700,8 +722,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": 1.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s2_global": {
                 "image_size": 16,
@@ -722,8 +745,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": 5000.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s2_cloud_mask_global": {
                 "image_size": 16,
@@ -745,8 +769,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": null,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s1_asc_zoom": {
                 "image_size": 16,
@@ -764,8 +789,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": 1.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s1_des_zoom": {
                 "image_size": 16,
@@ -783,8 +809,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": 1.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s2_zoom": {
                 "image_size": 16,
@@ -805,8 +832,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": 5000.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "s2_cloud_mask_zoom": {
                 "image_size": 16,
@@ -828,15 +856,16 @@
                 "mask_threshold": 0.0,
                 "num_dates": 4,
                 "norm_fac": null,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             }
         },
         "bdfv2": {
             "rel_dir": "BDFV2",
             "csv_dir": null,
             "val_pretrain": true,
-            "test_pretrain": false,
+            "test_pretrain": true,
             "repeats": 1,
             "crop_meters": 50,
             "grid_pos_enc": 80,
@@ -855,7 +884,7 @@
             "aerial": {
                 "image_size": 250,
                 "patch_size": {
-                    "mae": 5,
+                    "mae": 10,
                     "mixmae": 2,
                     "dinov2_imagenat": 14,
                     "dinov2_sat": 16,
@@ -878,14 +907,15 @@
                 "mask_threshold": 0.0,
                 "num_dates": 1,
                 "norm_fac": 255.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             },
             "dem": {
                 "image_size": 250,
                 "patch_size": {
-                    "mae": 5,
-                    "mixmae": 2,
+                    "mae": 25,
+                    "mixmae": 5,
                     "dinov2_imagenat": 14,
                     "dinov2_sat": 16,
                     "dofa": 16,
@@ -897,8 +927,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 1,
                 "norm_fac": 1000.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": true,
+                "name_embed": null
             },
             "s2": {
                 "image_size": 5,
@@ -920,8 +951,9 @@
                 "mask_threshold": 0.0,
                 "num_dates": 12,
                 "norm_fac": 5000.0,
-                "name_embed": null,
-                "log_scale": false
+                "log_scale": false,
+                "rescale_elev": false,
+                "name_embed": null
             }
         }
     },

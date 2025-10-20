@@ -6,137 +6,137 @@ from ssl_models.train.model import SSLModule
 
 
 @pytest.mark.parametrize(
-    "interpolate, multimodal, allmods_depth, stage, model_size",
+    "fusion_mode, inter_depth, model_size, interpolate, stage",
     itertools.product(
-        ("nearest",),
         ("msgfm", "shared", "mod", "group"),
         (0,),
-        ("train", "val", "test"),
         ("tiny",),
+        ("nearest",),
+        ("train", "val", "test"),
     ),
 )
 def test_ssl_mae(
     datasets_treesat,
     mask,
-    interpolate,
-    multimodal,
-    allmods_depth,
-    stage,
+    fusion_mode,
+    inter_depth,
     model_size,
+    interpolate,
+    stage,
 ):
     ssl_module = SSLModule(
         datasets=datasets_treesat,
         mask=mask,
-        interpolate=interpolate,
-        multimodal=multimodal,
-        allmods_depth=allmods_depth,
+        fusion_mode=fusion_mode,
+        inter_depth=inter_depth,
         model="mae",
         model_size=model_size,
+        interpolate=interpolate,
     )
     ssl_module.setup(stage=stage)
 
 
 @pytest.mark.parametrize(
-    "interpolate, multimodal, allmods_depth, stage, model_size",
+    "fusion_mode, inter_depth, model_size, interpolate, stage",
     itertools.product(
-        ("nearest",),
         ("mod", "group"),
         (3,),
-        ("train", "val", "test"),
         ("tiny",),
+        ("nearest",),
+        ("train", "val", "test"),
     ),
 )
-def test_ssl_allmods_mae(
+def test_ssl_inter_mae(
     datasets_treesat,
     mask,
-    interpolate,
-    multimodal,
-    allmods_depth,
-    stage,
+    fusion_mode,
+    inter_depth,
     model_size,
+    interpolate,
+    stage,
 ):
     ssl_module = SSLModule(
         datasets=datasets_treesat,
         mask=mask,
-        interpolate=interpolate,
-        multimodal=multimodal,
-        allmods_depth=allmods_depth,
+        fusion_mode=fusion_mode,
+        inter_depth=inter_depth,
         model="mae",
         model_size=model_size,
+        interpolate=interpolate,
     )
     ssl_module.setup(stage=stage)
 
 
 @pytest.mark.parametrize(
-    "interpolate, multimodal, allmods_depth, stage, model_size, type_head, loss",
+    "fusion_mode, inter_depth, model_size, type_head, interpolate, loss, stage",
     itertools.product(
-        ("nearest",),
         ("mod",),
         (0,),
-        ("train", "val", "test"),
         ("tiny",),
         ("attentive", "linear"),
+        ("nearest",),
         ("l2_norm", "l2"),
+        ("train", "val", "test"),
     ),
 )
 def test_ssl_head_loss(
     datasets_treesat,
     mask,
-    interpolate,
-    multimodal,
-    allmods_depth,
-    stage,
+    fusion_mode,
+    inter_depth,
     model_size,
     type_head,
+    interpolate,
     loss,
+    stage,
 ):
     ssl_module = SSLModule(
         datasets=datasets_treesat,
         mask=mask,
-        interpolate=interpolate,
-        multimodal=multimodal,
-        allmods_depth=allmods_depth,
+        fusion_mode=fusion_mode,
+        inter_depth=inter_depth,
         model="mae",
         model_size=model_size,
         type_head=type_head,
+        interpolate=interpolate,
         loss=loss,
     )
     ssl_module.setup(stage=stage)
 
 
 @pytest.mark.parametrize(
-    "interpolate, multimodal, allmods_depth, stage, model_size, num_levels, swin_version, swin_abs_enc",
+    "fusion_mode, inter_depth, model_size, interpolate, num_levels, swin_version, swin_abs_enc, stage,",
     itertools.product(
-        ("nearest",),
         ("msgfm", "shared"),
         (0,),
-        ("train",),
         ("tiny",),
+        ("nearest",),
         (3, 4),
         (1, 2),
         (True, False),
+        ("train",),
     ),
 )
 def test_ssl_mixmae(
     datasets_treesat,
     mask,
-    interpolate,
-    multimodal,
-    allmods_depth,
-    stage,
+    fusion_mode,
+    inter_depth,
     model_size,
+    interpolate,
     num_levels,
     swin_version,
     swin_abs_enc,
+    stage,
 ):
     ssl_module = SSLModule(
         datasets=datasets_treesat,
         mask=mask,
-        interpolate=interpolate,
-        multimodal=multimodal,
-        allmods_depth=allmods_depth,
+        fusion_mode=fusion_mode,
+        inter_depth=inter_depth,
         model="mixmae",
         model_size=model_size,
+        interpolate=interpolate,
         swin_version=swin_version,
         num_levels=num_levels,
         swin_abs_enc=swin_abs_enc,
@@ -149,8 +149,8 @@ def test_model_mod_mixmae_should_fail(datasets_treesat, mask):
     _ = SSLModule(
         datasets=datasets_treesat,
         mask=mask,
-        multimodal="mod",
-        allmods_depth=0,
+        fusion_mode="mod",
+        inter_depth=0,
         model="mixmae",
         model_size="tiny",
     )
@@ -161,8 +161,8 @@ def test_model_group_mixmae_should_fail(datasets_treesat, mask):
     _ = SSLModule(
         datasets=datasets_treesat,
         mask=mask,
-        multimodal="group",
-        allmods_depth=0,
+        fusion_mode="group",
+        inter_depth=0,
         model="mixmae",
         model_size="tiny",
     )
@@ -173,8 +173,8 @@ def test_levels_should_fail(datasets_treesat, mask):
     _ = SSLModule(
         datasets=datasets_treesat,
         mask=mask,
-        multimodal="shared",
-        allmods_depth=0,
+        fusion_mode="shared",
+        inter_depth=0,
         model="mixmae",
         model_size="tiny",
         num_levels=1,
@@ -186,8 +186,8 @@ def test_model_should_fail(datasets_treesat, mask):
     _ = SSLModule(
         datasets=datasets_treesat,
         mask=mask,
-        multimodal="shared",
-        allmods_depth=0,
+        fusion_mode="shared",
+        inter_depth=0,
         model="MAE",
         model_size="tiny",
     )

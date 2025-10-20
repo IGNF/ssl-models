@@ -9,7 +9,7 @@ from torch import Tensor
 
 from conf.datasets import DatasetsConfig
 from conf.mask import MaskConfig
-from ssl_models.ssl.mae import MAE, mae_large, mae_medium, mae_small, mae_tiny
+from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.ssl.mixmae import (
     mixmae_base,
     mixmae_huge,
@@ -21,8 +21,6 @@ from ssl_models.train.base import BaseModule
 
 torch.set_float32_matmul_precision(precision="medium")
 
-NDIM_RASTER = 5  # (batch, dates, channels, height, width)
-
 
 class SSLModule(BaseModule):
     """Lightning SSL module."""
@@ -32,14 +30,13 @@ class SSLModule(BaseModule):
         # shared args
         datasets: DatasetsConfig,
         mask: MaskConfig,
-        interpolate: Literal["nearest", "bilinear", "bicubic"],
-        multimodal: Literal["msgfm", "shared", "monotemp", "mod", "group"],
-        allmods_depth: int,
+        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        inter_depth: int,
         model: Literal["mae", "mixmae"],
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
-        type_head: Literal["linear", "attentive"] = "linear",
+        type_head: Literal["linear", "attentive"] = "attentive",
+        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
-        unpool_dim: int | None = None,
         use_date_enc: bool = True,
         use_ema: bool = False,
         # mixmae args
@@ -114,10 +111,10 @@ class SSLModule(BaseModule):
                 msg = f"Invalid model name {model}. Not implemented"
                 raise ValueError(msg)
 
-        if allmods_depth and multimodal not in ("mod", "group"):
+        if inter_depth and fusion_mode not in ("mod", "group"):
             msg = (
-                "Simultaneous encoding of all mods"
-                f" not yet compatible with multimodal choice: {multimodal}."
+                "Intermediate fusion"
+                f" not yet compatible with fusion mode {fusion_mode}."
             )
             raise NotImplementedError(msg)
 
@@ -125,15 +122,14 @@ class SSLModule(BaseModule):
             model_args = {
                 "datasets": datasets,
                 "mask": mask,
-                "interpolate": interpolate,
-                "multimodal": multimodal,
-                "allmods_depth": allmods_depth,
+                "fusion_mode": fusion_mode,
+                "inter_depth": inter_depth,
                 "model": model,
-                "unpool_dim": unpool_dim,
                 "num_levels": num_levels,
                 "swin_version": swin_version,
                 "v2_attn": v2_attn,
                 "type_head": type_head,
+                "interpolate": interpolate,
                 "fac_abs_enc": fac_abs_enc,
                 "fac_date_enc": fac_date_enc,
             }
@@ -160,71 +156,22 @@ class SSLModule(BaseModule):
             * self.trainer.accumulate_grad_batches
             * self.trainer.num_nodes
             * self.trainer.num_devices
-            / 3.0  # remain iso with existing runs on Jean Zellou
+            / 3.0  # remain iso with past runs
         )
         lr = (
             # use sqrt scaling rule with Adam
             self.trainer.base_lr * total_batch_size**0.5
         )
-        match self.trainer.lw_decay:
-            case None:
-                grouped_params = self.model.parameters()
-                max_lr = lr
-            case _:
-                if not isinstance(self.model, MAE):
-                    msg = "Layer-wise decay only implemented for MAE."
-                    raise NotImplementedError(msg)
-
-                layer_parameters = {}
-                for name_mod, encoder in self.model.encoder.items():
-                    if name_mod == "all":
-                        continue
-                    for idx, layer in enumerate(encoder.layers):
-                        if idx not in layer_parameters:
-                            layer_parameters[idx] = []
-                        layer_parameters[idx].extend(layer.parameters())
-
-                if "all" in self.model.encoder:
-                    for layer in self.model.encoder["all"].layers:
-                        layer_parameters[len(layer_parameters)] = list(
-                            layer.parameters(),
-                        )
-
-                num_layers = len(layer_parameters)
-                grouped_params = []
-                grouped_params.append(
-                    {
-                        "params": self.model.patch_embed.parameters(),
-                        "lr": lr * self.trainer.lw_decay ** (num_layers + 1),
-                        "name": "layer_0_embed",
-                    },
-                )
-                for idx in range(num_layers):
-                    grouped_params.append(
-                        {
-                            "params": layer_parameters[idx],
-                            "lr": lr * self.trainer.lw_decay ** (num_layers - idx),
-                            "name": f"layer_{idx+1}",
-                        },
-                    )
-                grouped_params.append(
-                    {
-                        "params": self.model.heads.parameters(),
-                        "lr": lr,
-                        "name": f"layer_{num_layers+1}_head",
-                    },
-                )
-                max_lr = [param["lr"] for param in grouped_params]
 
         optimizer = torch.optim.AdamW(
-            grouped_params,
+            self.model.parameters(),
             lr=lr,
             weight_decay=self.trainer.wd,
             betas=(self.trainer.b1, self.trainer.b2),
         )
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,
-            max_lr=max_lr,
+            max_lr=lr,
             total_steps=total_steps,
             pct_start=0.2,
             cycle_momentum=False,
