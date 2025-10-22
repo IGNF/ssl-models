@@ -14,8 +14,8 @@ from timm.models.swin_transformer import PatchMerging
 from timm.models.vision_transformer import Block
 from torch import Tensor, nn
 
-from conf.datasets import DatasetsConfig
-from conf.mask import MaskConfig
+from ssl_models.conf.datasets import DatasetsConfig
+from ssl_models.conf.mask import MaskConfig
 from ssl_models.layers.swin import MixMAELayer
 from ssl_models.ssl.mim import BaseMIM
 

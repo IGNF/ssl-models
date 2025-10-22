@@ -5,13 +5,13 @@ from typing import Literal
 
 import torch
 
-from conf.datasets import DatasetsConfig
 from ssl_models.baselines.croma import CROMABaseline
 from ssl_models.baselines.dinov2 import Dinov2Baseline
 from ssl_models.baselines.dofa import DOFABaseline
 from ssl_models.baselines.prithvi import PrithviBaseline
 from ssl_models.baselines.satmae import SatMAEBaseline
 from ssl_models.baselines.terramind import TerramindBaseline
+from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.train.base import BaseModule
 
 torch.set_float32_matmul_precision(precision="medium")

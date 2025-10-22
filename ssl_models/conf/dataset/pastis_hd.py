@@ -1,99 +1,99 @@
-"""TreeSatAI-TS config."""
+"""PASTIS-HD config."""
 
 from dataclasses import dataclass, field
 
-from conf.dataset.utils import (
+from ssl_models.conf.dataset.utils import (
     DatasetConfig,
     InputRasterConfig,
     PatchSizeConfig,
     TargetConfig,
+    TargetRasterConfig,
 )
-from ssl_models.dataset.treesatai_ts import TreeSatAITSDataset
+from ssl_models.dataset.pastis_hd import PASTISHDDataset
 
 
 @dataclass
-class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
-    rel_dir: str = "TreeSatAI-TS"
+class PASTISHDConfig(DatasetConfig):  # noqa: D101
+    rel_dir: str = "PASTIS-HD"
     balance_pretrain: bool = False
     val_pretrain: bool = True
     filter_percent: int | None = None
-    crop_meters: float = 60.0
-    grid_pos_enc: int | None = 96
+    fold: int | None = None
+    repeats: int = 8
+    crop_meters: float = 160
+    grid_pos_enc: int | None = 256
 
-    ref_input: str | None = None
+    ref_input: str | None = "s2"  # defines grid for raster targets
     log_inputs: list[str] = field(
-        default_factory=lambda: ["aerial"],
+        default_factory=lambda: ["spot"],
     )  # logged input modalities
     filter_inputs: list[str] = field(
-        default_factory=lambda: ["aerial", "s2", "s1_asc", "s1_des"],
+        default_factory=lambda: ["spot", "s2", "s1_asc", "s1_des"],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["treesat_mlc_thresh"],
+        default_factory=lambda: ["pastis_seg"],
     )  # selected target modalities
 
-    aerial: InputRasterConfig = field(
+    spot: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=300,
-            patch_size=PatchSizeConfig(mae=20, mixmae=5),
-            bands=4,
-            norm_bands=[1, 3],
+            image_size=160,
+            patch_size=PatchSizeConfig(mae=16, mixmae=4),
+            bands=3,
             norm_fac=255.0,
         ),
     )
     s2: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=6,
+            image_size=16,
             patch_size=PatchSizeConfig(mae=2, mixmae=1),
             bands=10,
             norm_bands=[4, 4, 2],
             num_dates=16,
-            mask_threshold=0.0,
-            norm_fac=5000.0,
+            norm_fac=10000.0,
         ),
     )
     s1_asc: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=6,
+            image_size=16,
             patch_size=PatchSizeConfig(mae=2, mixmae=1),
-            bands=2,
+            bands=[[0, 1]],
             norm_bands=[1, 1],
             num_dates=4,
-            norm_fac=5.0,
-            log_scale=True,
+            norm_fac=20.0,
             name_group="sen1",
         ),
     )
     s1_des: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=6,
+            image_size=16,
             patch_size=PatchSizeConfig(mae=2, mixmae=1),
-            bands=2,
+            bands=[[0, 1]],
             norm_bands=[1, 1],
             num_dates=4,
-            norm_fac=5.0,
-            log_scale=True,
+            norm_fac=20.0,
             name_group="sen1",
         ),
     )
 
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
-        self.dataset_class = TreeSatAITSDataset
-        self.total_meters = 60.0
+        self.dataset_class = PASTISHDDataset
+        self.total_meters = 1280 * 1.0
 
-        self.treesat_mlc = TargetConfig(
-            type_target="multilabel_classif",
-            num_classes=15,
-            missing_val=-1,
+        self.pastis_seg = TargetRasterConfig(
+            type_target="segment",
+            num_classes=19,
+            missing_val=19,
+            bands=1,
         )
-        self.treesat_mlc_thresh = TargetConfig(
+        self.pastis_mlc = TargetConfig(
             type_target="multilabel_classif",
-            num_classes=15,
-            missing_val=-1,
+            num_classes=18,
         )
         super().__post_init__(
             resolutions_meters={
-                "aerial": 0.2,
+                "pastis_seg": 10,
+                "spot": 1.0,
                 "s2": 10.0,
                 "s1_asc": 10.0,
                 "s1_des": 10.0,

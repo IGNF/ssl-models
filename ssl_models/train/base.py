@@ -11,7 +11,7 @@ from pytorch_lightning import LightningModule
 from torch import Tensor, nn
 from torchmetrics import MeanMetric
 
-from conf.datasets import DatasetsConfig
+from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.layers.overlay import (
     create_overlay,
     onehot_cd_from_logits,

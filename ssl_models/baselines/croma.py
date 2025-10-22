@@ -12,8 +12,8 @@ from einops import rearrange
 from torch import Tensor, einsum, nn
 from torch.nn import Module
 
-from conf.datasets import DatasetsConfig
 from ssl_models.baselines.base import BaseModule
+from ssl_models.conf.datasets import DatasetsConfig
 
 
 class CROMABaseline(BaseModule):

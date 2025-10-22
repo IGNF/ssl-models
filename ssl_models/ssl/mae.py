@@ -7,8 +7,8 @@ from einops import rearrange
 from torch import Tensor, nn
 from vit_pytorch.vit import Transformer
 
-from conf.datasets import DatasetsConfig
-from conf.mask import MaskConfig
+from ssl_models.conf.datasets import DatasetsConfig
+from ssl_models.conf.mask import MaskConfig
 from ssl_models.ssl.mim import BaseMIM
 
 

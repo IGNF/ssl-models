@@ -7,14 +7,14 @@ From the project root directory, do:
 
 from hydra_zen import store, zen
 
-import conf.data
-import conf.dataset
-import conf.experiment
-import conf.hydra_conf
-import conf.model
-import conf.opt
-import conf.run
-import conf.trainer  # noqa: F401
+import ssl_models.conf.data
+import ssl_models.conf.dataset
+import ssl_models.conf.experiment
+import ssl_models.conf.hydra_conf
+import ssl_models.conf.model
+import ssl_models.conf.opt
+import ssl_models.conf.run
+import ssl_models.conf.trainer  # noqa: F401
 from ssl_models.hydra_utils import pre_call_resolve, pre_call_seed
 from ssl_models.run_experiment import run_experiment
 

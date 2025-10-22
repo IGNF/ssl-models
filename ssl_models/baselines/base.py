@@ -10,8 +10,8 @@ from einops import rearrange
 from torch import Tensor
 from torch.nn import Module, ModuleDict
 
-from conf.dataset.utils import RasterConfig
-from conf.datasets import DatasetsConfig
+from ssl_models.conf.dataset.utils import RasterConfig
+from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.layers.head import ClassificationHead, PixelifyHead
 from ssl_models.layers.utils import encode_dates, group_mods, ungroup_mods
 
