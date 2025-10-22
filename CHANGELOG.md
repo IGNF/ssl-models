@@ -8,7 +8,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 <!-- insertion marker -->
 ## Unreleased
 
-<small>[Compare with latest](https://github.com/IGNF/ssl-models/compare/541fdc3af49b1306736e7e44899514dad18213cb...HEAD)</small>
+<small>[Compare with latest](https://github.com/IGNF/ssl-models/compare/v1.0.0...HEAD)</small>
+
+<!-- insertion marker -->
+## [v1.0.0](https://github.com/IGNF/ssl-models/releases/tag/v1.0.0) - 2025-10-20
+
+<small>[Compare with first commit](https://github.com/IGNF/ssl-models/compare/541fdc3af49b1306736e7e44899514dad18213cb...v1.0.0)</small>
 
 ### Features
 
@@ -161,4 +166,3 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 - optimize running time by running decoder/loss only in pretrain, and running heads only in probe/fine-tune ([7fab3b7](https://github.com/IGNF/ssl-models/commit/7fab3b7097b4737a39099bd550ceb11f609ad4a2) by Antoine Labatie).
 
-<!-- insertion marker -->

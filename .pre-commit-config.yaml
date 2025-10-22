@@ -9,6 +9,7 @@ repos:
       exclude: conda-lock.yml
     - id: check-yaml
     - id: end-of-file-fixer
+      exclude: CHANGELOG.md
     - id: trailing-whitespace
 - repo: https://github.com/astral-sh/ruff-pre-commit
   rev: v0.3.5
