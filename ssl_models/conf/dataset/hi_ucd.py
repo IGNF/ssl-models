@@ -2,8 +2,12 @@
 
 from dataclasses import dataclass, field
 
-from ssl_models.conf.dataset.utils import (DatasetConfig, InputRasterConfig,
-                                           PatchSizeConfig, TargetRasterConfig)
+from ssl_models.conf.dataset.utils import (
+    DatasetConfig,
+    InputRasterConfig,
+    PatchSizeConfig,
+    TargetRasterConfig,
+)
 from ssl_models.dataset.hi_ucd import HiUCDDataset
 
 

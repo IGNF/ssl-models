@@ -2,8 +2,12 @@
 
 from dataclasses import dataclass, field
 
-from ssl_models.conf.dataset.utils import (DatasetConfig, InputRasterConfig,
-                                           PatchSizeConfig, TargetConfig)
+from ssl_models.conf.dataset.utils import (
+    DatasetConfig,
+    InputRasterConfig,
+    PatchSizeConfig,
+    TargetConfig,
+)
 from ssl_models.dataset.treesatai_ts import TreeSatAITSDataset
 
 

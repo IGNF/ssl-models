@@ -2,8 +2,12 @@
 
 from dataclasses import dataclass, field
 
-from ssl_models.conf.dataset.utils import (DatasetConfig, InputRasterConfig,
-                                           PatchSizeConfig, TargetRasterConfig)
+from ssl_models.conf.dataset.utils import (
+    DatasetConfig,
+    InputRasterConfig,
+    PatchSizeConfig,
+    TargetRasterConfig,
+)
 from ssl_models.dataset.s2_naip import S2NAIPDataset
 
 

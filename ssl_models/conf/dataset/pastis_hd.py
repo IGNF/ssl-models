@@ -2,9 +2,13 @@
 
 from dataclasses import dataclass, field
 
-from ssl_models.conf.dataset.utils import (DatasetConfig, InputRasterConfig,
-                                           PatchSizeConfig, TargetConfig,
-                                           TargetRasterConfig)
+from ssl_models.conf.dataset.utils import (
+    DatasetConfig,
+    InputRasterConfig,
+    PatchSizeConfig,
+    TargetConfig,
+    TargetRasterConfig,
+)
 from ssl_models.dataset.pastis_hd import PASTISHDDataset
 
 
