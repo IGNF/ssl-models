@@ -4,14 +4,14 @@ from functools import partial
 
 from clearml import Task
 
-from conf.data import DataConfig
-from conf.datasets import DatasetsConfig
-from conf.mask import MaskConfig
-from conf.model import BaselineConfig, ModelConfig
-from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
-from conf.run import RunConfig
-from conf.trainer import TrainerConfig
 from ssl_models import LOGGER
+from ssl_models.conf.data import DataConfig
+from ssl_models.conf.datasets import DatasetsConfig
+from ssl_models.conf.mask import MaskConfig
+from ssl_models.conf.model import BaselineConfig, ModelConfig
+from ssl_models.conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
+from ssl_models.conf.run import RunConfig
+from ssl_models.conf.trainer import TrainerConfig
 from ssl_models.train.baseline import BaselineModule
 from ssl_models.train.data import SSLDataModule
 from ssl_models.train.model import SSLModule

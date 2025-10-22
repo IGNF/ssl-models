@@ -6,7 +6,7 @@ from typing import Literal
 import h5py
 import numpy as np
 
-from conf.dataset.utils import DatasetConfig
+from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.dataset import GenericDataset
 from ssl_models.dataset.utils import dates_numpy, products_datetimes, read_csv
 

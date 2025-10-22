@@ -5,9 +5,9 @@ from dataclasses import asdict
 
 from dacite.core import from_dict
 
-from conf.dataset.utils import DatasetConfig
-from conf.datasets import DatasetsConfig
-from conf.mask import MaskConfig
+from ssl_models.conf.dataset.utils import DatasetConfig
+from ssl_models.conf.datasets import DatasetsConfig
+from ssl_models.conf.mask import MaskConfig
 
 DATASETS_TYPES = {
     name_arg: val_arg.annotation

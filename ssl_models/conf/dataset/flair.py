@@ -2,12 +2,8 @@
 
 from dataclasses import dataclass, field
 
-from conf.dataset.utils import (
-    DatasetConfig,
-    InputRasterConfig,
-    PatchSizeConfig,
-    TargetRasterConfig,
-)
+from ssl_models.conf.dataset.utils import (DatasetConfig, InputRasterConfig,
+                                           PatchSizeConfig, TargetRasterConfig)
 from ssl_models.dataset.flair import FLAIRDataset
 
 

@@ -2,7 +2,7 @@ import json
 
 import torch
 
-from conf.utils import datasets_from_dict, mask_from_dict
+from ssl_models.conf.utils import datasets_from_dict, mask_from_dict
 from ssl_models.ssl.mae import MAE
 from tests import TEST_DATA_DIR
 

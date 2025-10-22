@@ -10,7 +10,7 @@ import rasterio
 from rasterio.windows import Window
 from torch.utils.data import Dataset
 
-from conf.dataset.utils import DatasetConfig
+from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.dataset.osm_to_seg import process_geojson_file
 
 

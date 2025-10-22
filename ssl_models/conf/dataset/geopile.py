@@ -2,12 +2,8 @@
 
 from dataclasses import dataclass, field
 
-from conf.dataset.utils import (
-    DatasetConfig,
-    InputRasterConfig,
-    PatchSizeConfig,
-    TargetConfig,
-)
+from ssl_models.conf.dataset.utils import (DatasetConfig, InputRasterConfig,
+                                           PatchSizeConfig, TargetConfig)
 from ssl_models.dataset.geopile import GeoPileDataset
 
 

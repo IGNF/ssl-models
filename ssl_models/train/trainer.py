@@ -12,8 +12,8 @@ from pytorch_lightning.callbacks import (
 )
 from pytorch_lightning.loggers.logger import Logger
 
-from conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
-from conf.run import RunConfig
+from ssl_models.conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
+from ssl_models.conf.run import RunConfig
 from ssl_models.hydra_utils import get_hydra_timestamp
 from ssl_models.train.logger import ImageLogger, MetricsLogger, TensorBoardLogger
 

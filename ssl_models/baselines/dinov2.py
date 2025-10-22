@@ -13,13 +13,13 @@ from torch.nn import LayerNorm, Module, ModuleDict
 from transformers import AutoConfig, Dinov2Config
 from transformers.models.dinov2.modeling_dinov2 import Dinov2Embeddings, Dinov2Encoder
 
-from conf.datasets import DatasetsConfig
 from ssl_models.baselines.base import BaseModule
 from ssl_models.baselines.utils import (
     filter_dict,
     get_imagenat_dinov2_state_dict,
     get_sat_dinov2_state_dict,
 )
+from ssl_models.conf.datasets import DatasetsConfig
 
 RGB_BANDS = 3
 

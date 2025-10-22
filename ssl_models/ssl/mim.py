@@ -10,8 +10,8 @@ import torch.nn.functional as F  # noqa: N812
 from einops import rearrange
 from torch import Tensor, nn
 
-from conf.dataset.utils import RasterConfig
-from conf.datasets import DatasetsConfig
+from ssl_models.conf.dataset.utils import RasterConfig
+from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.layers.embed import Patchify, Pixelify
 from ssl_models.layers.head import ClassificationHead, PixelifyHead
 from ssl_models.layers.utils import (
