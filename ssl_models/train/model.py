@@ -3,6 +3,7 @@
 import copy
 from typing import Literal
 
+import numpy as np
 import torch
 from einops import rearrange
 from torch import Tensor
@@ -36,7 +37,9 @@ class SSLModule(BaseModule):
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
         type_head: Literal["linear", "attentive"] = "attentive",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
-        loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
+        loss: Literal["l1", "l2", "l1_norm", "l2_norm", "l1_ls", "l2_ls"] = "l2_norm",
+        path_condition: str | None = None,
+        max_condition: int | None = None,
         use_date_enc: bool = True,
         use_ema: bool = False,
         # mixmae args
@@ -47,6 +50,7 @@ class SSLModule(BaseModule):
     ) -> None:
         super().__init__(datasets)
 
+        self.dataset = datasets.dataset
         self.norm_bands = {
             name_mod: tuple(
                 (
@@ -63,20 +67,35 @@ class SSLModule(BaseModule):
         }
         match loss:
             case "l1":
-                self.norm_pix_loss = False
+                self.norm_pix_loss = None
                 self.loss_fn = torch.abs
             case "l2":
-                self.norm_pix_loss = False
+                self.norm_pix_loss = None
                 self.loss_fn = torch.square
             case "l1_norm":
-                self.norm_pix_loss = True
+                self.norm_pix_loss = "ln"
                 self.loss_fn = torch.abs
             case "l2_norm":
-                self.norm_pix_loss = True
+                self.norm_pix_loss = "ln"
+                self.loss_fn = torch.square
+            case "l1_ls":
+                self.norm_pix_loss = "ls"
+                self.loss_fn = torch.abs
+            case "l2_ls":
+                self.norm_pix_loss = "ls"
                 self.loss_fn = torch.square
             case _:
                 msg = f"Invalid loss {loss}."
                 raise ValueError(msg)
+
+        if path_condition is not None:
+            self.condition = np.load(path_condition)
+            self.condition = dict(self.condition)
+            for name in self.condition:
+                if name.endswith("cov_inv_sqrt") and max_condition:
+                    self.condition[name][max_condition:] = 0
+        else:
+            self.condition = False
 
         match model:
             case "mae":
@@ -240,12 +259,46 @@ class SSLModule(BaseModule):
                 self.model.out_grid_size[name_mod],
             )
             P = batch[name_mod].shape[3] // H  # noqa: N806
-            target = rearrange(
-                batch[name_mod],
-                "b d c (h p1) (w p2) -> b d (h w) (p1 p2) c",
-                p1=P,
-                p2=P,
-            )
+
+            if self.condition:
+                target = rearrange(
+                    batch[name_mod],
+                    "b d c (h p1) (w p2) -> (b d h w) (p1 p2 c)",
+                    p1=P,
+                    p2=P,
+                )
+                mu = torch.tensor(
+                    self.condition[f"{name_mod}_mu"][None, :],
+                    dtype=target.dtype,
+                    device=target.device,
+                )
+                cov_inv_sqrt = torch.tensor(
+                    self.condition[f"{name_mod}_cov_inv_sqrt"],
+                    dtype=target.dtype,
+                    device=target.device,
+                )
+                target = target * self.dataset.inputs[name_mod].norm_fac - mu
+                target = torch.matmul(cov_inv_sqrt, target.transpose(0, 1)).transpose(
+                    0,
+                    1,
+                )
+
+                target = rearrange(
+                    torch.tensor(target, device=batch[name_mod].device).float(),
+                    "(b d h w) (p1 p2 c) -> b d (h w) (p1 p2) c",
+                    d=D,
+                    h=H,
+                    w=W,
+                    p1=P,
+                    p2=P,
+                )
+            else:
+                target = rearrange(
+                    batch[name_mod],
+                    "b d c (h p1) (w p2) -> b d (h w) (p1 p2) c",
+                    p1=P,
+                    p2=P,
+                )
             if self.norm_pix_loss:
                 target_groups = list(
                     torch.split(
@@ -255,9 +308,15 @@ class SSLModule(BaseModule):
                     ),
                 )
                 for idx, target_group in enumerate(target_groups):
-                    mean = target_group.mean(dim=(-2, -1), keepdim=True)
-                    var = target_group.var(dim=(-2, -1), keepdim=True)
-                    target_groups[idx] = (target_group - mean) / (var + 1.0e-6) ** 0.5
+                    if self.norm_pix_loss == "ln":
+                        mean = target_group.mean(dim=(-2, -1), keepdim=True)
+                        var = target_group.var(dim=(-2, -1), keepdim=True)
+                        target_groups[idx] = (target_group - mean) / (
+                            var + 1.0e-6
+                        ) ** 0.5
+                    else:
+                        ms = torch.square(target_group).mean(dim=(-2, -1), keepdim=True)
+                        target_groups[idx] = target_group / (ms + 1.0e-6) ** 0.5
                 target = torch.cat(target_groups, dim=-1)
             target = rearrange(
                 target,
