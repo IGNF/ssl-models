@@ -6,7 +6,6 @@ from ssl_models.conf.dataset.utils import (
     DatasetConfig,
     InputRasterConfig,
     PatchSizeConfig,
-    TargetConfig,
     TargetRasterConfig,
 )
 from ssl_models.dataset.pastis_hd import PASTISHDDataset
@@ -75,21 +74,20 @@ class PASTISHDConfig(DatasetConfig):  # noqa: D101
         ),
     )
 
+    pastis_seg: TargetRasterConfig = field(
+        default_factory=lambda: TargetRasterConfig(
+            type_target="segment",
+            num_classes=19,
+            missing_val=19,
+            bands=1,
+        ),
+    )
+
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = PASTISHDDataset
         self.total_meters = 1280 * 1.0
 
-        self.pastis_seg = TargetRasterConfig(
-            type_target="segment",
-            num_classes=19,
-            missing_val=19,
-            bands=1,
-        )
-        self.pastis_mlc = TargetConfig(
-            type_target="multilabel_classif",
-            num_classes=18,
-        )
         super().__post_init__(
             resolutions_meters={
                 "pastis_seg": 10,

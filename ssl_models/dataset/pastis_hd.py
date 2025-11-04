@@ -101,11 +101,6 @@ class PASTISHDDataset(GenericDataset):
 
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
 
-        inputs["pastis_mlc"] = np.array(
-            [((inputs["pastis_seg"] == idx) > 0).any() for idx in range(1, 19)],
-        ).astype(int)
-        inputs["pastis_mlc_dates"] = spot_date
-
         inputs["ref_date"] = spot_date
 
         return self.transform_rasters(inputs)

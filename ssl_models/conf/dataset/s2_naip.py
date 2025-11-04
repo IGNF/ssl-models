@@ -84,16 +84,20 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
         ),
     )
 
+    osm_seg: TargetRasterConfig = field(
+        default_factory=lambda: TargetRasterConfig(
+            type_target="segment",
+            num_classes=6,
+            missing_val=-1,
+            bands=1,
+        ),
+    )
+
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = S2NAIPDataset
         self.total_meters = 512 * 1.25
 
-        self.osm_seg = TargetRasterConfig(
-            type_target="segment",
-            num_classes=6,
-            missing_val=-1,
-        )
         super().__post_init__(
             resolutions_meters={
                 "osm_seg": 1.25,

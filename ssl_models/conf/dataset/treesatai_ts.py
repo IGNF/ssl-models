@@ -76,21 +76,26 @@ class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
         ),
     )
 
+    treesat_mlc: TargetConfig = field(
+        default_factory=lambda: TargetConfig(
+            type_target="multilabel_classif",
+            num_classes=15,
+            missing_val=-1,
+        ),
+    )
+    treesat_mlc_thresh: TargetConfig = field(
+        default_factory=lambda: TargetConfig(
+            type_target="multilabel_classif",
+            num_classes=15,
+            missing_val=-1,
+        ),
+    )
+
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = TreeSatAITSDataset
         self.total_meters = 60.0
 
-        self.treesat_mlc = TargetConfig(
-            type_target="multilabel_classif",
-            num_classes=15,
-            missing_val=-1,
-        )
-        self.treesat_mlc_thresh = TargetConfig(
-            type_target="multilabel_classif",
-            num_classes=15,
-            missing_val=-1,
-        )
         super().__post_init__(
             resolutions_meters={
                 "aerial": 0.2,

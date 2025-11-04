@@ -37,30 +37,39 @@ class GeoPileConfig(DatasetConfig):  # noqa: D101
         ),
     )
 
+    mlrsnet: TargetConfig = field(
+        default_factory=lambda: TargetConfig(
+            type_target="classif",
+            num_classes=46,
+            missing_val=-1,
+        ),
+    )
+    patternnet: TargetConfig = field(
+        default_factory=lambda: TargetConfig(
+            type_target="classif",
+            num_classes=38,
+            missing_val=-1,
+        ),
+    )
+    rsd46_whu: TargetConfig = field(
+        default_factory=lambda: TargetConfig(
+            type_target="classif",
+            num_classes=46,
+            missing_val=-1,
+        ),
+    )
+    resisc45: TargetConfig = field(
+        default_factory=lambda: TargetConfig(
+            type_target="classif",
+            num_classes=45,
+            missing_val=-1,
+        ),
+    )
+
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = GeoPileDataset
         self.balance_pretrain = False
         self.total_meters = 256.0
 
-        self.mlrsnet = TargetConfig(
-            type_target="classif",
-            num_classes=46,
-            missing_val=-1,
-        )
-        self.patternnet = TargetConfig(
-            type_target="classif",
-            num_classes=38,
-            missing_val=-1,
-        )
-        self.rsd46_whu = TargetConfig(
-            type_target="classif",
-            num_classes=46,
-            missing_val=-1,
-        )
-        self.resisc45 = TargetConfig(
-            type_target="classif",
-            num_classes=45,
-            missing_val=-1,
-        )
         super().__post_init__(resolutions_meters={"rgb": 1.0})

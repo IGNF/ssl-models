@@ -106,24 +106,27 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
         ),
     )
 
-    def __post_init__(self) -> None:
-        """Define non configurable attributes."""
-        self.dataset_class = FLAIRDataset
-        self.total_meters = 102.4
-
-        self.cosia = TargetRasterConfig(
+    cosia: TargetRasterConfig = field(
+        default_factory=lambda: TargetRasterConfig(
             type_target="segment",
             num_classes=15,
             missing_val=-1,
             bands=1,
-        )
-
-        self.lpis = TargetRasterConfig(
+        ),
+    )
+    lpis: TargetRasterConfig = field(
+        default_factory=lambda: TargetRasterConfig(
             type_target="segment",
             num_classes=74,
             missing_val=-1,
             bands=1,
-        )
+        ),
+    )
+
+    def __post_init__(self) -> None:
+        """Define non configurable attributes."""
+        self.dataset_class = FLAIRDataset
+        self.total_meters = 102.4
 
         super().__post_init__(
             resolutions_meters={

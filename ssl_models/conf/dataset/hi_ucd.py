@@ -50,31 +50,37 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
         ),
     )
 
+    hi_ucd_change_detect: TargetRasterConfig = field(
+        default_factory=lambda: TargetRasterConfig(
+            type_target="change_detect",
+            num_classes=1,
+            missing_val=-1,
+            bands=[[-1]],
+        ),
+    )
+    hi_ucd_seg_1: TargetRasterConfig = field(
+        default_factory=lambda: TargetRasterConfig(
+            type_target="segment",
+            num_classes=9,
+            missing_val=-1,
+            bands=[[0]],
+        ),
+    )
+    hi_ucd_seg_2: TargetRasterConfig = field(
+        default_factory=lambda: TargetRasterConfig(
+            type_target="segment",
+            num_classes=9,
+            missing_val=-1,
+            bands=[[1]],
+        ),
+    )
+
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = HiUCDDataset
         self.balance_pretrain = False
         self.total_meters = 512 * 0.1
 
-        self.hi_ucd_change_detect = TargetRasterConfig(
-            type_target="change_detect",
-            num_classes=1,
-            missing_val=-1,
-            bands=[[-1]],
-        )
-
-        self.hi_ucd_seg_1 = TargetRasterConfig(
-            type_target="segment",
-            num_classes=9,
-            missing_val=-1,
-            bands=[[0]],
-        )
-        self.hi_ucd_seg_2 = TargetRasterConfig(
-            type_target="segment",
-            num_classes=9,
-            missing_val=-1,
-            bands=[[1]],
-        )
         super().__post_init__(
             resolutions_meters={
                 "hi_ucd_change_detect": 0.1,
