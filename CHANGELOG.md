@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 <small>[Compare with latest](https://github.com/IGNF/ssl-models/compare/v1.0.0...HEAD)</small>
 
+### Features
+
+- move target configs in init (#73) ([88153a4](https://github.com/IGNF/ssl-models/commit/88153a460646d08d7642b9d304dfafe722c1dc64) by Antoine Labatie).
+
+### Bug Fixes
+
+- fix computation of logits in probing (#72) ([e23e8d8](https://github.com/IGNF/ssl-models/commit/e23e8d89ac99d291c8d50d7b0cb18fac6010bb4c) by Antoine Labatie).
+
 <!-- insertion marker -->
 ## [v1.0.0](https://github.com/IGNF/ssl-models/releases/tag/v1.0.0) - 2025-10-20
 
