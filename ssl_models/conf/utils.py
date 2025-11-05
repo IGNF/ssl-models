@@ -22,6 +22,10 @@ def datasets_from_dict(datasets_dict: dict) -> DatasetsConfig:
     """Convert dict to datasets config."""
     kwargs = {}
     for name_arg, type_arg in DATASETS_TYPES.items():
+        if name_arg not in datasets_dict:
+            kwargs[name_arg] = type_arg()
+            continue
+
         if issubclass(type_arg, DatasetConfig):
             kwargs[name_arg] = from_dict(
                 data_class=type_arg,
@@ -37,6 +41,9 @@ def datasets_to_dict(datasets: DatasetsConfig) -> dict:
     """Convert datasets config to dict."""
     datasets_dict = {}
     for name_arg, type_arg in DATASETS_TYPES.items():
+        if name_arg not in datasets.__dict__:
+            continue
+
         attr = getattr(datasets, name_arg)
         if issubclass(type_arg, DatasetConfig):
             datasets_dict[name_arg] = asdict(attr)

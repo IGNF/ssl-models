@@ -17,17 +17,9 @@ from tests import TEST_DATA_DIR
 @pytest.fixture()
 def datasets_treesat():
     return DatasetsConfig(
-        treesatai_ts=TreeSatAITSConfig(rel_dir=""),
         root_dir=TEST_DATA_DIR,
-        geopile=GeoPileConfig(),
-        flair=FLAIRConfig(),
-        pastis_hd=PASTISHDConfig(),
-        s2_naip=S2NAIPConfig(),
-        hi_ucd=HiUCDConfig(),
-        circa=CircaConfig(),
-        bdfv2=BDFV2Config(),
-        filter_pretrain=["treesatai_ts"],
-        filter_finetune=["treesatai_ts"],
+        name_dataset="treesatai_ts",
+        treesatai_ts=TreeSatAITSConfig(rel_dir=""),
     )
 
 

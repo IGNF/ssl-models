@@ -125,7 +125,7 @@ def ungroup_mods(
             for name_mod, x_mod in zip(name_mods, x_mods):
                 x[name_mod] = x_mod
     else:
-        x = x_group
+        x = dict(x_group)
 
     for name_mod in x:
         if dim == 0:

@@ -68,16 +68,18 @@ class BDFV2Config(DatasetConfig):  # noqa: D101
         ),
     )
 
+    bdfv2: TargetConfig = field(
+        default_factory=lambda: TargetConfig(
+            type_target="classif",
+            num_classes=30,
+            missing_val=-1,
+        ),
+    )
+
     def __post_init__(self) -> None:
         """Define non configurable attributes."""
         self.dataset_class = BDFV2Dataset
         self.total_meters = 50
-
-        self.bdfv2 = TargetConfig(
-            type_target="classif",
-            num_classes=30,
-            missing_val=-1,
-        )
 
         super().__post_init__(
             resolutions_meters={
