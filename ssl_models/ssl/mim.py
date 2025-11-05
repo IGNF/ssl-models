@@ -520,4 +520,4 @@ class BaseMIM(nn.Module, ABC):
 
         # else, probe or finetune
         logits = self.compute_logits(x_enc, ssl_phase)
-        return batch, None, None, x_enc, logits
+        return batch, None, None, self.ungroup(x_enc), logits
