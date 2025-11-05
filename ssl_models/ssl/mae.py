@@ -7,9 +7,16 @@ from einops import rearrange
 from torch import Tensor, nn
 from vit_pytorch.vit import Transformer
 
-from ssl_models.conf.datasets import DatasetsConfig
-from ssl_models.conf.mask import MaskConfig
+from conf.datasets import DatasetsConfig
+from conf.mask import MaskConfig
 from ssl_models.ssl.mim import BaseMIM
+
+from omegaconf import OmegaConf
+import json
+
+from conf.utils import datasets_to_dict, mask_to_dict
+from tests import TEST_DATA_DIR
+
 
 
 class MAE(BaseMIM):
@@ -39,6 +46,25 @@ class MAE(BaseMIM):
         fac_date_enc: float = 1.0,
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
+        cfg = {
+            name_arg: val_arg
+            for name_arg, val_arg in locals().items()
+            if name_arg not in ("self", "kwargs", "__class__", "datasets", "mask")
+        }
+        cfg.update({
+                    "datasets": datasets_to_dict(datasets),
+                    "mask": mask_to_dict(mask),
+                })
+        cfg = OmegaConf.create(cfg)   # convert plain dict -> DictConfig
+
+        cfg_dict = OmegaConf.to_container(cfg, resolve=True)
+        with open(TEST_DATA_DIR / "model" / "bdfv2_target_config.json", "w") as out:
+            json.dump(cfg_dict,
+                out,
+                indent=4,
+                sort_keys=False,
+            )
+
         super().__init__(
             datasets=datasets,
             fusion_mode=fusion_mode,
