@@ -1,5 +1,7 @@
 """Dataset class."""
 
+from dataclasses import is_dataclass
+
 from hydra_zen import MISSING, builds, store
 
 from ssl_models.conf.dataset.bdfv2 import BDFV2Config
@@ -18,61 +20,42 @@ class DatasetsConfig:
     """Dataset config."""
 
     def __init__(
+        # ruff: noqa: B008
         self,
         root_dir: str,
-        filter_pretrain: list[str],
-        filter_finetune: list[str],
-        geopile: GeoPileConfig,
-        flair: FLAIRConfig,
-        pastis_hd: PASTISHDConfig,
-        treesatai_ts: TreeSatAITSConfig,
-        s2_naip: S2NAIPConfig,
-        hi_ucd: HiUCDConfig,
-        circa: CircaConfig,
-        bdfv2: BDFV2Config,
+        name_dataset: str,
+        geopile: GeoPileConfig = GeoPileConfig(),
+        flair: FLAIRConfig = FLAIRConfig(),
+        pastis_hd: PASTISHDConfig = PASTISHDConfig(),
+        treesatai_ts: TreeSatAITSConfig = TreeSatAITSConfig(),
+        s2_naip: S2NAIPConfig = S2NAIPConfig(),
+        hi_ucd: HiUCDConfig = HiUCDConfig(),
+        circa: CircaConfig = CircaConfig(),
+        bdfv2: BDFV2Config = BDFV2Config(),
     ) -> None:
         """Assign args to config attributes."""
         self.__dict__ = {
             name_arg: val_arg
             for name_arg, val_arg in locals().items()
             if val_arg is not self
+            and (not is_dataclass(val_arg) or name_arg == name_dataset)
         }
         self.__post_init__()
 
     def __post_init__(self) -> None:
-        """Check validity of dataset names and further define non configurable attrs."""
-        for name_dataset in self.filter_pretrain + self.filter_finetune:
-            if name_dataset not in self.__dict__:
-                msg = f"Invalid dataset name {name_dataset}. Not an attribute."
-                raise ValueError(msg)
+        """Check validity of dataset name and further define non configurable attrs."""
+        if self.name_dataset not in self.__dict__:
+            msg = f"Invalid dataset name {self.name_dataset}. Not an attribute."
+            raise ValueError(msg)
 
-        self.pretrain = {
-            name_dataset: getattr(self, name_dataset)
-            for name_dataset in self.filter_pretrain
-        }
-        self.finetune = {
-            name_dataset: getattr(self, name_dataset)
-            for name_dataset in self.filter_finetune
-        }
-
-        # temporary restriction to single datasets
-        names_dataset = self.filter_pretrain
-        name_dataset = self.filter_pretrain[0]
-        dataset = self.pretrain[name_dataset]
-
-        if len(names_dataset) > 1:
-            msg = "Multi-dataset pretraining/finetuning not implemented yet."
-            raise NotImplementedError(msg)
-
-        self.dataset_class = dataset.dataset_class
-        self.dataset = dataset
+        self.dataset = getattr(self, self.name_dataset)
+        self.dataset_class = self.dataset.dataset_class
 
 
 dataset_build = builds(
     DatasetsConfig,
     root_dir=MISSING,
-    filter_pretrain=MISSING,
-    filter_finetune=MISSING,
+    name_dataset=MISSING,
     geopile=GeoPileConfig(),
     flair=FLAIRConfig(),
     pastis_hd=PASTISHDConfig(),
