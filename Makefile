@@ -34,11 +34,14 @@ _update:
 	@git add -u
 	@git commit -m "chore: bump to v${NEXT_VERSION}"
 	@git push --set-upstream origin "chore/release-v${NEXT_VERSION}"
-	@git tag -a "v${NEXT_VERSION}" -m "Release v${NEXT_VERSION}"
-	@git push origin "v${NEXT_VERSION}"
 
 patch-update: _bump_patch _update
 
 minor-update: _bump_minor _update
 
 major-update: _bump_major _update
+
+release:
+	$(eval VERSION=$(shell poetry version --short))
+	@git tag -a "v$(VERSION)" -m "Release v$(VERSION)"
+	@git push origin "v$(VERSION)"
