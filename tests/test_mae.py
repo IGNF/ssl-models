@@ -19,7 +19,7 @@ def model_map():
     "model_size, fusion_mode",
     itertools.product(
         ("tiny",),
-        ("msgfm", "shared", "monotemp", "mod", "group"),
+        ("shared", "monotemp", "mod", "group"),
     ),
 )
 def test_mae(datasets_treesat, mask, model_map, model_size, fusion_mode):

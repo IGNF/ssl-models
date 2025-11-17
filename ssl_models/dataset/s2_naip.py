@@ -20,7 +20,7 @@ class S2NAIPDataset(GenericDataset):
         stage: Literal["train", "val", "test"],
         use_transform: bool,
         random_dates: bool,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
         random_crop: bool,
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
@@ -102,6 +102,7 @@ class S2NAIPDataset(GenericDataset):
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
 
         inputs["ref_date"] = ref_date
+        inputs["idx"] = idx
 
         return self.transform_rasters(inputs)
 

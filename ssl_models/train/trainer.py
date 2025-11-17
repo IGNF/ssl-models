@@ -24,7 +24,7 @@ class SSLTrainer(pl.Trainer):
     def __init__(
         self,
         run: RunConfig,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
         opt: OptPretrainConfig | OptProbeConfig | OptFinetuneConfig,
         accelerator: str,
         devices: str | int,
@@ -68,6 +68,7 @@ class SSLTrainer(pl.Trainer):
             precision=precision,
             num_nodes=num_nodes,
             accumulate_grad_batches=opt.accumulate_grad_batches,
+            reload_dataloaders_every_n_epochs=1,
         )
 
     def configure_loggers(self) -> list[Logger]:

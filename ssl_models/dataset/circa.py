@@ -22,7 +22,7 @@ class CircaDataset(GenericDataset):
         use_transform: bool,
         random_dates: bool,
         random_crop: bool,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -39,7 +39,6 @@ class CircaDataset(GenericDataset):
             stage=stage,
             ssl_phase=ssl_phase,
             version=dataset.version,
-            balance_pretrain=dataset.balance_pretrain,
             val_pretrain=dataset.val_pretrain,
             filter_percent=dataset.filter_percent,
         )
@@ -121,6 +120,7 @@ class CircaDataset(GenericDataset):
 
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
         inputs["ref_date"] = np.expand_dims(ref_date, axis=0)
+        inputs["idx"] = idx
 
         if "s2_cloud_mask_global" in inputs:
             inputs["s2_cloud_mask_global"] = cloud_mask_correction(

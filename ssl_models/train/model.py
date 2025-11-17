@@ -6,6 +6,7 @@ from typing import Literal
 import torch
 from einops import rearrange
 from torch import Tensor
+from torch.utils.data import DataLoader, DistributedSampler, Subset
 
 from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.conf.mask import MaskConfig
@@ -30,15 +31,17 @@ class SSLModule(BaseModule):
         # shared args
         datasets: DatasetsConfig,
         mask: MaskConfig,
-        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        fusion_mode: Literal["shared", "monotemp", "mod", "group"],
         inter_depth: int,
         model: Literal["mae", "mixmae"],
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
         type_head: Literal["linear", "attentive"] = "attentive",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm"] = "l2_norm",
+        hkmeans_every_n_epochs: int | None = None,
         use_date_enc: bool = True,
         use_ema: bool = False,
+        use_cls_token: bool = False,
         # mixmae args
         num_levels: Literal[3, 4] = 3,
         swin_version: Literal[1, 2] = 1,
@@ -46,6 +49,9 @@ class SSLModule(BaseModule):
         swin_abs_enc: bool = False,
     ) -> None:
         super().__init__(datasets)
+
+        self.hkmeans_every_n_epochs = hkmeans_every_n_epochs
+        self.new_indices = None
 
         self.norm_bands = {
             name_mod: tuple(
@@ -132,6 +138,7 @@ class SSLModule(BaseModule):
                 "interpolate": interpolate,
                 "fac_abs_enc": fac_abs_enc,
                 "fac_date_enc": fac_date_enc,
+                "use_cls_token": use_cls_token,
             }
             self.model = model_map[model_size](**model_args)
         else:
@@ -193,7 +200,7 @@ class SSLModule(BaseModule):
         batch: dict[str, Tensor],
         pixels_rec: dict[str, Tensor],
         mask_rec: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
         stage: Literal["train", "val", "test"],
     ) -> tuple[dict[str, Tensor], dict[str, Tensor], dict[str, Tensor]]:
         """Visu of reconstructed images."""
@@ -303,3 +310,61 @@ class SSLModule(BaseModule):
             "log_preds": log_preds,
             "log_targets": log_targets,
         }
+
+    def on_train_epoch_end(self) -> None:
+        super().on_train_epoch_end()
+
+        if self.hkmeans_every_n_epochs is None or self.trainer.ssl_phase != "pretrain":
+            return
+
+        dataset = self.trainer.datamodule.full_train_dataset
+        if (self.trainer.current_epoch + 1) % self.hkmeans_every_n_epochs == 0:
+            self.metrics["hkmeans"].reset()
+
+            sampler = DistributedSampler(
+                dataset,
+                num_replicas=self.trainer.world_size,
+                rank=self.trainer.global_rank,
+                shuffle=False,  # or True if you want shuffle
+            )
+
+            dl = self.trainer.datamodule.train_dataloader()
+            dl = DataLoader(
+                dataset,
+                batch_size=dl.batch_size,
+                sampler=sampler,
+                num_workers=dl.num_workers,
+                pin_memory=dl.pin_memory,
+                drop_last=dl.drop_last,
+                collate_fn=dl.collate_fn,
+            )
+
+            self.eval()
+            with torch.no_grad():
+                for batch in dl:
+                    batch = self.trainer.strategy.batch_to_device(batch, self.device)  # noqa: PLW2901
+                    cls_token = self.model(batch, ssl_phase="balance")
+                    self.metrics["hkmeans"].update(
+                        ids=batch["idx"],
+                        cls_token=cls_token,
+                    )
+            self.train()
+
+            self.metrics["hkmeans"].compute_local()
+            ids, weights = self.metrics["hkmeans"].compute()
+            hkmeans_weights = torch.zeros(ids.max() + 1, device=self.device)
+            hkmeans_weights[ids] += weights
+            hkmeans_weights /= hkmeans_weights.min()
+            self.new_indices = torch.repeat_interleave(
+                torch.arange(len(hkmeans_weights)),
+                repeats=hkmeans_weights.int().cpu(),
+            )
+
+            # Broadcast to all GPU/CPU processes
+            self.new_indices = self.trainer.strategy.broadcast(self.new_indices)
+
+        if self.new_indices is not None:
+            self.trainer.datamodule.train_dataset = Subset(
+                dataset,
+                self.new_indices[torch.randperm(len(self.new_indices))[:len(dataset)]],
+            )

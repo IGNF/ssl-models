@@ -12,6 +12,7 @@ from torch import Tensor, nn
 from torchmetrics import MeanMetric
 
 from ssl_models.conf.datasets import DatasetsConfig
+from ssl_models.hkmeans.hkmeans_metric import HKMeansMetric
 from ssl_models.layers.overlay import (
     create_overlay,
     onehot_cd_from_logits,
@@ -30,8 +31,10 @@ class BaseModule(LightningModule, ABC):
         super().__init__()
         self.dataset = datasets.dataset
 
-        self.loss_pred = {}
         self.metrics = nn.ModuleDict()
+        self.metrics["hkmeans"] = HKMeansMetric()
+
+        self.loss_pred = {}
         for name_target, target in datasets.dataset.targets.items():
             match target.type_target:
                 case "classif" | "segment":
@@ -67,7 +70,7 @@ class BaseModule(LightningModule, ABC):
         self,
         batch: dict[str, Tensor],
         logits: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
         stage: Literal["train", "val", "test"],
     ) -> tuple[
         dict[str, Tensor],
@@ -196,7 +199,7 @@ class BaseModule(LightningModule, ABC):
         self,
         name: str,
         value: Tensor,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
         stage: Literal["train", "val", "test"],
     ) -> None:
         """Log metric."""

@@ -22,7 +22,7 @@ class FLAIRDataset(GenericDataset):
         use_transform: bool,
         random_dates: bool,
         random_crop: bool,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -39,7 +39,6 @@ class FLAIRDataset(GenericDataset):
             stage=stage,
             ssl_phase=ssl_phase,
             version=dataset.version,
-            balance_pretrain=dataset.balance_pretrain,
             val_pretrain=dataset.val_pretrain,
             filter_percent=dataset.filter_percent,
         )
@@ -144,6 +143,7 @@ class FLAIRDataset(GenericDataset):
             inputs[name_mod][np.isin(inputs[name_mod], labels_ignore)] = label_missing
 
         inputs["ref_date"] = meta["aerial_dates"]
+        inputs["idx"] = idx
 
         return self.transform_rasters(inputs)
 

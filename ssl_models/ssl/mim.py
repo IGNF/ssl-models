@@ -19,7 +19,6 @@ from ssl_models.layers.utils import (
     group_mods,
     posemb_sincos_2d,
     reshape_encoding,
-    shuffle_enc_to_dec,
     ungroup_mods,
 )
 
@@ -30,7 +29,7 @@ class BaseMIM(nn.Module, ABC):
     def __init__(
         self,
         datasets: DatasetsConfig,
-        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        fusion_mode: Literal["shared", "monotemp", "mod", "group"],
         model: Literal["mae", "mixmae"],
         num_levels: Literal[1, 3, 4],
         embed_dim: int,
@@ -157,9 +156,6 @@ class BaseMIM(nn.Module, ABC):
             grid_size=self.grid_size,
         )
 
-        # shuffling of modalities
-        self.shuffle_mods = fusion_mode == "msgfm"
-
         # mask tokens
         self.mask_token = nn.ParameterDict(
             {
@@ -199,6 +195,35 @@ class BaseMIM(nn.Module, ABC):
                     embed_dim * self.stride,
                     target.num_classes,
                 )
+
+    def add_cls_token(
+        self,
+        x: dict[str, Tensor],
+        x_cls: dict[str, Tensor | None],
+    ) -> dict[str, Tensor]:
+        """Add cls token."""
+        for name_group, x_group in x.items():
+            if self.use_cls_token:
+                x_cls_group = torch.repeat_interleave(
+                    x_cls[name_group],
+                    x_group.shape[0] // x_cls[name_group].shape[0],
+                    dim=0,
+                )
+                x[name_group] = torch.cat([x_cls_group, x_group], dim=1)
+        return x
+
+    def remove_cls_token(
+        self,
+        x: dict[str, Tensor],
+    ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
+        """Remove cls token."""
+        x_cls = {}
+        for name_group, x_group in x.items():
+            if self.use_cls_token:
+                x_cls[name_group], x[name_group] = x_group[:, :1], x_group[:, 1:]
+            else:
+                x_cls[name_group] = None
+        return x_cls, x
 
     def embed(
         self,
@@ -240,6 +265,7 @@ class BaseMIM(nn.Module, ABC):
         ref_date: Tensor,
     ) -> dict[str, Tensor]:
         """Add positional and date encodings before encoder."""
+        x_cls, x_enc = self.remove_cls_token(x_enc)
         x_enc = self.ungroup(x_enc)
 
         for name_mod in x_enc:
@@ -253,7 +279,8 @@ class BaseMIM(nn.Module, ABC):
             )
             x_enc[name_mod] = x_enc[name_mod] + pos_encoding + date_encoding
 
-        return self.group(x_enc)
+        x_enc = self.group(x_enc)
+        return self.add_cls_token(x_enc, x_cls=x_cls)
 
     def dec_add_encodings(
         self,
@@ -262,6 +289,7 @@ class BaseMIM(nn.Module, ABC):
         ref_date: Tensor,
     ) -> dict[str, Tensor]:
         """Add positional and date encodings before decoder."""
+        x_cls, x_dec = self.remove_cls_token(x_dec)
         x_dec = self.ungroup(x_dec)
 
         for name_mod in x_dec:
@@ -275,13 +303,14 @@ class BaseMIM(nn.Module, ABC):
             )
             x_dec[name_mod] = x_dec[name_mod] + pos_encoding + date_encoding
 
-        return self.group(x_dec)
+        x_dec = self.group(x_dec)
+        return self.add_cls_token(x_dec, x_cls=x_cls)
 
     def mask(
         self,
         x: dict[str, Tensor],
         mask: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
     ) -> tuple[
         dict[str, Tensor],
         dict[str, Tensor | None],
@@ -290,6 +319,7 @@ class BaseMIM(nn.Module, ABC):
     ]:
         """Mask."""
         if ssl_phase == "pretrain":
+            x_cls, x = self.remove_cls_token(x)
             mask_rec = self.mask_struct(x)
 
             x_enc, mask_token, mask_attn = {}, {}, {}
@@ -305,6 +335,7 @@ class BaseMIM(nn.Module, ABC):
                     mask_rec[name_group],
                     name_group,
                 )
+            x_enc = self.add_cls_token(x_enc, x_cls=x_cls)
             return x_enc, mask_token, mask_attn, mask_rec
 
         # else, probe or finetune
@@ -318,6 +349,8 @@ class BaseMIM(nn.Module, ABC):
         mask_rec: dict[str, Tensor],
     ) -> dict[str, Tensor]:
         """Unmask."""
+        x_cls, x = self.remove_cls_token(x)
+
         x_dec = {}
         for name_group in x:
             x_dec[name_group] = self.unmask_seq(
@@ -325,19 +358,7 @@ class BaseMIM(nn.Module, ABC):
                 mask[name_group],
                 mask_rec[name_group],
             )
-        return x_dec
-
-    def shuffle_enc_to_dec(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
-        """Shuffle modalities and dates."""
-        if self.shuffle_mods:
-            x_dec = self.ungroup(x)
-
-            x_dec = shuffle_enc_to_dec(x_dec)
-
-            x_dec = self.group(x_dec)
-        else:
-            x_dec = x
-        return x_dec
+        return self.add_cls_token(x_dec, x_cls=x_cls)
 
     def rec_pixels(
         self,
@@ -359,7 +380,7 @@ class BaseMIM(nn.Module, ABC):
     def compute_logits(
         self,
         x_enc: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
     ) -> dict[str, Tensor]:
         """Compute logits."""
         x_enc = self.ungroup(x_enc)
@@ -489,7 +510,7 @@ class BaseMIM(nn.Module, ABC):
     def forward(
         self,
         batch: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
     ) -> tuple[
         dict[str, Tensor] | None,
         dict[str, Tensor] | None,
@@ -501,6 +522,8 @@ class BaseMIM(nn.Module, ABC):
         batch = self.resize_and_rescale(batch)
 
         x_enc, mask_token, dates, ref_date = self.embed(batch)
+        x_enc = self.add_cls_token(x_enc, x_cls=self.cls_token)
+
         x_enc = self.enc_add_encodings(x_enc, dates, ref_date)
 
         x_enc, mask_token, mask_attn, mask_rec = self.mask(x_enc, mask_token, ssl_phase)
@@ -508,16 +531,23 @@ class BaseMIM(nn.Module, ABC):
         x_enc = self.encode(x_enc, mask_attn)
 
         if ssl_phase == "pretrain":
-            x_dec = self.shuffle_enc_to_dec(x_enc)
-            x_dec = self.encoder_to_decoder(x_dec)
+            x_dec = self.encoder_to_decoder(x_enc)
             x_dec = self.unmask(x_dec, mask_token, mask_rec)
             x_dec = self.dec_add_encodings(x_dec, dates, ref_date)
 
             x_dec = self.decode(x_dec)
+            _, x_dec = self.remove_cls_token(x_dec)
 
             pixels_rec, mask_rec = self.rec_pixels(x_dec, mask_rec)
             return batch, pixels_rec, mask_rec, None, None
 
-        # else, probe or finetune
+        # else, probe, finetune or balance
+        x_cls, x_enc = self.remove_cls_token(x_enc)
+        if ssl_phase == "balance":
+            return torch.cat(
+                [x_cls[name_group][:, 0] for _, name_group in self.dataset.groups],
+                dim=1,
+            )
+
         logits = self.compute_logits(x_enc, ssl_phase)
-        return batch, None, None, self.ungroup(x_enc), logits
+        return batch, None, None, x_enc, logits

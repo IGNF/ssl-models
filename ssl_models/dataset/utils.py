@@ -79,9 +79,8 @@ def dict_datetimes(datetime_dict: dict | str, start: int = 0) -> np.ndarray:
 def read_csv(
     csv_dir: Path,
     stage: Literal["train", "val", "test"],
-    ssl_phase: Literal["pretrain", "probe", "finetune"],
+    ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
     version: str | None = None,
-    balance_pretrain: bool = False,
     filter_percent: int | None = None,
     fold: int | None = None,
     val_pretrain: bool = False,
@@ -92,8 +91,6 @@ def read_csv(
     csv_name = []
     if version:
         csv_name += [version]
-    if balance_pretrain and ssl_phase == "pretrain":
-        csv_name += ["balanced"]
     if filter_percent:
         csv_name += [f"filtered_{filter_percent}"]
     if fold:

@@ -20,6 +20,8 @@ class ModelConfig:  # noqa: D101
     swin_abs_enc: bool = False
     use_date_enc: bool = True
     use_ema: bool = True
+    use_cls_token: bool = False
+    hkmeans_every_n_epochs: int | None = None
 
 
 @dataclass

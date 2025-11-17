@@ -19,7 +19,7 @@ class MAE(BaseMIM):
         self,
         datasets: DatasetsConfig,
         mask: MaskConfig,
-        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        fusion_mode: Literal["shared", "monotemp", "mod", "group"],
         inter_depth: int,
         model: Literal["mae"],
         num_levels: Literal[1],
@@ -37,6 +37,7 @@ class MAE(BaseMIM):
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
+        use_cls_token: bool = False,
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
@@ -82,7 +83,7 @@ class MAE(BaseMIM):
             {},
         )
         match fusion_mode:
-            case "msgfm" | "shared" | "monotemp":
+            case "shared" | "monotemp":
                 name_models = (
                     list(num_dates_mod.keys())
                     if fusion_mode == "monotemp"
@@ -129,6 +130,20 @@ class MAE(BaseMIM):
             case _:
                 msg = f"Invalid fusion mode {fusion_mode}."
                 raise ValueError(msg)
+
+        self.use_cls_token = use_cls_token
+        self.cls_token = nn.ParameterDict(
+            {
+                name_mod: (
+                    nn.Parameter(
+                        torch.randn(1, 1, embed_dim),
+                    )
+                    if use_cls_token
+                    else None
+                )
+                for name_mod in name_models
+            },
+        )
 
         self.encoder = nn.ModuleDict(
             {

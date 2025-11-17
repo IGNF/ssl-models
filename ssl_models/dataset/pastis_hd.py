@@ -22,7 +22,7 @@ class PASTISHDDataset(GenericDataset):
         use_transform: bool,
         random_dates: bool,
         random_crop: bool,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -37,7 +37,6 @@ class PASTISHDDataset(GenericDataset):
             csv_dir=root_dir,
             stage=stage,
             ssl_phase=ssl_phase,
-            balance_pretrain=dataset.balance_pretrain,
             val_pretrain=dataset.val_pretrain,
             filter_percent=dataset.filter_percent,
             fold=dataset.fold,
@@ -102,6 +101,7 @@ class PASTISHDDataset(GenericDataset):
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
 
         inputs["ref_date"] = spot_date
+        inputs["idx"] = idx
 
         return self.transform_rasters(inputs)
 

@@ -27,7 +27,7 @@ class MixMAE(BaseMIM):
         self,
         datasets: DatasetsConfig,
         mask: MaskConfig,
-        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        fusion_mode: Literal["shared", "monotemp", "mod", "group"],
         model: Literal["mixmae"],
         num_levels: Literal[3, 4],
         embed_dim: int,
@@ -65,7 +65,7 @@ class MixMAE(BaseMIM):
             fac_date_enc=fac_date_enc,
         )
         match fusion_mode:
-            case "msgfm" | "shared" | "monotemp":
+            case "shared" | "monotemp":
                 name_models = (
                     list(datasets.dataset.inputs.keys())
                     if fusion_mode == "monotemp"

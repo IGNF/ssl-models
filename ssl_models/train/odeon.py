@@ -34,7 +34,7 @@ class OdeonData(Input):
 
     def __init__(
         self,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
         root_dir: str,
         batch_size: int,
         num_workers: int,

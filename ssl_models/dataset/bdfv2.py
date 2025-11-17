@@ -22,7 +22,7 @@ class BDFV2Dataset(GenericDataset):
         use_transform: bool,
         random_dates: bool,
         random_crop: bool,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -127,6 +127,7 @@ class BDFV2Dataset(GenericDataset):
 
         inputs["bdfv2"] = np.array(self.target[idx])
         inputs["ref_date"] = meta["aerial_dates"]
+        inputs["idx"] = idx
 
         return self.transform_rasters(inputs)
 

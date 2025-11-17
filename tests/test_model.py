@@ -8,7 +8,7 @@ from ssl_models.train.model import SSLModule
 @pytest.mark.parametrize(
     "fusion_mode, inter_depth, model_size, interpolate, stage",
     itertools.product(
-        ("msgfm", "shared", "mod", "group"),
+        ("shared", "mod", "group"),
         (0,),
         ("tiny",),
         ("nearest",),
@@ -107,7 +107,7 @@ def test_ssl_head_loss(
 @pytest.mark.parametrize(
     "fusion_mode, inter_depth, model_size, interpolate, num_levels, swin_version, swin_abs_enc, stage,",
     itertools.product(
-        ("msgfm", "shared"),
+        ("shared",),
         (0,),
         ("tiny",),
         ("nearest",),

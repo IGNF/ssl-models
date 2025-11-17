@@ -20,7 +20,7 @@ class GeoPileDataset(GenericDataset):
         root_dir: Path,
         stage: Literal["train", "val", "test"],
         use_transform: bool,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -76,6 +76,7 @@ class GeoPileDataset(GenericDataset):
             inputs[f"{name_target}_dates"] = strs_datetimes(["2019-07-01"])
 
         inputs["ref_date"] = strs_datetimes(["2019-07-01"])
+        inputs["idx"] = idx
 
         return self.transform_rasters(inputs)
 

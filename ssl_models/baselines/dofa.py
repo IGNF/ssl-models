@@ -348,7 +348,7 @@ class DOFABaseline(BaseModule, ABC):
     def forward(
         self,
         batch: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],  # noqa: ARG002
     ) -> tuple[
         dict[str, Tensor] | None,
         None,

@@ -26,7 +26,7 @@ def model_map():
     "model_size, fusion_mode",
     itertools.product(
         ("tiny",),
-        ("msgfm", "shared"),
+        ("shared",),
     ),
 )
 def test_mixmae(

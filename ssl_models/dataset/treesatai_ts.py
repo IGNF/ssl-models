@@ -21,7 +21,7 @@ class TreeSatAITSDataset(GenericDataset):
         stage: Literal["train", "val", "test"],
         use_transform: bool,
         random_dates: bool,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -35,7 +35,6 @@ class TreeSatAITSDataset(GenericDataset):
             csv_dir=root_dir,
             stage=stage,
             ssl_phase=ssl_phase,
-            balance_pretrain=dataset.balance_pretrain,
             val_pretrain=dataset.val_pretrain,
             filter_percent=dataset.filter_percent,
             parse_dates=["aerial_date"],
@@ -99,6 +98,7 @@ class TreeSatAITSDataset(GenericDataset):
         inputs["treesat_mlc_thresh"] = (target > self.mlc_thresh).astype(int)
         inputs["treesat_mlc_thresh_dates"] = aerial_date
         inputs["ref_date"] = aerial_date
+        inputs["idx"] = idx
 
         return self.transform_rasters(inputs)
 
