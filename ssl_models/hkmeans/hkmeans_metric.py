@@ -19,25 +19,24 @@ class HKMeansMetric(Metric):
         """Init."""
         super().__init__(dist_sync_on_step=dist_sync_on_step)
 
+        self.cls_token = []
         self.add_state("ids", default=[], dist_reduce_fx="cat")
-        self.add_state("cls_token", default=[], dist_reduce_fx="cat")
         self.add_state("weight", default=[], dist_reduce_fx="cat")
 
     def update(self, ids: Tensor, cls_token: Tensor) -> None:
         """Update cls_token and ids."""
+        self.cls_token.append(cls_token.cpu())
         self.ids.append(ids)
-        self.cls_token.append(cls_token)
         self.weight.append(torch.zeros_like(ids, dtype=torch.float32))
 
     def compute_local(self) -> None:
         """Compute HKMeans weights."""
         self.ids = [torch.cat(self.ids)]
-        self.cls_token = [torch.cat(self.cls_token)]
         self.weight = [torch.cat(self.weight)]
 
         size = self.ids[0].shape[0]
         clusters = hkmg.hierarchical_kmeans_with_resampling(
-            data=self.cls_token[0].to(dtype=torch.float32),
+            data=torch.cat(self.cls_token).to(dtype=torch.float32),
             n_clusters=[size // 10, size // 100, size // 1000],
             n_levels=3,
             sample_sizes=[3, 3, 3],
