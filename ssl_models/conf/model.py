@@ -20,7 +20,7 @@ class ModelConfig:  # noqa: D101
     swin_abs_enc: bool = False
     use_date_enc: bool = True
     use_ema: bool = True
-    path_condition: str | None = None
+    condition: bool = False
     max_condition: int | None = None
 
 
