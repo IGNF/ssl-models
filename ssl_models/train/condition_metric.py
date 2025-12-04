@@ -10,7 +10,7 @@ class ConditionMetric(Metric):
 
     def __init__(
         self,
-        dim,
+        dim: int,
         dist_sync_on_step: bool = False,
     ) -> None:
         """Init."""
