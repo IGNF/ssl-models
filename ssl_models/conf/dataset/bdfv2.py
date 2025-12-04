@@ -59,8 +59,8 @@ class BDFV2Config(DatasetConfig):  # noqa: D101
     )
     s2: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
-            image_size=10,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            image_size=5,
+            patch_size=PatchSizeConfig(mae=1, mixmae=1),
             bands=10,
             norm_bands=[4, 4, 2],
             num_dates=12,
