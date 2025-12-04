@@ -26,7 +26,7 @@ class SSLDataModule(LightningDataModule):
         super().__init__()
 
         root_dir = Path(datasets.root_dir) / datasets.dataset.rel_dir
-        train_dataset = datasets.dataset_class(
+        self.train_dataset = datasets.dataset_class(
             dataset=datasets.dataset,
             root_dir=root_dir,
             stage="train",
@@ -36,14 +36,14 @@ class SSLDataModule(LightningDataModule):
             random_crop=random_crop,
         )
         self.train_loader = DataLoader(
-            train_dataset,
+            self.train_dataset,
             batch_size=opt.batch_size,
             num_workers=num_workers,
             shuffle=True,
             drop_last=True,
         )
 
-        val_dataset = datasets.dataset_class(
+        self.val_dataset = datasets.dataset_class(
             dataset=datasets.dataset,
             root_dir=root_dir,
             stage="val",
@@ -53,14 +53,14 @@ class SSLDataModule(LightningDataModule):
             random_crop=random_crop,
         )
         self.val_loader = DataLoader(
-            val_dataset,
+            self.val_dataset,
             batch_size=opt.batch_size,
             num_workers=num_workers,
             shuffle=True,
             drop_last=True,
         )
 
-        test_dataset = datasets.dataset_class(
+        self.test_dataset = datasets.dataset_class(
             dataset=datasets.dataset,
             root_dir=root_dir,
             stage="test",
@@ -70,7 +70,7 @@ class SSLDataModule(LightningDataModule):
             random_crop=random_crop,
         )
         self.test_loader = DataLoader(
-            test_dataset,
+            self.test_dataset,
             batch_size=opt.batch_size,
             num_workers=num_workers,
             shuffle=True,
