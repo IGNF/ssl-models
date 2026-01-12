@@ -71,6 +71,7 @@ class HiUCDDataset(GenericDataset):
 
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
         inputs["ref_date"] = strs_datetimes(["2019-07-01"])
+        inputs["idx"] = idx
 
         for target in ("hi_ucd_change_detect", "hi_ucd_seg_1", "hi_ucd_seg_2"):
             if target in inputs:

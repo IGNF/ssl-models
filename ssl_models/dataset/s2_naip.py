@@ -102,6 +102,7 @@ class S2NAIPDataset(GenericDataset):
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
 
         inputs["ref_date"] = ref_date
+        inputs["idx"] = idx
 
         return self.transform_rasters(inputs)
 

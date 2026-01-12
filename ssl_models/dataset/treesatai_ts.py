@@ -99,6 +99,7 @@ class TreeSatAITSDataset(GenericDataset):
         inputs["treesat_mlc_thresh"] = (target > self.mlc_thresh).astype(int)
         inputs["treesat_mlc_thresh_dates"] = aerial_date
         inputs["ref_date"] = aerial_date
+        inputs["idx"] = idx
 
         return self.transform_rasters(inputs)
 

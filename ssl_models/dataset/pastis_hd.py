@@ -102,6 +102,7 @@ class PASTISHDDataset(GenericDataset):
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
 
         inputs["ref_date"] = spot_date
+        inputs["idx"] = idx
 
         return self.transform_rasters(inputs)
 

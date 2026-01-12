@@ -68,6 +68,7 @@ class SSLTrainer(pl.Trainer):
             precision=precision,
             num_nodes=num_nodes,
             accumulate_grad_batches=opt.accumulate_grad_batches,
+            reload_dataloaders_every_n_epochs=1,
         )
 
     def configure_loggers(self) -> list[Logger]:

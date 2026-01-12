@@ -127,6 +127,7 @@ class BDFV2Dataset(GenericDataset):
 
         inputs["bdfv2"] = np.array(self.target[idx])
         inputs["ref_date"] = meta["aerial_dates"]
+        inputs["idx"] = idx
 
         return self.transform_rasters(inputs)
 

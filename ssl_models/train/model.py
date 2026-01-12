@@ -7,8 +7,7 @@ import numpy as np
 import torch
 from einops import rearrange
 from torch import Tensor
-from torch.utils.data import DataLoader
-from torch.utils.data.distributed import DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler, Subset
 
 from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.conf.mask import MaskConfig
@@ -21,6 +20,7 @@ from ssl_models.ssl.mixmae import (
     mixmae_tiny,
 )
 from ssl_models.train.base import BaseModule
+
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -40,6 +40,8 @@ class SSLModule(BaseModule):
         type_head: Literal["linear", "attentive"] = "attentive",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm", "l1_ls", "l2_ls"] = "l2_norm",
+        balance: bool = False,
+        max_balance: float = 10,
         condition: bool = False,
         max_condition: int | None = None,
         use_date_enc: bool = True,
@@ -89,9 +91,12 @@ class SSLModule(BaseModule):
                 msg = f"Invalid loss {loss}."
                 raise ValueError(msg)
 
+        self.balance = balance
+        self.max_balance = max_balance
+
         self.condition = condition
         self.max_condition = max_condition
-        self.mu, self.cov_inv_sqrt = {}, {}
+        self.mu, self.cov_inv_sqrt, self.proj = {}, {}, {}
 
         match model:
             case "mae":
@@ -203,6 +208,45 @@ class SSLModule(BaseModule):
             },
         }
 
+
+    def target_norm(self, target: Tensor, name_mod: str) -> Tensor:
+        """Apply target normalization."""
+        H = self.model.out_grid_size[name_mod]  # noqa: N806
+        P = target.shape[3] // H  # noqa: N806
+
+        target = rearrange(
+            target,
+            "b d c (h p1) (w p2) -> b d (h w) (p1 p2) c",
+            p1=P,
+            p2=P,
+        )
+        if self.norm_pix_loss:
+            target_groups = list(
+                torch.split(
+                    target,
+                    self.norm_bands[name_mod],
+                    dim=-1,
+                ),
+            )
+            for idx, target_group in enumerate(target_groups):
+                if self.norm_pix_loss == "ln":
+                    mean = target_group.mean(dim=(-2, -1), keepdim=True)
+                    var = target_group.var(dim=(-2, -1), keepdim=True)
+                    target_groups[idx] = (target_group - mean) / (
+                        var + 1.0e-6
+                    ) ** 0.5
+                else:
+                    ms = torch.square(target_group).mean(dim=(-2, -1), keepdim=True)
+                    target_groups[idx] = target_group / (ms + 1.0e-6) ** 0.5
+            target = torch.cat(target_groups, dim=-1)
+        return rearrange(
+            target,
+            "b d (h w) (p1 p2) c -> b d c (h p1) (w p2)",
+            h=H,
+            p1=P,
+            p2=P,
+        )
+
     def compute_logs_rec(
         self,
         batch: dict[str, Tensor],
@@ -273,7 +317,7 @@ class SSLModule(BaseModule):
                 )
                 target = rearrange(
                     torch.tensor(target, device=batch[name_mod].device).float(),
-                    "(b d h w) (p1 p2 c) -> b d (h w) (p1 p2) c",
+                    "(b d h w) (p1 p2 c) -> b d c (h p1) (w p2)",
                     d=D,
                     h=H,
                     w=W,
@@ -281,38 +325,9 @@ class SSLModule(BaseModule):
                     p2=P,
                 )
             else:
-                target = rearrange(
-                    batch[name_mod],
-                    "b d c (h p1) (w p2) -> b d (h w) (p1 p2) c",
-                    p1=P,
-                    p2=P,
-                )
-            if self.norm_pix_loss:
-                target_groups = list(
-                    torch.split(
-                        target,
-                        self.norm_bands[name_mod],
-                        dim=-1,
-                    ),
-                )
-                for idx, target_group in enumerate(target_groups):
-                    if self.norm_pix_loss == "ln":
-                        mean = target_group.mean(dim=(-2, -1), keepdim=True)
-                        var = target_group.var(dim=(-2, -1), keepdim=True)
-                        target_groups[idx] = (target_group - mean) / (
-                            var + 1.0e-6
-                        ) ** 0.5
-                    else:
-                        ms = torch.square(target_group).mean(dim=(-2, -1), keepdim=True)
-                        target_groups[idx] = target_group / (ms + 1.0e-6) ** 0.5
-                target = torch.cat(target_groups, dim=-1)
-            target = rearrange(
-                target,
-                "b d (h w) (p1 p2) c -> b d c (h p1) (w p2)",
-                h=H,
-                p1=P,
-                p2=P,
-            )
+                target = batch[name_mod]
+
+            target = self.target_norm(target, name_mod=name_mod)
 
             weight = D * H * W
             weights.append(weight)
@@ -354,7 +369,7 @@ class SSLModule(BaseModule):
     def on_fit_start(self) -> None:
         super().on_fit_start()
 
-        if not self.condition:
+        if self.trainer.ssl_phase != "pretrain":
             return
 
         dataset = self.trainer.datamodule.train_dataset
@@ -382,11 +397,13 @@ class SSLModule(BaseModule):
                 batch = self.model.resize_and_rescale(batch)  # noqa: PLW2901
 
                 for name_mod in self.dataset.inputs:
+                    target = self.target_norm(batch[name_mod], name_mod=name_mod)
+
                     H = self.model.out_grid_size[name_mod]  # noqa: N806
-                    P = batch[name_mod].shape[3] // H  # noqa: N806
+                    P = target.shape[3] // H  # noqa: N806
 
                     target = rearrange(
-                        batch[name_mod],
+                        target,
                         "b d c (h p1) (w p2) -> (b d h w) (p1 p2 c)",
                         p1=P,
                         p2=P,
@@ -422,3 +439,76 @@ class SSLModule(BaseModule):
 
             self.mu[name_mod] = mu
             self.cov_inv_sqrt[name_mod] = cov_inv_sqrt
+            self.proj[name_mod] = torch.tensor(
+                np.linalg.inv(L)[: self.max_condition, :], device=cov.device,
+            ).float()
+
+        if not self.balance:
+            return
+
+        with torch.no_grad():
+            for batch in data_loader:
+                batch = self.trainer.strategy.batch_to_device(batch, self.device)  # noqa: PLW2901
+                batch = self.model.resize_and_rescale(batch)  # noqa: PLW2901
+
+                mu, gram = {}, {}
+                for name_mod in self.dataset.inputs:
+                    target = self.target_norm(batch[name_mod], name_mod=name_mod)
+
+                    B = target.shape[0]  # noqa: N806
+                    H = self.model.out_grid_size[name_mod]  # noqa: N806
+                    P = target.shape[3] // H  # noqa: N806
+
+                    target = rearrange(
+                        target,
+                        "b d c (h p1) (w p2) -> (b d h w) (p1 p2 c)",
+                        p1=P,
+                        p2=P,
+                    )
+                    target = torch.matmul(
+                        self.proj[name_mod],
+                        target.transpose(0, 1),
+                    ).transpose(
+                        0,
+                        1,
+                    )
+                    target = rearrange(
+                        target,
+                        "(b dhw) c -> b dhw c",
+                        b=B,
+                    )
+                    mu[name_mod] = target.mean(dim=1)
+                    gram[name_mod] = (
+                        torch.bmm(torch.transpose(target, 1, 2), target)
+                        / target.shape[1]
+                    )
+                self.metrics["balance"].update(
+                    ids=batch["idx"],
+                    mu=mu,
+                    gram=gram,
+                )
+
+        self.metrics["balance"].compute_local(max_balance=self.max_balance)
+        ids, weights = self.metrics["balance"].compute()
+        balance_weights = torch.zeros(ids.max() + 1, device=self.device)
+        balance_weights[ids] += weights
+        balance_weights /= balance_weights.min()
+        self.new_indices = torch.repeat_interleave(
+            torch.arange(len(balance_weights)),
+            repeats=balance_weights.int().cpu(),
+        )
+
+        # Broadcast to all GPU/CPU processes
+        self.new_indices = self.trainer.strategy.broadcast(self.new_indices)
+
+    def on_train_epoch_start(self) -> None:
+        super().on_train_epoch_start()
+
+        if not self.balance or self.trainer.ssl_phase != "pretrain":
+            return
+
+        dataset = self.trainer.datamodule.full_train_dataset
+        self.trainer.datamodule.train_dataset = Subset(
+            dataset,
+            self.new_indices[torch.randperm(len(self.new_indices))[: len(dataset)]],
+        )

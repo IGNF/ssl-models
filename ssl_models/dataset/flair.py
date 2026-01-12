@@ -144,6 +144,7 @@ class FLAIRDataset(GenericDataset):
             inputs[name_mod][np.isin(inputs[name_mod], labels_ignore)] = label_missing
 
         inputs["ref_date"] = meta["aerial_dates"]
+        inputs["idx"] = idx
 
         return self.transform_rasters(inputs)
 

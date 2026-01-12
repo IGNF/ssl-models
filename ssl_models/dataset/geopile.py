@@ -76,6 +76,7 @@ class GeoPileDataset(GenericDataset):
             inputs[f"{name_target}_dates"] = strs_datetimes(["2019-07-01"])
 
         inputs["ref_date"] = strs_datetimes(["2019-07-01"])
+        inputs["idx"] = idx
 
         return self.transform_rasters(inputs)
 

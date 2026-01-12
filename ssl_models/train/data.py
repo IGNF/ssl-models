@@ -24,9 +24,11 @@ class SSLDataModule(LightningDataModule):
         random_crop: bool,
     ) -> None:
         super().__init__()
+        self.batch_size = opt.batch_size
+        self.num_workers = num_workers
 
         root_dir = Path(datasets.root_dir) / datasets.dataset.rel_dir
-        self.train_dataset = datasets.dataset_class(
+        self.full_train_dataset = datasets.dataset_class(
             dataset=datasets.dataset,
             root_dir=root_dir,
             stage="train",
@@ -35,13 +37,7 @@ class SSLDataModule(LightningDataModule):
             random_dates=random_dates,
             random_crop=random_crop,
         )
-        self.train_loader = DataLoader(
-            self.train_dataset,
-            batch_size=opt.batch_size,
-            num_workers=num_workers,
-            shuffle=True,
-            drop_last=True,
-        )
+        self.train_dataset = self.full_train_dataset
 
         self.val_dataset = datasets.dataset_class(
             dataset=datasets.dataset,
@@ -51,13 +47,6 @@ class SSLDataModule(LightningDataModule):
             use_transform=use_transform,
             random_dates=random_dates,
             random_crop=random_crop,
-        )
-        self.val_loader = DataLoader(
-            self.val_dataset,
-            batch_size=opt.batch_size,
-            num_workers=num_workers,
-            shuffle=True,
-            drop_last=True,
         )
 
         self.test_dataset = datasets.dataset_class(
@@ -69,22 +58,33 @@ class SSLDataModule(LightningDataModule):
             random_dates=random_dates,
             random_crop=random_crop,
         )
-        self.test_loader = DataLoader(
-            self.test_dataset,
-            batch_size=opt.batch_size,
-            num_workers=num_workers,
-            shuffle=True,
-            drop_last=True,
-        )
 
     def train_dataloader(self) -> DataLoader:
         """Return train data loader."""
-        return self.train_loader
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=True,
+            drop_last=False,
+        )
 
     def val_dataloader(self) -> DataLoader:
         """Return val data loader."""
-        return self.val_loader
+        return DataLoader(
+            self.val_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=True,
+            drop_last=False,
+        )
 
     def test_dataloader(self) -> DataLoader:
         """Return test data loader."""
-        return self.test_loader
+        return DataLoader(
+            self.test_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=True,
+            drop_last=False,
+        )
