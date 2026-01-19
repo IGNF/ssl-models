@@ -6,7 +6,7 @@ from typing import Literal
 import torch
 from einops import rearrange
 from torch import Tensor
-from torch.utils.data import DataLoader, DistributedSampler, Subset
+from torch.utils.data import DataLoader, DistributedSampler
 
 from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.conf.mask import MaskConfig
@@ -51,7 +51,6 @@ class SSLModule(BaseModule):
         super().__init__(datasets)
 
         self.hkmeans_every_n_epochs = hkmeans_every_n_epochs
-        self.new_indices = None
 
         self.norm_bands = {
             name_mod: tuple(
@@ -311,15 +310,23 @@ class SSLModule(BaseModule):
             "log_targets": log_targets,
         }
 
+    def on_fit_start(self) -> None:
+        super().on_fit_start()
+
+        if self.trainer.ssl_phase != "pretrain":
+            self.trainer.datamodule.balance_weights = None
+
+
     def on_train_epoch_end(self) -> None:
         super().on_train_epoch_end()
 
         if self.hkmeans_every_n_epochs is None or self.trainer.ssl_phase != "pretrain":
             return
 
-        dataset = self.trainer.datamodule.full_train_dataset
+        dataset = self.trainer.datamodule.train_dataset
         if (self.trainer.current_epoch + 1) % self.hkmeans_every_n_epochs == 0:
             self.metrics["hkmeans"].reset()
+            cls_tokens = []
 
             sampler = DistributedSampler(
                 dataset,
@@ -344,27 +351,13 @@ class SSLModule(BaseModule):
                 for batch in dl:
                     batch = self.trainer.strategy.batch_to_device(batch, self.device)  # noqa: PLW2901
                     cls_token = self.model(batch, ssl_phase="balance")
-                    self.metrics["hkmeans"].update(
-                        ids=batch["idx"],
-                        cls_token=cls_token,
-                    )
+                    self.metrics["hkmeans"].update(ids=batch["idx"])
+                    cls_tokens.append(cls_token.cpu())
             self.train()
 
-            self.metrics["hkmeans"].compute_local()
+            self.metrics["hkmeans"].compute_local(cls_tokens=cls_tokens)
             ids, weights = self.metrics["hkmeans"].compute()
             hkmeans_weights = torch.zeros(ids.max() + 1, device=self.device)
             hkmeans_weights[ids] += weights
-            hkmeans_weights /= hkmeans_weights.min()
-            self.new_indices = torch.repeat_interleave(
-                torch.arange(len(hkmeans_weights)),
-                repeats=hkmeans_weights.int().cpu(),
-            )
-
-            # Broadcast to all GPU/CPU processes
-            self.new_indices = self.trainer.strategy.broadcast(self.new_indices)
-
-        if self.new_indices is not None:
-            self.trainer.datamodule.train_dataset = Subset(
-                dataset,
-                self.new_indices[torch.randperm(len(self.new_indices))[:len(dataset)]],
-            )
+            hkmeans_weights /= hkmeans_weights.mean()
+            self.trainer.datamodule.balance_weights = hkmeans_weights.cpu().numpy()
