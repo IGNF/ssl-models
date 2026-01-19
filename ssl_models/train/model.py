@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from einops import rearrange
 from torch import Tensor
-from torch.utils.data import DataLoader, DistributedSampler, Subset
+from torch.utils.data import DataLoader, DistributedSampler
 
 from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.conf.mask import MaskConfig
@@ -20,7 +20,6 @@ from ssl_models.ssl.mixmae import (
     mixmae_tiny,
 )
 from ssl_models.train.base import BaseModule
-
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -40,10 +39,12 @@ class SSLModule(BaseModule):
         type_head: Literal["linear", "attentive"] = "attentive",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm", "l1_ls", "l2_ls"] = "l2_norm",
-        balance: bool = False,
+        balance_condition: bool = False,
         max_balance: float = 10,
         condition: bool = False,
         max_condition: int | None = None,
+        balance_loss_every_n_epochs: int | None = None,
+        balance_loss_pow: int = 1,
         use_date_enc: bool = True,
         use_ema: bool = False,
         # mixmae args
@@ -91,12 +92,15 @@ class SSLModule(BaseModule):
                 msg = f"Invalid loss {loss}."
                 raise ValueError(msg)
 
-        self.balance = balance
+        self.balance_condition = balance_condition
         self.max_balance = max_balance
 
         self.condition = condition
         self.max_condition = max_condition
         self.mu, self.cov_inv_sqrt, self.proj = {}, {}, {}
+
+        self.balance_loss_every_n_epochs = balance_loss_every_n_epochs
+        self.balance_loss_pow = balance_loss_pow
 
         match model:
             case "mae":
@@ -287,7 +291,7 @@ class SSLModule(BaseModule):
         batch: dict[str, Tensor],
         pixels_rec: dict[str, Tensor],
         mask_rec: dict[str, Tensor],
-        stage: Literal["train", "val", "test"],
+        stage: Literal["train", "val", "test"] | None,
     ) -> Tensor:
         """Compute reconstruction loss."""
         losses_rec = []
@@ -336,7 +340,8 @@ class SSLModule(BaseModule):
             losses_rec.append(weight * loss_rec)
 
         loss_rec = torch.stack(losses_rec).sum() / sum(weights)
-        self.metrics[f"loss_rec_{stage}"].update(loss_rec)
+        if stage is not None:
+            self.metrics[f"loss_rec_{stage}"].update(loss_rec)
         return loss_rec
 
     def pretrain_step(
@@ -370,9 +375,10 @@ class SSLModule(BaseModule):
         super().on_fit_start()
 
         if self.trainer.ssl_phase != "pretrain":
+            self.trainer.datamodule.balance_weights = None
             return
 
-        dataset = self.trainer.datamodule.train_dataset
+        dataset = self.trainer.datamodule.full_train_dataset
         sampler = DistributedSampler(
             dataset,
             num_replicas=self.trainer.world_size,
@@ -443,7 +449,7 @@ class SSLModule(BaseModule):
                 np.linalg.inv(L)[: self.max_condition, :], device=cov.device,
             ).float()
 
-        if not self.balance:
+        if not self.balance_condition:
             return
 
         with torch.no_grad():
@@ -482,33 +488,90 @@ class SSLModule(BaseModule):
                         torch.bmm(torch.transpose(target, 1, 2), target)
                         / target.shape[1]
                     )
-                self.metrics["balance"].update(
+                self.metrics["balance_condition"].update(
                     ids=batch["idx"],
                     mu=mu,
                     gram=gram,
                 )
 
-        self.metrics["balance"].compute_local(max_balance=self.max_balance)
-        ids, weights = self.metrics["balance"].compute()
+        self.metrics["balance_condition"].compute_local(max_balance=self.max_balance)
+        ids, weights = self.metrics["balance_condition"].compute()
         balance_weights = torch.zeros(ids.max() + 1, device=self.device)
         balance_weights[ids] += weights
-        balance_weights /= balance_weights.min()
-        self.new_indices = torch.repeat_interleave(
-            torch.arange(len(balance_weights)),
-            repeats=balance_weights.int().cpu(),
-        )
+        balance_weights /= balance_weights.mean()
+        self.trainer.datamodule.balance_weights = balance_weights.cpu().numpy()
 
-        # Broadcast to all GPU/CPU processes
-        self.new_indices = self.trainer.strategy.broadcast(self.new_indices)
+    def on_train_epoch_end(self) -> None:
+        super().on_train_epoch_end()
 
-    def on_train_epoch_start(self) -> None:
-        super().on_train_epoch_start()
+        if self.trainer.ssl_phase != "pretrain" or self.balance_loss_every_n_epochs is None:
+            return
 
-        if not self.balance or self.trainer.ssl_phase != "pretrain":
+        if (self.trainer.current_epoch + 1) % self.balance_loss_every_n_epochs != 0:
             return
 
         dataset = self.trainer.datamodule.full_train_dataset
-        self.trainer.datamodule.train_dataset = Subset(
+        sampler = DistributedSampler(
             dataset,
-            self.new_indices[torch.randperm(len(self.new_indices))[: len(dataset)]],
+            num_replicas=self.trainer.world_size,
+            rank=self.trainer.global_rank,
+            shuffle=False,  # or True if you want shuffle
         )
+
+        data_loader = self.trainer.datamodule.train_dataloader()
+        data_loader = DataLoader(
+            dataset,
+            batch_size=data_loader.batch_size,
+            sampler=sampler,
+            num_workers=data_loader.num_workers,
+            pin_memory=data_loader.pin_memory,
+            drop_last=False,
+            collate_fn=data_loader.collate_fn,
+        )
+
+        self.metrics["balance_loss"].reset()
+
+        with torch.no_grad():
+            from tqdm import tqdm
+            for batch in tqdm(data_loader):
+                batch = self.trainer.strategy.batch_to_device(batch, self.device)  # noqa: PLW2901
+
+                batch, pixels_rec, mask_rec, _, _ = self.model(
+                    batch,
+                    ssl_phase=self.trainer.ssl_phase,
+                )
+
+                losses = []
+                ids = []
+                for idx in range(len(batch["idx"])):
+                    loss = self.compute_loss_rec(
+                        batch={
+                            name_mod: batch[name_mod][idx : idx + 1]
+                            for name_mod in batch
+                        },
+                        pixels_rec={
+                            name_mod: pixels_rec[name_mod][idx : idx + 1]
+                            for name_mod in pixels_rec
+                        },
+                        mask_rec={
+                            name_mod: mask_rec[name_mod][idx : idx + 1]
+                            for name_mod in mask_rec
+                        },
+                        stage=None,
+                    )
+                    losses.append(loss)
+                    ids.append(batch["idx"][idx])
+
+                self.metrics["balance_loss"].update(
+                    ids=ids,
+                    losses=losses,
+                )
+
+            ids, weights = self.metrics["balance_loss"].compute()
+            weights = weights**self.balance_loss_pow
+
+            balance_weights = torch.zeros(ids.max() + 1, device=self.device)
+            balance_weights[ids] += weights
+            balance_weights /= balance_weights.mean()
+            self.trainer.datamodule.balance_weights = balance_weights.cpu().numpy()
+

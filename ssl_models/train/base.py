@@ -18,7 +18,11 @@ from ssl_models.layers.overlay import (
     onehot_pred_from_logits,
     onehot_target_from_batch,
 )
-from ssl_models.train.condition_metric import BalanceMetric, ConditionMetric
+from ssl_models.train.condition_metric import (
+    BalanceConditionMetric,
+    BalanceLossMetric,
+    ConditionMetric,
+)
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
 RGB_BANDS = 3
@@ -32,7 +36,8 @@ class BaseModule(LightningModule, ABC):
         self.dataset = datasets.dataset
 
         self.metrics = nn.ModuleDict()
-        self.metrics["balance"] = BalanceMetric()
+        self.metrics["balance_loss"] = BalanceLossMetric()
+        self.metrics["balance_condition"] = BalanceConditionMetric()
         for name_mod, mod in datasets.dataset.inputs.items():
             dim = mod.patch_size.mae**2 * (
                 mod.bands if isinstance(mod.bands, int) else sum(map(len, mod.bands))

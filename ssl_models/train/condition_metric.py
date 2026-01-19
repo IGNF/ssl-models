@@ -43,7 +43,7 @@ class ConditionMetric(Metric):
         return self.mu / self.count, self.gram / self.count
 
 
-class BalanceMetric(Metric):
+class BalanceConditionMetric(Metric):
     """Compute balancing based on rank maximization."""
 
     def __init__(
@@ -59,7 +59,10 @@ class BalanceMetric(Metric):
         self.add_state("weight", default=[], dist_reduce_fx="cat")
 
     def update(
-        self, ids: Tensor, mu: dict[str, Tensor], gram: dict[str, Tensor],
+        self,
+        ids: Tensor,
+        mu: dict[str, Tensor],
+        gram: dict[str, Tensor],
     ) -> None:
         """Update."""
         for name_mod in mu:
@@ -102,7 +105,7 @@ class BalanceMetric(Metric):
             optimizer.step()
 
             with torch.no_grad():
-                p.clamp_(min=1/max_balance, max=max_balance)
+                p.clamp_(min=1 / max_balance, max=max_balance)
                 p.div_(p.mean())
 
             if idx % 50 == 0:
@@ -111,8 +114,30 @@ class BalanceMetric(Metric):
                     break
                 prev_loss = loss
 
-
         self.weight[0].copy_(p.detach())
+
+    def compute(self) -> tuple[Tensor, Tensor]:
+        """Return aggregated weights."""
+        return self.ids, self.weight
+
+
+class BalanceLossMetric(Metric):
+    """Balance loss metric."""
+
+    def __init__(
+        self,
+        dist_sync_on_step: bool = False,
+    ) -> None:
+        """Init."""
+        super().__init__(dist_sync_on_step=dist_sync_on_step)
+
+        self.add_state("ids", default=[], dist_reduce_fx="cat")
+        self.add_state("weight", default=[], dist_reduce_fx="cat")
+
+    def update(self, ids: list[Tensor], losses: list[Tensor]) -> None:
+        """Update ids and weights."""
+        self.ids.extend(ids)
+        self.weight.extend(losses)
 
     def compute(self) -> tuple[Tensor, Tensor]:
         """Return aggregated weights."""

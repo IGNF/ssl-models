@@ -20,10 +20,12 @@ class ModelConfig:  # noqa: D101
     swin_abs_enc: bool = False
     use_date_enc: bool = True
     use_ema: bool = True
-    balance: bool = False
+    balance_condition: bool = False
     max_balance: float = 10
     condition: bool = False
     max_condition: int | None = None
+    balance_loss_every_n_epochs: int | None = None
+    balance_loss_pow: int = 1
 
 
 @dataclass
