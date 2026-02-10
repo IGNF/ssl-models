@@ -406,19 +406,192 @@ class SSLModule(BaseModule):
         for name_mod in self.dataset.inputs:
             mu, gram = self.metrics[f"condition_{name_mod}"].compute()
             cov = gram - mu[:, None] * mu[None, :]
-            V, L = np.linalg.eig(cov.cpu().numpy().astype(np.float64))  # noqa: N806
-            if self.max_condition:
-                cov_inv_sqrt = np.matmul(
-                    L[:, : self.max_condition]
-                    * np.sqrt(1 / np.maximum(V[None, : self.max_condition], 1e-10)),
-                    np.linalg.inv(L)[: self.max_condition, :],
-                )
-            else:
-                cov_inv_sqrt = np.matmul(L * np.sqrt(1 / V), np.linalg.inv(L))
+            _, L = np.linalg.eig(cov.cpu().numpy().astype(np.float64))  # noqa: N806
             cov_inv_sqrt = torch.tensor(
-                cov_inv_sqrt,
+                np.linalg.inv(L),
                 device=cov.device,
             ).float()
 
             self.mu[name_mod] = mu
             self.cov_inv_sqrt[name_mod] = cov_inv_sqrt
+            self.proj[name_mod] = torch.tensor(
+                np.linalg.inv(L)[: self.max_condition, :],
+                device=cov.device,
+            ).float()
+
+        for name_mod in self.dataset.inputs:
+            self.metrics[f"condition_{name_mod}"].reset()
+
+        with torch.no_grad():
+            for batch in data_loader:
+                batch = self.trainer.strategy.batch_to_device(batch, self.device)  # noqa: PLW2901
+                batch = self.model.resize_and_rescale(batch)  # noqa: PLW2901
+
+                for name_mod in self.dataset.inputs:
+                    H = self.model.out_grid_size[name_mod]  # noqa: N806
+                    P = batch[name_mod].shape[3] // H  # noqa: N806
+
+                    target = rearrange(
+                        batch[name_mod],
+                        "b d c (h p1) (w p2) -> (b d h w) (p1 p2 c)",
+                        p1=P,
+                        p2=P,
+                    )
+                    target = target - self.mu[name_mod][None, :]
+                    target = torch.matmul(
+                        self.cov_inv_sqrt[name_mod],
+                        target.transpose(0, 1),
+                    ).transpose(
+                        0,
+                        1,
+                    )
+                    mu = torch.abs(target).mean(dim=0)
+                    gram = (
+                        torch.matmul(torch.transpose(target, 0, 1), target)
+                        / target.shape[0]
+                    )
+                    count = target.shape[0]
+                    self.metrics[f"condition_{name_mod}"].update(
+                        mu=mu,
+                        gram=gram,
+                        count=count,
+                    )
+
+        for name_mod in self.dataset.inputs:
+            mu, _ = self.metrics[f"condition_{name_mod}"].compute()
+            self.cov_inv_sqrt[name_mod] = torch.matmul(torch.diag(1 / mu.clamp(min=1e-10)), self.cov_inv_sqrt[name_mod])
+            if self.max_condition is not None:
+                self.cov_inv_sqrt[name_mod][self.max_condition:, :] = 0
+
+
+    def compute_balance_condition(self) -> None:
+        data_loader = self.get_dataloader(
+            dataset=self.trainer.datamodule.full_train_dataset
+        )
+
+        self.metrics["balance_condition"].reset()
+
+        with torch.no_grad():
+            for batch in data_loader:
+                batch = self.trainer.strategy.batch_to_device(batch, self.device)  # noqa: PLW2901
+                batch = self.model.resize_and_rescale(batch)  # noqa: PLW2901
+
+                mu, gram = {}, {}
+                for name_mod in self.dataset.inputs:
+                    B = batch[name_mod].shape[0]  # noqa: N806
+                    H = self.model.out_grid_size[name_mod]  # noqa: N806
+                    P = batch[name_mod].shape[3] // H  # noqa: N806
+
+                    target = rearrange(
+                        batch[name_mod],
+                        "b d c (h p1) (w p2) -> (b d h w) (p1 p2 c)",
+                        p1=P,
+                        p2=P,
+                    )
+                    target = torch.matmul(
+                        self.proj[name_mod],
+                        target.transpose(0, 1),
+                    ).transpose(
+                        0,
+                        1,
+                    )
+                    target = rearrange(
+                        target,
+                        "(b dhw) c -> b dhw c",
+                        b=B,
+                    )
+                    mu[name_mod] = target.mean(dim=1)
+                    gram[name_mod] = (
+                        torch.bmm(torch.transpose(target, 1, 2), target)
+                        / target.shape[1]
+                    )
+                self.metrics["balance_condition"].update(
+                    ids=batch["idx"],
+                    mu=mu,
+                    gram=gram,
+                )
+
+        self.metrics["balance_condition"].compute_local(max_balance=self.max_balance)
+        ids, weights = self.metrics["balance_condition"].compute()
+        balance_weights = torch.zeros(ids.max() + 1, device=self.device)
+        balance_weights[ids] += weights
+        balance_weights /= balance_weights.mean()
+        self.trainer.datamodule.balance_weights = balance_weights.cpu().numpy()
+
+    def compute_balance_loss(self) -> None:
+        data_loader = self.get_dataloader(
+            dataset=self.trainer.datamodule.full_train_dataset
+        )
+
+        self.metrics["balance_loss"].reset()
+
+        with torch.no_grad():
+            from tqdm import tqdm
+
+            for batch in tqdm(data_loader):
+                batch = self.trainer.strategy.batch_to_device(batch, self.device)  # noqa: PLW2901
+
+                batch, pixels_rec, mask_rec, _, _ = self.model(
+                    batch,
+                    ssl_phase=self.trainer.ssl_phase,
+                )
+
+                losses = []
+                ids = []
+                for idx in range(len(batch["idx"])):
+                    loss = self.compute_loss_rec(
+                        batch={
+                            name_mod: batch[name_mod][idx : idx + 1]
+                            for name_mod in batch
+                        },
+                        pixels_rec={
+                            name_mod: pixels_rec[name_mod][idx : idx + 1]
+                            for name_mod in pixels_rec
+                        },
+                        mask_rec={
+                            name_mod: mask_rec[name_mod][idx : idx + 1]
+                            for name_mod in mask_rec
+                        },
+                        stage=None,
+                    )
+                    losses.append(loss)
+                    ids.append(batch["idx"][idx])
+
+                self.metrics["balance_loss"].update(
+                    ids=ids,
+                    losses=losses,
+                )
+
+            ids, weights = self.metrics["balance_loss"].compute()
+            weights = weights**self.balance_loss_pow
+
+            balance_weights = torch.zeros(ids.max() + 1, device=self.device)
+            balance_weights[ids] += weights
+            balance_weights /= balance_weights.mean()
+            self.trainer.datamodule.balance_weights = balance_weights.cpu().numpy()
+
+    def on_fit_start(self) -> None:
+        super().on_fit_start()
+
+        if self.trainer.ssl_phase != "pretrain":
+            self.trainer.datamodule.balance_weights = None
+            return
+
+        self.compute_proj()
+
+        if self.balance_condition:
+            self.compute_balance_condition()
+            self.compute_proj()
+
+    def on_train_epoch_end(self) -> None:
+        super().on_train_epoch_end()
+
+        if (
+            self.trainer.ssl_phase != "pretrain"
+            or self.balance_loss_every_n_epochs is None
+        ):
+            return
+
+        if (self.trainer.current_epoch + 1) % self.balance_loss_every_n_epochs == 0:
+            self.compute_balance_loss()
+            # self.compute_proj()
