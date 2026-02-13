@@ -48,7 +48,6 @@ class CircaDataset(GenericDataset):
         self.patch_ids = csv_data["patch_id"].tolist()
         self.base_length = len(self.patch_ids)
         self.repeats = dataset.repeats
-        self.rng = np.random.default_rng(seed=42)
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
@@ -116,7 +115,7 @@ class CircaDataset(GenericDataset):
         meta["s2_cloud_mask_global_dates"] = meta["s2_global_dates"]
         meta["s2_cloud_mask_zoom_dates"] = meta["s2_zoom_dates"]
 
-        ref_date = self.rng.choice(meta["s1_asc_zoom_dates"])
+        ref_date = np.random.choice(meta["s1_asc_zoom_dates"])
         meta["ref_date"] = ref_date
 
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)

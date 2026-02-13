@@ -25,7 +25,6 @@ class GenericDataset(Dataset, ABC):
         random_dates: bool = False,
         random_crop: bool = False,
     ) -> None:
-        self.rng = np.random.default_rng(seed=42)
         self.use_transform = use_transform
         self.dataset = dataset
         self.random_dates = random_dates and stage == "train"
@@ -78,7 +77,7 @@ class GenericDataset(Dataset, ABC):
             for name_mod in self.dataset.rasters
         }
         if start_gcd is None:
-            start_gcd = self.rng.integers(
+            start_gcd = np.random.randint(
                 low=0,
                 high=self.dataset.size_gcd - self.dataset.crop_gcd + 1,
                 size=2,
@@ -90,7 +89,7 @@ class GenericDataset(Dataset, ABC):
                 self.dataset.sizes[name_mod] // self.dataset.size_gcd
             )
             start_mod += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
-            start_mod_date = self.rng.integers(
+            start_mod_date = np.random.randint(
                 low=0,
                 high=sizes_date[name_mod] % mod.num_dates + 1,
             )
@@ -208,7 +207,7 @@ class GenericDataset(Dataset, ABC):
             diff_mod = np.abs(diff_mod)
             if self.random_dates:
                 diff_mod = 0 * diff_mod  # keep NaNs
-                diff_mod += self.rng.random(diff_mod.shape).astype(diff_mod.dtype)
+                diff_mod += np.random.random(diff_mod.shape).astype(diff_mod.dtype)
 
             diff_mod = np.mean(diff_mod, axis=(2, 3, 4), keepdims=True)
             median_inds = np.nanargmin(diff_mod, axis=1, keepdims=True)
@@ -232,21 +231,21 @@ class GenericDataset(Dataset, ABC):
     ) -> dict[str, np.ndarray]:
         """Transform model rasters."""
         if self.use_transform:
-            if self.rng.choice([True, False]):
+            if np.random.choice([True, False]):
                 inputs.update(
                     {
                         name_mod: np.flip(inputs[name_mod], axis=2)
                         for name_mod in self.dataset.rasters
                     },
                 )
-            if self.rng.choice([True, False]):
+            if np.random.choice([True, False]):
                 inputs.update(
                     {
                         name_mod: np.flip(inputs[name_mod], axis=3)
                         for name_mod in self.dataset.rasters
                     },
                 )
-            if self.rng.choice([True, False]):
+            if np.random.choice([True, False]):
                 inputs.update(
                     {
                         name_mod: np.swapaxes(inputs[name_mod], 2, 3)

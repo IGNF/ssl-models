@@ -55,6 +55,7 @@ class SSLTrainer(pl.Trainer):
         self.wd = opt.wd
         self.b1 = opt.b1
         self.b2 = opt.b2
+        self.batch_size = opt.batch_size
 
         self.loggers = self.configure_loggers()
         self.callbacks = self.configure_callbacks()

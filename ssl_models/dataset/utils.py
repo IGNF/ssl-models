@@ -24,8 +24,8 @@ def strs_datetimes(date_strs: list[str], fmt: str = "%Y-%m-%d") -> np.ndarray:
         for date_str in date_strs
     ]
     datetimes = [
-        datetime.strptime(date_str, fmt)  # noqa: DTZ007
-        for date_str in date_strs
+        datetime.strptime(date_str, fmt)
+        for date_str in date_strs  # noqa: DTZ007
     ]
     return dates_numpy(datetimes)
 
@@ -65,7 +65,7 @@ def naip_datetimes(datetime_str: str) -> np.ndarray:
 def dict_datetimes(datetime_dict: dict | str, start: int = 0) -> np.ndarray:
     """Convert list of datetime strings to list of datetimes."""
     if not isinstance(datetime_dict, dict):
-        datetime_dict = json.loads(datetime_dict)
+        datetime_dict = json.loads(datetime_dict.replace("'", '"'))
     datetimes = [
         datetime.strptime(  # noqa: DTZ007
             str(datetime_dict[str(idx)]),
