@@ -1,5 +1,6 @@
 """MAE module. Adapted from clay foundation model: https://github.com/Clay-foundation/model."""
 
+import copy
 from typing import Literal
 
 import torch
@@ -7,6 +8,7 @@ from einops import rearrange
 from torch import Tensor, nn
 from vit_pytorch.vit import Transformer
 
+from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.conf.mask import MaskConfig
 from ssl_models.ssl.mim import BaseMIM
@@ -52,15 +54,79 @@ class MAE(BaseMIM):
             fac_date_enc=fac_date_enc,
         )
 
-        self.len_bands = {
+        dict_dataset = {name_dataset: {} for name_dataset in datasets.datasets}
+        self.len_bands = copy.deepcopy(dict_dataset)
+        self.mask_ratio = copy.deepcopy(dict_dataset)
+        self.mask_mod = copy.deepcopy(dict_dataset)
+        self.mask_bands = copy.deepcopy(dict_dataset)
+        self.mask_dates = copy.deepcopy(dict_dataset)
+        self.mask_loc = copy.deepcopy(dict_dataset)
+        self.name_models = []
+
+        for name_dataset, dataset in datasets.datasets.items():
+            self._init_mae_dataset(name_dataset, dataset, mask, fusion_mode)
+
+        self.encoder = nn.ModuleDict(
+            {
+                name_mod: Transformer(
+                    dim=embed_dim,
+                    depth=depth - inter_depth,
+                    heads=heads,
+                    dim_head=dim_head,
+                    mlp_dim=embed_dim * mlp_ratio,
+                )
+                for name_mod in self.name_models
+            },
+        )
+        self.enc_to_dec = nn.ModuleDict(
+            {
+                name_mod: (
+                    nn.Linear(embed_dim, decoder_dim)
+                    if embed_dim != decoder_dim
+                    else nn.Identity()
+                )
+                for name_mod in self.name_models
+            },
+        )
+        self.decoder = nn.ModuleDict(
+            {
+                name_mod: Transformer(
+                    dim=decoder_dim,
+                    depth=decoder_depth,
+                    heads=decoder_heads,
+                    dim_head=decoder_dim_head,
+                    mlp_dim=embed_dim * decoder_mlp_ratio,
+                )
+                for name_mod in self.name_models
+            },
+        )
+        if inter_depth:
+            self.encoder_inter = Transformer(
+                dim=embed_dim,
+                depth=inter_depth,
+                heads=heads,
+                dim_head=dim_head,
+                mlp_dim=embed_dim * mlp_ratio,
+            )
+        else:
+            self.encoder_inter = None
+
+    def _init_mae_dataset(
+        self,
+        name_dataset: str,
+        dataset: DatasetConfig,
+        mask: MaskConfig,
+        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+    ) -> None:
+        self.len_bands[name_dataset] = {
             name_mod: 1 if isinstance(mod.bands, int) else len(mod.bands)
-            for name_mod, mod in datasets.dataset.inputs.items()
+            for name_mod, mod in dataset.inputs.items()
         }
 
         num_dates_mod, num_dates_group = {}, {}
-        for name_mod, name_group in datasets.dataset.groups:
-            mod = datasets.dataset.inputs[name_mod]
-            num_dates = mod.num_dates * self.len_bands[name_mod]
+        for name_mod, name_group in dataset.groups:
+            mod = dataset.inputs[name_mod]
+            num_dates = mod.num_dates * self.len_bands[name_dataset][name_mod]
             if name_mod not in num_dates_mod:
                 num_dates_mod[name_mod] = 0
             if name_group not in num_dates_group:
@@ -68,22 +134,9 @@ class MAE(BaseMIM):
             num_dates_mod[name_mod] += num_dates
             num_dates_group[name_group] += num_dates
 
-        (
-            self.mask_ratio,
-            self.mask_mod,
-            self.mask_bands,
-            self.mask_dates,
-            self.mask_loc,
-        ) = (
-            {},
-            {},
-            {},
-            {},
-            {},
-        )
         match fusion_mode:
             case "msgfm" | "shared" | "monotemp":
-                name_models = (
+                self.name_models += (
                     list(num_dates_mod.keys())
                     if fusion_mode == "monotemp"
                     else ["shared"]
@@ -95,13 +148,13 @@ class MAE(BaseMIM):
                     self.mask_dates[name_mod] = None
                     self.mask_loc[name_mod] = None
             case "mod" | "group":
-                name_models = (
+                self.name_models += (
                     list(num_dates_group.keys())
                     if fusion_mode == "group"
                     else list(num_dates_mod.keys())
                 )
-                for name_mod, name_group in datasets.dataset.groups:
-                    mod = datasets.dataset.inputs[name_mod]
+                for name_mod, name_group in dataset.groups:
+                    mod = dataset.inputs[name_mod]
                     if fusion_mode == "group":
                         scale_fac = num_dates_group[name_group] ** mask.mask_scale
                         self.mask_ratio[name_group] = (
@@ -120,7 +173,9 @@ class MAE(BaseMIM):
                         self.mask_mod[name_mod] = None
 
                     self.mask_bands[name_mod] = (
-                        mask.mask_bands if self.len_bands[name_mod] > 1 else None
+                        mask.mask_bands
+                        if self.len_bands[name_dataset][name_mod] > 1
+                        else None
                     )
                     self.mask_dates[name_mod] = (
                         mask.mask_dates if mod.num_dates > 1 else None
@@ -130,52 +185,7 @@ class MAE(BaseMIM):
                 msg = f"Invalid fusion mode {fusion_mode}."
                 raise ValueError(msg)
 
-        self.encoder = nn.ModuleDict(
-            {
-                name_mod: Transformer(
-                    dim=embed_dim,
-                    depth=depth - inter_depth,
-                    heads=heads,
-                    dim_head=dim_head,
-                    mlp_dim=embed_dim * mlp_ratio,
-                )
-                for name_mod in name_models
-            },
-        )
-        self.enc_to_dec = nn.ModuleDict(
-            {
-                name_mod: (
-                    nn.Linear(embed_dim, decoder_dim)
-                    if embed_dim != decoder_dim
-                    else nn.Identity()
-                )
-                for name_mod in name_models
-            },
-        )
-        self.decoder = nn.ModuleDict(
-            {
-                name_mod: Transformer(
-                    dim=decoder_dim,
-                    depth=decoder_depth,
-                    heads=decoder_heads,
-                    dim_head=decoder_dim_head,
-                    mlp_dim=embed_dim * decoder_mlp_ratio,
-                )
-                for name_mod in name_models
-            },
-        )
-        if inter_depth:
-            self.encoder_inter = Transformer(
-                dim=embed_dim,
-                depth=inter_depth,
-                heads=heads,
-                dim_head=dim_head,
-                mlp_dim=embed_dim * mlp_ratio,
-            )
-        else:
-            self.encoder_inter = None
-
-    def mask_struct(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
+    def mask_struct(self, x: dict[str, Tensor], name_dataset: str) -> dict[str, Tensor]:
         """Structural masking of modalities, band groups, dates."""
         mask_group, mask_mod = {}, {}
         for name_group in x:
@@ -183,14 +193,14 @@ class MAE(BaseMIM):
             mask_group[name_group] = torch.ones((B, L, 1), dtype=torch.bool)
             mask_mod[name_group] = torch.ones((B, L, 1), dtype=torch.bool)
 
-        mask_mod = self.ungroup(mask_mod)
+        mask_mod = self.ungroup[name_dataset](mask_mod)
 
         while any(
             mask_group[name_group].all(dim=(1, 2)).any(dim=0)
             for name_group in mask_group
         ):
             mask = {}
-            for name_mod, len_bands in self.len_bands.items():
+            for name_mod, len_bands in self.len_bands[name_dataset].items():
                 B, D, L, _ = mask_mod[name_mod].shape  # noqa: N806
                 G = len_bands  # noqa: N806
                 mask[name_mod] = torch.zeros(
@@ -211,7 +221,7 @@ class MAE(BaseMIM):
                     mask[name_mod] += torch.rand((B, 1, 1, L)) < self.mask_loc[name_mod]
                 mask[name_mod] = mask[name_mod].reshape((B, D, L, 1))
 
-            mask = self.group(mask)
+            mask = self.group[name_dataset](mask)
 
             for name_group in mask_group:
                 mask_group[name_group] = torch.where(

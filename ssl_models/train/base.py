@@ -11,6 +11,7 @@ from pytorch_lightning import LightningModule
 from torch import Tensor, nn
 from torchmetrics import MeanMetric
 
+from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.layers.overlay import (
     create_overlay,
@@ -29,17 +30,32 @@ class BaseModule(LightningModule, ABC):
 
     def __init__(self, datasets: DatasetsConfig) -> None:
         super().__init__()
-        self.dataset = datasets.dataset
+        self.datasets = datasets
 
         self.metrics = nn.ModuleDict()
-        for name_mod, mod in datasets.dataset.inputs.items():
+        self.loss_pred = {}
+
+        for name_dataset, dataset in datasets.datasets.items():
+            self._init_dataset(name_dataset, dataset)
+
+    def _init_dataset(
+        self,
+        name_dataset: str,
+        dataset: DatasetConfig,
+    ) -> None:
+        for name_mod, mod in dataset.inputs.items():
             dim = mod.patch_size.mae**2 * (
                 mod.bands if isinstance(mod.bands, int) else sum(map(len, mod.bands))
             )
-            self.metrics[f"condition_{name_mod}"] = ConditionMetric(dim=dim)
+            self.metrics[f"condition_{name_dataset}_{name_mod}"] = ConditionMetric(
+                dim=dim,
+            )
 
-        self.loss_pred = {}
-        for name_target, target in datasets.dataset.targets.items():
+        for name_target, target in dataset.targets.items():
+            if name_target in self.loss_pred:
+                msg = "Target is defined multiple times"
+                raise ValueError(msg)
+
             match target.type_target:
                 case "classif" | "segment":
                     self.loss_pred[name_target] = F.cross_entropy
@@ -66,7 +82,7 @@ class BaseModule(LightningModule, ABC):
 
         for name_loss in ("loss_rec", "loss_pred"):
             for stage in ("train", "val", "test"):
-                self.metrics[f"{name_loss}_{stage}"] = MeanMetric(
+                self.metrics[f"{name_loss}_{name_dataset}_{stage}"] = MeanMetric(
                     dist_sync_on_step=False,
                 )
 
@@ -74,6 +90,8 @@ class BaseModule(LightningModule, ABC):
         self,
         batch: dict[str, Tensor],
         logits: dict[str, Tensor],
+        name_dataset: str,
+        dataset: DatasetConfig,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
     ) -> tuple[
@@ -83,21 +101,27 @@ class BaseModule(LightningModule, ABC):
     ]:
         """Visu of predicted rasters."""
         log_inputs, log_preds, log_targets = {}, {}, {}
-        for name_target, target in self.dataset.targets.items():
+        for name_target, target in dataset.targets.items():
             if target.type_target in ("segment", "change_detect"):
-                overlay_img = batch[self.dataset.log_inputs[0]][0, 0, :RGB_BANDS]
+                overlay_img = batch[dataset.log_inputs[0]][
+                    0,
+                    0,
+                    :RGB_BANDS,
+                ]
                 onehot_target = onehot_target_from_batch(
                     batch[name_target][0, 0, 0],
                     target.num_classes,
                     target.missing_val,
                 )
-                log_inputs[f"{ssl_phase}_{name_target}_{stage}/_input"] = overlay_img
-                log_targets[f"{ssl_phase}_{name_target}_{stage}/_target"] = (
-                    create_overlay(
-                        overlay_img,
-                        onehot_target,
-                        target.num_classes,
-                    )
+                log_inputs[
+                    f"{ssl_phase}_{name_dataset}_{name_target}_{stage}/_input"
+                ] = overlay_img
+                log_targets[
+                    f"{ssl_phase}_{name_dataset}_{name_target}_{stage}/_target"
+                ] = create_overlay(
+                    overlay_img,
+                    onehot_target,
+                    target.num_classes,
                 )
             match target.type_target:
                 case "segment":
@@ -105,22 +129,26 @@ class BaseModule(LightningModule, ABC):
                         logits[name_target][0, 0],
                         target.num_classes,
                     )
-                    log_preds[f"{ssl_phase}_{name_target}_{stage}/_pred"] = (
-                        create_overlay(
-                            overlay_img,
-                            onehot_pred,
-                            target.num_classes,
-                        )
+                    log_preds[
+                        f"{ssl_phase}_{name_dataset}_{name_target}_{stage}/_pred"
+                    ] = create_overlay(
+                        overlay_img,
+                        onehot_pred,
+                        target.num_classes,
                     )
                 case "change_detect":
-                    overlay_img = batch[self.dataset.log_inputs[1]][0, 0, :RGB_BANDS]
+                    overlay_img = batch[dataset.log_inputs[1]][
+                        0,
+                        0,
+                        :RGB_BANDS,
+                    ]
                     onehot_pred = onehot_cd_from_logits(logits)
-                    log_preds[f"{ssl_phase}_{name_target}_{stage}/_pred"] = (
-                        create_overlay(
-                            overlay_img,
-                            onehot_pred,
-                            target.num_classes,
-                        )
+                    log_preds[
+                        f"{ssl_phase}_{name_dataset}_{name_target}_{stage}/_pred"
+                    ] = create_overlay(
+                        overlay_img,
+                        onehot_pred,
+                        target.num_classes,
                     )
         return log_inputs, log_preds, log_targets
 
@@ -128,11 +156,14 @@ class BaseModule(LightningModule, ABC):
         self,
         batch: dict[str, Tensor],
         logits: dict[str, Tensor],
+        name_dataset: str,
+        dataset: DatasetConfig,
         stage: Literal["train", "val", "test"],
     ) -> Tensor:
         """Compute prediction loss."""
         loss_pred = 0
-        for name_target, target in self.dataset.targets.items():
+        weight = 0
+        for name_target, target in dataset.targets.items():
             logits_target = logits[name_target]
             targets = batch[name_target]
 
@@ -154,6 +185,8 @@ class BaseModule(LightningModule, ABC):
                 inds = (targets != target.missing_val).all(dim=1)
             else:
                 inds = targets != target.missing_val
+
+            weight += batch[name_target].shape[0] * inds.float().mean()
 
             inds = inds.nonzero().squeeze(dim=1)
             if len(inds) == 0:
@@ -180,48 +213,12 @@ class BaseModule(LightningModule, ABC):
         if not isinstance(loss_pred, Tensor):
             loss_pred = 0 * list(logits.values()).pop().mean()
 
-        self.metrics[f"loss_pred_{stage}"].update(loss_pred)
-        return loss_pred
-
-    def log_metric(
-        self,
-        name: str,
-        value: Tensor,
-    ) -> None:
-        """Log accuracy metric."""
-        super().log(
-            name=name,
-            value=value,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
-
-    def log_step(
-        self,
-        name: str,
-        value: Tensor,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],
-        stage: Literal["train", "val", "test"],
-    ) -> None:
-        """Log metric."""
-        if stage != "train":
-            return
-        super().log(
-            name=f"{ssl_phase}_{name}/step_{stage}",
-            value=value,
-            on_step=True,
-            on_epoch=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
+        self.metrics[f"loss_pred_{name_dataset}_{stage}"].update(loss_pred)
+        return loss_pred, weight
 
     def probe_or_finetune_step(
         self,
-        batch: dict[str, torch.Tensor],
+        batch: dict[str, dict],
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Probing/finetuning step."""
@@ -234,29 +231,56 @@ class BaseModule(LightningModule, ABC):
         else:
             model = self.model
 
-        batch, _, _, _, logits = model(
-            batch,
-            ssl_phase=self.trainer.ssl_phase,
-        )
+        batch = batch[0]
+        losses_pred, weights = {}, {}
+        logs_inputs, logs_preds, logs_targets = {}, {}, {}
+        for name_dataset, dataset in self.datasets.datasets.items():
+            if batch[name_dataset] is None:
+                continue
 
-        loss_pred = self.compute_loss_pred(batch, logits, stage=stage)
-        log_inputs, log_preds, log_targets = self.compute_logs_pred(
-            batch,
-            logits,
-            ssl_phase=self.trainer.ssl_phase,
-            stage=stage,
-        )
+            batch[name_dataset], _, _, _, logits = model(
+                batch[name_dataset],
+                name_dataset,
+                ssl_phase=self.trainer.ssl_phase,
+            )
 
+            loss_pred, weight = self.compute_loss_pred(
+                batch[name_dataset],
+                logits,
+                name_dataset,
+                dataset,
+                stage=stage,
+            )
+            losses_pred[name_dataset] = loss_pred
+            weights[name_dataset] = weight
+
+            log_inputs, log_preds, log_targets = self.compute_logs_pred(
+                batch[name_dataset],
+                logits,
+                name_dataset,
+                dataset,
+                ssl_phase=self.trainer.ssl_phase,
+                stage=stage,
+            )
+            logs_inputs.update(log_inputs)
+            logs_preds.update(log_preds)
+            logs_targets.update(log_targets)
+
+        loss_pred = sum(
+            losses_pred[name_dataset] * weights[name_dataset]
+            for name_dataset in losses_pred
+        ) / sum(weights.values())
         return {
             "loss": loss_pred,
-            "log_inputs": log_inputs,
-            "log_preds": log_preds,
-            "log_targets": log_targets,
+            "losses": losses_pred,
+            "log_inputs": logs_inputs,
+            "log_preds": logs_preds,
+            "log_targets": logs_targets,
         }
 
     def shared_step(
         self,
-        batch: dict[str, torch.Tensor],
+        batch: dict[str, dict],
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Shared step for training/validation."""
@@ -274,21 +298,21 @@ class BaseModule(LightningModule, ABC):
 
     def training_step(
         self,
-        batch: dict[str, torch.Tensor],
+        batch: dict[str, dict],
         batch_idx: int,  # noqa: ARG002
     ) -> dict[str, torch.Tensor]:
         return self.shared_step(batch, stage="train")
 
     def validation_step(
         self,
-        batch: dict[str, torch.Tensor],
+        batch: dict[str, dict],
         batch_idx: int,  # noqa: ARG002
     ) -> dict[str, torch.Tensor]:
         return self.shared_step(batch, stage="val")
 
     def test_step(
         self,
-        batch: dict[str, torch.Tensor],
+        batch: dict[str, dict],
         batch_idx: int,  # noqa: ARG002
     ) -> dict[str, torch.Tensor]:
         return self.shared_step(batch, stage="test")

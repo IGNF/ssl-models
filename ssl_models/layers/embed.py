@@ -16,6 +16,7 @@ class Patchify(nn.Module):
     ) -> None:
         super().__init__()
         self.num_bands = [bands] if isinstance(bands, int) else list(map(len, bands))
+        self.patch_size = patch_size
 
         self.patchify_bands = nn.ModuleList(
             [
