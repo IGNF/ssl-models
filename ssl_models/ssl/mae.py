@@ -37,7 +37,7 @@ class MAE(BaseMIM):
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
-        use_cls_token: bool = False,
+        num_cls_tokens: int = 0,
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
@@ -131,14 +131,14 @@ class MAE(BaseMIM):
                 msg = f"Invalid fusion mode {fusion_mode}."
                 raise ValueError(msg)
 
-        self.use_cls_token = use_cls_token
+        self.num_cls_tokens = num_cls_tokens
         self.cls_token = nn.ParameterDict(
             {
                 name_mod: (
                     nn.Parameter(
-                        torch.randn(1, 1, embed_dim),
+                        torch.randn(1, num_cls_tokens, embed_dim),
                     )
-                    if use_cls_token
+                    if self.num_cls_tokens
                     else None
                 )
                 for name_mod in name_models
@@ -365,9 +365,9 @@ def mae_medium(**kwargs) -> MAE:  # noqa: ANN003
         "heads": 12,
         "dim_head": 64,
         "mlp_ratio": 4,
-        "decoder_dim": 512,
+        "decoder_dim": 384,
         "decoder_depth": 3,
-        "decoder_heads": 16,
+        "decoder_heads": 12,
         "decoder_dim_head": 32,
         "decoder_mlp_ratio": 4,
     }

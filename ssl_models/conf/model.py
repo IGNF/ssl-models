@@ -20,7 +20,10 @@ class ModelConfig:  # noqa: D101
     swin_abs_enc: bool = False
     use_date_enc: bool = True
     use_ema: bool = True
-    use_cls_token: bool = False
+    num_cls_tokens: int = 0
+    decoder_depth: int = 3
+    decoder_dim: int = 512
+    decoder_heads: int = 16
     hkmeans_every_n_epochs: int | None = None
 
 

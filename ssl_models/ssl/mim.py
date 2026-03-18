@@ -203,7 +203,7 @@ class BaseMIM(nn.Module, ABC):
     ) -> dict[str, Tensor]:
         """Add cls token."""
         for name_group, x_group in x.items():
-            if self.use_cls_token:
+            if self.num_cls_tokens:
                 x_cls_group = torch.repeat_interleave(
                     x_cls[name_group],
                     x_group.shape[0] // x_cls[name_group].shape[0],
@@ -219,8 +219,9 @@ class BaseMIM(nn.Module, ABC):
         """Remove cls token."""
         x_cls = {}
         for name_group, x_group in x.items():
-            if self.use_cls_token:
-                x_cls[name_group], x[name_group] = x_group[:, :1], x_group[:, 1:]
+            if self.num_cls_tokens:
+                x_cls[name_group] = x_group[:, :self.num_cls_tokens]
+                x[name_group] = x_group[:, self.num_cls_tokens:]
             else:
                 x_cls[name_group] = None
         return x_cls, x
@@ -545,7 +546,7 @@ class BaseMIM(nn.Module, ABC):
         x_cls, x_enc = self.remove_cls_token(x_enc)
         if ssl_phase == "balance":
             return torch.cat(
-                [x_cls[name_group][:, 0] for _, name_group in self.dataset.groups],
+                [torch.mean(x_cls[name_group], dim=1) for _, name_group in self.dataset.groups],
                 dim=1,
             )
 

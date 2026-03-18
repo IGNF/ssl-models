@@ -41,7 +41,10 @@ class SSLModule(BaseModule):
         hkmeans_every_n_epochs: int | None = None,
         use_date_enc: bool = True,
         use_ema: bool = False,
-        use_cls_token: bool = False,
+        num_cls_tokens: int = 0,
+        decoder_depth: int = 3,
+        decoder_dim: int = 512,
+        decoder_heads: int = 16,
         # mixmae args
         num_levels: Literal[3, 4] = 3,
         swin_version: Literal[1, 2] = 1,
@@ -137,7 +140,10 @@ class SSLModule(BaseModule):
                 "interpolate": interpolate,
                 "fac_abs_enc": fac_abs_enc,
                 "fac_date_enc": fac_date_enc,
-                "use_cls_token": use_cls_token,
+                "num_cls_tokens": num_cls_tokens,
+                "decoder_depth": decoder_depth,
+                "decoder_dim": decoder_dim,
+                "decoder_heads": decoder_heads,
             }
             self.model = model_map[model_size](**model_args)
         else:
