@@ -158,7 +158,7 @@ class SSLModule(BaseModule):
             self.ema_model = None
 
         self.dataset = datasets.dataset
-        self.save_hyperparameters(ignore=["datasets"])
+        self.save_hyperparameters(ignore=["datasets", "mask"])
 
     def configure_optimizers(self) -> dict:
         """Configure optimizer."""
