@@ -39,6 +39,7 @@ class MAE(BaseMIM):
         fac_date_enc: float = 1.0,
         num_cls_tokens: int = 0,
         pool_classif: bool = True,
+        distil_mod: str | None = None,
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
@@ -53,6 +54,7 @@ class MAE(BaseMIM):
             fac_abs_enc=fac_abs_enc,
             fac_date_enc=fac_date_enc,
             pool_classif=pool_classif,
+            distil_mod=distil_mod,
         )
 
         self.len_bands = {

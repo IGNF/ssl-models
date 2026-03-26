@@ -82,6 +82,9 @@ target/
 notebooks/
 .ipynb_checkpoints
 
+dinov3_*
+
+
 # IPython
 profile_default/
 ipython_config.py

@@ -64,7 +64,7 @@ class SSLDataModule(LightningDataModule):
         """Return train data loader."""
         if self.balance_weights is not None:
             sampler = DistributedWeightedSampler(
-                weights=self.balance_weights,              # numpy or tensor
+                weights=self.balance_weights,  # numpy or tensor
                 num_samples=len(self.train_dataset),
                 replacement=True,
             )

@@ -60,7 +60,7 @@ class BaseModule(LightningModule, ABC):
             for stage in ("train", "val", "test"):
                 self.metrics[f"{name_target}_{stage}"] = metric_partial()
 
-        for name_loss in ("loss_rec", "loss_pred"):
+        for name_loss in ("loss_rec", "loss_distil", "loss_pred"):
             for stage in ("train", "val", "test"):
                 self.metrics[f"{name_loss}_{stage}"] = MeanMetric(
                     dist_sync_on_step=False,

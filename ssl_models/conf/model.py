@@ -1,6 +1,6 @@
 """Model conf."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from hydra_zen import store
 
@@ -26,6 +26,10 @@ class ModelConfig:  # noqa: D101
     decoder_heads: int = 16
     hkmeans_every_n_epochs: int | None = None
     pool_classif: bool = True
+    distil_mod: str | None = None
+    distil_bands: list[int] = field(default_factory=lambda: [0, 1, 2])
+    distil_type: str = "cls"
+    distil_lambda: float = 0.1
 
 
 @dataclass

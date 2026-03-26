@@ -196,6 +196,12 @@ class MetricsLogger(Callback):
                     value=pl_module.metrics[f"loss_rec_{stage}"].compute(),
                 )
                 pl_module.metrics[f"loss_rec_{stage}"].reset()
+                self.log_metric(
+                    pl_module=pl_module,
+                    name=f"{trainer.ssl_phase}_loss_distil/{stage}",
+                    value=pl_module.metrics[f"loss_distil_{stage}"].compute(),
+                )
+                pl_module.metrics[f"loss_distil_{stage}"].reset()
             case "probe" | "finetune":
                 self.log_metric(
                     pl_module=pl_module,
@@ -261,7 +267,7 @@ class MetricsLogger(Callback):
         """Log train loss."""
         match trainer.ssl_phase:
             case "pretrain":
-                name = "loss_rec"
+                name = "loss"
             case "probe" | "finetune":
                 name = "loss_pred"
 

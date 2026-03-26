@@ -40,12 +40,16 @@ class BaseMIM(nn.Module, ABC):
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         pool_classif: bool = True,
+        distil_mod: str | None = None,
     ) -> None:
         super().__init__()
         self.dataset = datasets.dataset
         self.stride = 2 ** (num_levels - 1)
         self.interpolate = interpolate
         self.pool_classif = pool_classif
+        self.distil_mod = distil_mod
+        if distil_mod:
+            self.distil_proj = nn.Linear(embed_dim, 1024)
 
         # patchify and pixelify
         self.num_bands = {
@@ -222,8 +226,8 @@ class BaseMIM(nn.Module, ABC):
         x_cls = {}
         for name_group, x_group in x.items():
             if self.num_cls_tokens:
-                x_cls[name_group] = x_group[:, :self.num_cls_tokens]
-                x[name_group] = x_group[:, self.num_cls_tokens:]
+                x_cls[name_group] = x_group[:, : self.num_cls_tokens]
+                x[name_group] = x_group[:, self.num_cls_tokens :]
             else:
                 x_cls[name_group] = None
         return x_cls, x
@@ -520,7 +524,7 @@ class BaseMIM(nn.Module, ABC):
     def forward(
         self,
         batch: dict[str, Tensor],
-        ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
+        ssl_phase: Literal["pretrain", "probe", "finetune", "balance", "distil"],
     ) -> tuple[
         dict[str, Tensor] | None,
         dict[str, Tensor] | None,
@@ -538,7 +542,10 @@ class BaseMIM(nn.Module, ABC):
 
         x_enc, mask_token, mask_attn, mask_rec = self.mask(x_enc, mask_token, ssl_phase)
 
-        x_enc = self.encode(x_enc, mask_attn)
+        if ssl_phase == "distil":
+            x_distil = self.encode({self.distil_mod: x_enc[self.distil_mod]}, mask_attn)
+            x_distil[self.distil_mod] = self.distil_proj(x_distil[self.distil_mod])
+            return None, None, None, x_distil, None
 
         if ssl_phase == "pretrain":
             x_dec = self.encoder_to_decoder(x_enc)
@@ -549,13 +556,16 @@ class BaseMIM(nn.Module, ABC):
             _, x_dec = self.remove_cls_token(x_dec)
 
             pixels_rec, mask_rec = self.rec_pixels(x_dec, mask_rec)
-            return batch, pixels_rec, mask_rec, None, None
+            return batch, pixels_rec, mask_rec, _, None
 
         # else, probe, finetune or balance
         x_cls, x_enc = self.remove_cls_token(x_enc)
         if ssl_phase == "balance":
             return torch.cat(
-                [torch.mean(x_cls[name_group], dim=1) for _, name_group in self.dataset.groups],
+                [
+                    torch.mean(x_cls[name_group], dim=1)
+                    for _, name_group in self.dataset.groups
+                ],
                 dim=1,
             )
 

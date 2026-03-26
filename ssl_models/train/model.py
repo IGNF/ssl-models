@@ -4,9 +4,11 @@ import copy
 from typing import Literal
 
 import torch
+import torch.nn.functional as F  # noqa: N812
 from einops import rearrange
 from torch import Tensor
 from torch.utils.data import DataLoader, DistributedSampler
+from torchvision.transforms import v2
 
 from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.conf.mask import MaskConfig
@@ -19,6 +21,7 @@ from ssl_models.ssl.mixmae import (
     mixmae_tiny,
 )
 from ssl_models.train.base import BaseModule
+from ssl_models import ROOT_DIR
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -46,6 +49,10 @@ class SSLModule(BaseModule):
         decoder_depth: int = 3,
         decoder_dim: int = 512,
         decoder_heads: int = 16,
+        distil_mod: str | None = None,
+        distil_bands: list[int] = [0, 1, 2],
+        distil_type: Literal["cls", "features"] = "cls",
+        distil_lambda: float = 0.1,
         # mixmae args
         num_levels: Literal[3, 4] = 3,
         swin_version: Literal[1, 2] = 1,
@@ -53,6 +60,22 @@ class SSLModule(BaseModule):
         swin_abs_enc: bool = False,
     ) -> None:
         super().__init__(datasets)
+
+        self.distil_mod = distil_mod
+        self.distil_bands = distil_bands
+        self.distil_type = distil_type
+        self.distil_lambda = distil_lambda
+        if distil_mod:
+            self.normalize = v2.Normalize(
+                mean=(0.485, 0.456, 0.406),
+                std=(0.229, 0.224, 0.225),
+            )
+            self.dinov3_model = torch.hub.load(
+                str(ROOT_DIR / "dinov3"),
+                "dinov3_vitl16",
+                source="local",
+                weights=f"{str(ROOT_DIR)}/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth",
+            )
 
         self.hkmeans_every_n_epochs = hkmeans_every_n_epochs
 
@@ -146,6 +169,7 @@ class SSLModule(BaseModule):
                 "decoder_depth": decoder_depth,
                 "decoder_dim": decoder_dim,
                 "decoder_heads": decoder_heads,
+                "distil_mod": distil_mod,
             }
             self.model = model_map[model_size](**model_args)
         else:
@@ -302,6 +326,38 @@ class SSLModule(BaseModule):
             ssl_phase=self.trainer.ssl_phase,
         )
 
+        if self.distil_mod:
+            _, _, _, x_distil, _ = self.model(batch, ssl_phase="distil")
+            x_cls, x_distil = self.model.remove_cls_token(x_distil)
+
+            inputs = self.dataset.inputs[self.distil_mod].norm_fac * F.interpolate(
+                batch[self.distil_mod][:, 0, self.distil_bands],
+                size=(self.model.out_grid_size[self.distil_mod] * 16,) * 2,
+                mode="bilinear",
+            )
+            inputs = self.normalize(inputs / 255.0)
+            with torch.no_grad():
+                features = self.dinov3_model.forward_features_list([inputs], [None])[0]
+                teacher = (
+                    features["x_norm_clstoken"][:, None]
+                    if self.distil_type == "cls"
+                    else features["x_norm_patchtokens"]
+                )
+
+            student = (
+                x_cls[self.distil_mod]
+                if self.distil_type == "cls"
+                else x_distil[self.distil_mod]
+            )
+            loss_distil = (
+                1.0
+                - F.cosine_similarity(
+                    student.flatten(0, 1),
+                    teacher.flatten(0, 1),
+                ).mean()
+            )
+            self.metrics[f"loss_distil_{stage}"].update(loss_distil)
+
         loss_rec = self.compute_loss_rec(batch, pixels_rec, mask_rec, stage=stage)
         log_inputs, log_preds, log_targets = self.compute_logs_rec(
             batch,
@@ -312,7 +368,7 @@ class SSLModule(BaseModule):
         )
 
         return {
-            "loss": loss_rec,
+            "loss": loss_rec + self.distil_lambda * loss_distil,
             "log_inputs": log_inputs,
             "log_preds": log_preds,
             "log_targets": log_targets,
@@ -323,7 +379,6 @@ class SSLModule(BaseModule):
 
         if self.trainer.ssl_phase != "pretrain":
             self.trainer.datamodule.balance_weights = None
-
 
     def on_train_epoch_end(self) -> None:
         super().on_train_epoch_end()
@@ -357,7 +412,10 @@ class SSLModule(BaseModule):
             self.eval()
             with torch.no_grad():
                 for batch in dl:
-                    batch = self.trainer.strategy.batch_to_device(batch, self.device)  # noqa: PLW2901
+                    batch = self.trainer.strategy.batch_to_device(  # noqa: PLW2901
+                        batch,
+                        self.device,
+                    )
                     cls_token = self.model(batch, ssl_phase="balance")
                     self.metrics["hkmeans"].update(ids=batch["idx"])
                     cls_tokens.append(cls_token.cpu())
