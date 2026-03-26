@@ -39,11 +39,13 @@ class BaseMIM(nn.Module, ABC):
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
+        pool_classif: bool = True,
     ) -> None:
         super().__init__()
         self.dataset = datasets.dataset
         self.stride = 2 ** (num_levels - 1)
         self.interpolate = interpolate
+        self.pool_classif = pool_classif
 
         # patchify and pixelify
         self.num_bands = {
@@ -381,6 +383,7 @@ class BaseMIM(nn.Module, ABC):
     def compute_logits(
         self,
         x_enc: dict[str, Tensor],
+        x_cls: dict[str, Tensor] | None,
         ssl_phase: Literal["pretrain", "probe", "finetune", "balance"],
     ) -> dict[str, Tensor]:
         """Compute logits."""
@@ -416,6 +419,12 @@ class BaseMIM(nn.Module, ABC):
             [x_enc[name_mod].flatten(1, 2) for name_mod in x_enc],
             dim=1,
         )
+        if self.num_cls_tokens:
+            x_cls = torch.cat(
+                [x_cls[name_mod] for name_mod in x_cls],
+                dim=1,
+            )
+
         logits = {}
         for name_target, target in self.dataset.targets.items():
             match target.type_target:
@@ -426,7 +435,7 @@ class BaseMIM(nn.Module, ABC):
                     )
                 case "multilabel_classif" | "classif":
                     logits[name_target] = self.heads[name_target](
-                        x_enc,
+                        x_enc if self.pool_classif else x_cls,
                         ssl_phase=ssl_phase,
                     )
         return logits
@@ -550,5 +559,5 @@ class BaseMIM(nn.Module, ABC):
                 dim=1,
             )
 
-        logits = self.compute_logits(x_enc, ssl_phase)
+        logits = self.compute_logits(x_enc, x_cls, ssl_phase)
         return batch, None, None, x_enc, logits

@@ -38,6 +38,7 @@ class MAE(BaseMIM):
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
         num_cls_tokens: int = 0,
+        pool_classif: bool = True,
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
@@ -51,6 +52,7 @@ class MAE(BaseMIM):
             interpolate=interpolate,
             fac_abs_enc=fac_abs_enc,
             fac_date_enc=fac_date_enc,
+            pool_classif=pool_classif,
         )
 
         self.len_bands = {

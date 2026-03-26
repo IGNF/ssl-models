@@ -25,6 +25,7 @@ class ModelConfig:  # noqa: D101
     decoder_dim: int = 512
     decoder_heads: int = 16
     hkmeans_every_n_epochs: int | None = None
+    pool_classif: bool = True
 
 
 @dataclass
