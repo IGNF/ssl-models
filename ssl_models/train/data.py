@@ -60,7 +60,9 @@ class SSLDataModule(LightningDataModule):
             train_loader[name_dataset] = DataLoader(
                 self.train_dataset[name_dataset],
                 sampler=DistributedSampler(
-                    self.train_dataset[name_dataset], shuffle=True, drop_last=True,
+                    self.train_dataset[name_dataset],
+                    shuffle=True,
+                    drop_last=True,
                 ),
                 batch_size=self.batch_size[name_dataset],
                 num_workers=self.num_workers,
@@ -76,7 +78,9 @@ class SSLDataModule(LightningDataModule):
             val_loader[name_dataset] = DataLoader(
                 self.val_dataset[name_dataset],
                 sampler=DistributedSampler(
-                    self.val_dataset[name_dataset], shuffle=True, drop_last=True,
+                    self.val_dataset[name_dataset],
+                    shuffle=True,
+                    drop_last=True,
                 ),
                 batch_size=self.batch_size[name_dataset],
                 num_workers=self.num_workers,
@@ -92,7 +96,9 @@ class SSLDataModule(LightningDataModule):
             test_loader[name_dataset] = DataLoader(
                 self.test_dataset[name_dataset],
                 sampler=DistributedSampler(
-                    self.test_dataset[name_dataset], shuffle=True, drop_last=True,
+                    self.test_dataset[name_dataset],
+                    shuffle=True,
+                    drop_last=True,
                 ),
                 batch_size=self.batch_size[name_dataset],
                 num_workers=self.num_workers,

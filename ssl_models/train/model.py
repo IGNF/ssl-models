@@ -22,6 +22,7 @@ from ssl_models.ssl.mixmae import (
     mixmae_tiny,
 )
 from ssl_models.train.base import BaseModule
+from ssl_models.train.condition_metric import ConditionMetric
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -80,11 +81,29 @@ class SSLModule(BaseModule):
         self.condition = condition
         self.max_condition = max_condition
 
-        dict_dataset = {name_dataset: {} for name_dataset in datasets.datasets}
-        self.mu = copy.deepcopy(dict_dataset)
-        self.cov_inv_sqrt = copy.deepcopy(dict_dataset)
-        self.norm_bands = copy.deepcopy(dict_dataset)
+        self.mu = {}
+        self.cov_inv_sqrt = {}
+        self.condition_mods = {}
+        for dataset in datasets.datasets.values():
+            for name_mod, mod in dataset.inputs.items():
+                dim = mod.patch_size.mae**2 * (
+                    mod.bands
+                    if isinstance(mod.bands, int)
+                    else sum(map(len, mod.bands))
+                )
+                if (
+                    name_mod in self.condition_mods
+                    and self.condition_mods[name_mod] != dim
+                ):
+                    msg = "Inconsistent modality dimensionalities in multi-dataset"
+                    raise ValueError(msg)
+                self.condition_mods[name_mod] = dim
+        for name_mod, dim in self.condition_mods.items():
+            self.metrics[f"condition_{name_mod}"] = ConditionMetric(
+                dim=dim,
+            )
 
+        self.norm_bands = {}
         for name_dataset, dataset in datasets.datasets.items():
             self.norm_bands[name_dataset] = {
                 name_mod: tuple(
@@ -281,9 +300,9 @@ class SSLModule(BaseModule):
                     p1=P,
                     p2=P,
                 )
-                target = target - self.mu[name_dataset][name_mod][None, :]
+                target = target - self.mu[name_mod][None, :]
                 target = torch.matmul(
-                    self.cov_inv_sqrt[name_dataset][name_mod],
+                    self.cov_inv_sqrt[name_mod],
                     target.transpose(0, 1),
                 ).transpose(
                     0,
@@ -406,6 +425,26 @@ class SSLModule(BaseModule):
         for name_dataset, dataset in self.datasets.datasets.items():
             self.condition_dataset(name_dataset, dataset)
 
+        for name_mod in self.condition_mods:
+            mu, gram = self.metrics[f"condition_{name_mod}"].compute()
+            cov = gram - mu[:, None] * mu[None, :]
+            V, L = np.linalg.eig(cov.cpu().numpy().astype(np.float64))  # noqa: N806
+            if self.max_condition:
+                cov_inv_sqrt = np.matmul(
+                    L[:, : self.max_condition]
+                    * np.sqrt(1 / np.maximum(V[None, : self.max_condition], 1e-10)),
+                    np.linalg.inv(L)[: self.max_condition, :],
+                )
+            else:
+                cov_inv_sqrt = np.matmul(L * np.sqrt(1 / V), np.linalg.inv(L))
+            cov_inv_sqrt = torch.tensor(
+                cov_inv_sqrt,
+                device=cov.device,
+            ).float()
+
+            self.mu[name_mod] = mu
+            self.cov_inv_sqrt[name_mod] = cov_inv_sqrt
+
     def condition_dataset(self, name_dataset: str, dataset: DatasetConfig) -> None:
         sampler = DistributedSampler(
             self.trainer.datamodule.train_dataset[name_dataset],
@@ -443,28 +482,8 @@ class SSLModule(BaseModule):
                         / target.shape[0]
                     )
                     count = target.shape[0]
-                    self.metrics[f"condition_{name_dataset}_{name_mod}"].update(
+                    self.metrics[f"condition_{name_mod}"].update(
                         mu=mu,
                         gram=gram,
                         count=count,
                     )
-
-        for name_mod in dataset.inputs:
-            mu, gram = self.metrics[f"condition_{name_dataset}_{name_mod}"].compute()
-            cov = gram - mu[:, None] * mu[None, :]
-            V, L = np.linalg.eig(cov.cpu().numpy().astype(np.float64))  # noqa: N806
-            if self.max_condition:
-                cov_inv_sqrt = np.matmul(
-                    L[:, : self.max_condition]
-                    * np.sqrt(1 / np.maximum(V[None, : self.max_condition], 1e-10)),
-                    np.linalg.inv(L)[: self.max_condition, :],
-                )
-            else:
-                cov_inv_sqrt = np.matmul(L * np.sqrt(1 / V), np.linalg.inv(L))
-            cov_inv_sqrt = torch.tensor(
-                cov_inv_sqrt,
-                device=cov.device,
-            ).float()
-
-            self.mu[name_dataset][name_mod] = mu
-            self.cov_inv_sqrt[name_dataset][name_mod] = cov_inv_sqrt

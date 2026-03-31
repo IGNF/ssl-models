@@ -19,7 +19,6 @@ from ssl_models.layers.overlay import (
     onehot_pred_from_logits,
     onehot_target_from_batch,
 )
-from ssl_models.train.condition_metric import ConditionMetric
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
 RGB_BANDS = 3
@@ -43,14 +42,6 @@ class BaseModule(LightningModule, ABC):
         name_dataset: str,
         dataset: DatasetConfig,
     ) -> None:
-        for name_mod, mod in dataset.inputs.items():
-            dim = mod.patch_size.mae**2 * (
-                mod.bands if isinstance(mod.bands, int) else sum(map(len, mod.bands))
-            )
-            self.metrics[f"condition_{name_dataset}_{name_mod}"] = ConditionMetric(
-                dim=dim,
-            )
-
         for name_target, target in dataset.targets.items():
             if name_target in self.loss_pred:
                 msg = "Target is defined multiple times"
