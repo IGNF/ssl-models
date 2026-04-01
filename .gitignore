@@ -83,6 +83,7 @@ notebooks/
 .ipynb_checkpoints
 
 dinov3_*
+dinov3*
 
 
 # IPython

@@ -10,6 +10,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader, DistributedSampler
 from torchvision.transforms import v2
 
+from ssl_models import ROOT_DIR
 from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.conf.mask import MaskConfig
 from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
@@ -21,7 +22,6 @@ from ssl_models.ssl.mixmae import (
     mixmae_tiny,
 )
 from ssl_models.train.base import BaseModule
-from ssl_models import ROOT_DIR
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -50,7 +50,7 @@ class SSLModule(BaseModule):
         decoder_dim: int = 512,
         decoder_heads: int = 16,
         distil_mod: str | None = None,
-        distil_bands: list[int] = [0, 1, 2],
+        distil_version: Literal[2, 3] = 3,
         distil_type: Literal["cls", "features"] = "cls",
         distil_lambda: float = 0.1,
         # mixmae args
@@ -62,7 +62,7 @@ class SSLModule(BaseModule):
         super().__init__(datasets)
 
         self.distil_mod = distil_mod
-        self.distil_bands = distil_bands
+        self.distil_version = distil_version
         self.distil_type = distil_type
         self.distil_lambda = distil_lambda
         if distil_mod:
@@ -70,12 +70,21 @@ class SSLModule(BaseModule):
                 mean=(0.485, 0.456, 0.406),
                 std=(0.229, 0.224, 0.225),
             )
-            self.dinov3_model = torch.hub.load(
-                str(ROOT_DIR / "dinov3"),
-                "dinov3_vitl16",
-                source="local",
-                weights=f"{str(ROOT_DIR)}/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth",
-            )
+            match distil_version:
+                case 2:
+                    self.dino_model = torch.hub.load(
+                        "facebookresearch/dinov2", "dinov2_vitl14",
+                    )
+                case 3:
+                    self.dino_model = torch.hub.load(
+                        str(ROOT_DIR / "dinov3"),
+                        "dinov3_vitl16",
+                        source="local",
+                        weights=f"{str(ROOT_DIR)}/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth",
+                    )
+                case _:
+                    msg = "Invalid DINO version"
+                    raise ValueError(msg)
 
         self.hkmeans_every_n_epochs = hkmeans_every_n_epochs
 
@@ -331,13 +340,17 @@ class SSLModule(BaseModule):
             x_cls, x_distil = self.model.remove_cls_token(x_distil)
 
             inputs = self.dataset.inputs[self.distil_mod].norm_fac * F.interpolate(
-                batch[self.distil_mod][:, 0, self.distil_bands],
-                size=(self.model.out_grid_size[self.distil_mod] * 16,) * 2,
+                batch[self.distil_mod][:, 0, :3],
+                size=(
+                    self.model.out_grid_size[self.distil_mod]
+                    * (16 if self.distil_version == 3 else 14),
+                )
+                * 2,
                 mode="bilinear",
             )
             inputs = self.normalize(inputs / 255.0)
             with torch.no_grad():
-                features = self.dinov3_model.forward_features_list([inputs], [None])[0]
+                features = self.dino_model.forward_features(inputs)
                 teacher = (
                     features["x_norm_clstoken"][:, None]
                     if self.distil_type == "cls"
@@ -357,6 +370,8 @@ class SSLModule(BaseModule):
                 ).mean()
             )
             self.metrics[f"loss_distil_{stage}"].update(loss_distil)
+        else:
+            loss_distil = 0
 
         loss_rec = self.compute_loss_rec(batch, pixels_rec, mask_rec, stage=stage)
         log_inputs, log_preds, log_targets = self.compute_logs_rec(

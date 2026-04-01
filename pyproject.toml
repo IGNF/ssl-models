@@ -8,7 +8,9 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
-torch = "^2.2.2"
+torch = {version = "2.6.0+cu118", source = "pytorch"}
+torchvision = {version = "0.21.0+cu118", source = "pytorch"}
+
 pytorch-lightning = "^2.2.1"
 vit-pytorch = "^1.6.5"
 einops = "0.8.1"
@@ -42,6 +44,11 @@ regex = "^2026.3.32"
 scikit-learn = "^1.8.0"
 submitit = "^1.5.4"
 termcolor = "^3.3.0"
+
+[[tool.poetry.source]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu118"
+priority = "explicit"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.1.1"

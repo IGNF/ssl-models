@@ -542,11 +542,6 @@ class BaseMIM(nn.Module, ABC):
 
         x_enc, mask_token, mask_attn, mask_rec = self.mask(x_enc, mask_token, ssl_phase)
 
-        if ssl_phase == "distil":
-            x_distil = self.encode({self.distil_mod: x_enc[self.distil_mod]}, mask_attn)
-            x_distil[self.distil_mod] = self.distil_proj(x_distil[self.distil_mod])
-            return None, None, None, x_distil, None
-
         if ssl_phase == "pretrain":
             x_dec = self.encoder_to_decoder(x_enc)
             x_dec = self.unmask(x_dec, mask_token, mask_rec)
@@ -557,6 +552,13 @@ class BaseMIM(nn.Module, ABC):
 
             pixels_rec, mask_rec = self.rec_pixels(x_dec, mask_rec)
             return batch, pixels_rec, mask_rec, _, None
+
+        if ssl_phase == "distil":
+            x_distil = self.encode({self.distil_mod: x_enc[self.distil_mod]}, mask_attn)
+            x_distil[self.distil_mod] = self.distil_proj(x_distil[self.distil_mod])
+            return None, None, None, x_distil, None
+
+        x_enc = self.encode(x_enc, mask_attn)
 
         # else, probe, finetune or balance
         x_cls, x_enc = self.remove_cls_token(x_enc)

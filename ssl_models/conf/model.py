@@ -27,7 +27,7 @@ class ModelConfig:  # noqa: D101
     hkmeans_every_n_epochs: int | None = None
     pool_classif: bool = True
     distil_mod: str | None = None
-    distil_bands: list[int] = field(default_factory=lambda: [0, 1, 2])
+    distil_version: int = 3
     distil_type: str = "cls"
     distil_lambda: float = 0.1
 

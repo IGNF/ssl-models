@@ -3,6 +3,8 @@
 import uuid
 from pathlib import Path
 
+import re
+
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import OmegaConf
 from pytorch_lightning import seed_everything
@@ -14,6 +16,11 @@ def pre_call_seed(cfg: OmegaConf) -> None:
         seed_everything(cfg.run.seed, workers=True)
 
 
+def get_epoch_safe(p):
+    """Get epoch from checkpoint path."""
+    m = re.search(r"epoch=(\d+)", str(p))
+    return int(m.group(1)) if m else float("-inf")
+
 def load_config(
     cfg: OmegaConf,
     load_name: str,
@@ -21,10 +28,10 @@ def load_config(
 ) -> tuple[str, str]:
     """Load model config."""
     load_root = Path(cfg.run.exp_dir) / load_name
-    ckpt_path = sorted(
-        str(ckpt_path)
-        for ckpt_path in load_root.rglob(f"*/checkpoints/{load_phase}-epoch=*.ckpt")
-    ).pop()
+    ckpt_path = str(max(
+        load_root.rglob(f"*/checkpoints/{load_phase}-epoch=*.ckpt"),
+        key=get_epoch_safe,
+    ))
     load_cfg_path = Path(ckpt_path).parent.parent / ".hydra" / "config_resolved.yaml"
     load_cfg = OmegaConf.load(load_cfg_path)
 
