@@ -30,7 +30,7 @@ torch.set_float32_matmul_precision(precision="medium")
 class SSLModule(BaseModule):
     """Lightning SSL module."""
 
-    def __init__(  # noqa: PLR0913, PLR0915
+    def __init__(  # noqa: PLR0913, PLR0915, C901, PLR0912
         self,
         # shared args
         datasets: DatasetsConfig,

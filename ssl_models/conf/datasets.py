@@ -55,7 +55,8 @@ class DatasetsConfig:
         self.datasets = {}
         self.sample = {}
         for name_dataset, sample_dataset in zip(
-            self.name_datasets, self.sample_datasets
+            self.name_datasets,
+            self.sample_datasets,
         ):
             if name_dataset not in self.__dict__:
                 msg = f"Invalid dataset name {name_dataset}. Not an attribute."

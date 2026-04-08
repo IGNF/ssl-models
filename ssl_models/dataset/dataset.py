@@ -30,6 +30,10 @@ class GenericDataset(Dataset, ABC):
         self.random_dates = random_dates and stage == "train"
         self.random_crop = random_crop and stage == "train"
 
+        self.base_seed = 42
+        self.epoch = 0
+        self.rng = np.random.default_rng(self.base_seed)
+
     @staticmethod
     def unflatten(x: np.ndarray, axis: int, reshape_axis: tuple) -> np.ndarray:
         """Unflatten specific axes in numpy array."""
@@ -38,13 +42,18 @@ class GenericDataset(Dataset, ABC):
         shape = (*x.shape[:axis], *reshape_axis, *x.shape[axis + 1 :])
         return x.reshape(shape)
 
-    def sample_gcd(
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = epoch
+
+    def set_gcd_rng(
         self,
         idx: int,
         base_length: int,
         repeats: int,
     ) -> tuple[int, np.ndarray]:
-        """Sample crop part in image based on index of repetition."""
+        """Set rng and sample crop part based on index."""
+        self.rng = np.random.default_rng(self.base_seed + 10**6 * self.epoch + idx)
+
         if not self.random_crop:
             idx_repeat = idx // base_length
             idx_repeat = (idx_repeat // repeats, idx_repeat % repeats)
@@ -77,7 +86,7 @@ class GenericDataset(Dataset, ABC):
             for name_mod in self.dataset.rasters
         }
         if start_gcd is None:
-            start_gcd = np.random.randint(
+            start_gcd = self.rng.integers(
                 low=0,
                 high=self.dataset.size_gcd - self.dataset.crop_gcd + 1,
                 size=2,
@@ -89,7 +98,7 @@ class GenericDataset(Dataset, ABC):
                 self.dataset.sizes[name_mod] // self.dataset.size_gcd
             )
             start_mod += meta.get(f"{name_mod}_shift", 0)  # align TreeSatAI-TS aerial
-            start_mod_date = np.random.randint(
+            start_mod_date = self.rng.integers(
                 low=0,
                 high=sizes_date[name_mod] % mod.num_dates + 1,
             )
@@ -207,7 +216,7 @@ class GenericDataset(Dataset, ABC):
             diff_mod = np.abs(diff_mod)
             if self.random_dates:
                 diff_mod = 0 * diff_mod  # keep NaNs
-                diff_mod += np.random.random(diff_mod.shape).astype(diff_mod.dtype)
+                diff_mod += self.rng.random(diff_mod.shape).astype(diff_mod.dtype)
 
             diff_mod = np.mean(diff_mod, axis=(2, 3, 4), keepdims=True)
             median_inds = np.nanargmin(diff_mod, axis=1, keepdims=True)
@@ -231,21 +240,21 @@ class GenericDataset(Dataset, ABC):
     ) -> dict[str, np.ndarray]:
         """Transform model rasters."""
         if self.use_transform:
-            if np.random.choice([True, False]):
+            if self.rng.choice([True, False]):
                 inputs.update(
                     {
                         name_mod: np.flip(inputs[name_mod], axis=2)
                         for name_mod in self.dataset.rasters
                     },
                 )
-            if np.random.choice([True, False]):
+            if self.rng.choice([True, False]):
                 inputs.update(
                     {
                         name_mod: np.flip(inputs[name_mod], axis=3)
                         for name_mod in self.dataset.rasters
                     },
                 )
-            if np.random.choice([True, False]):
+            if self.rng.choice([True, False]):
                 inputs.update(
                     {
                         name_mod: np.swapaxes(inputs[name_mod], 2, 3)

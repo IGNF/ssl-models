@@ -309,16 +309,7 @@ class BaseModule(LightningModule, ABC):
         return self.shared_step(batch, stage="test")
 
     def on_train_epoch_start(self) -> None:
-        for sampler in self.trainer.train_dataloader.sampler.values():
-            sampler.set_epoch(self.trainer.current_epoch)
-
-    def on_val_epoch_start(self) -> None:
-        for sampler in self.trainer.val_dataloaders.sampler.values():
-            sampler.set_epoch(self.trainer.current_epoch)
-
-    def on_test_epoch_start(self) -> None:
-        for sampler in self.trainer.test_dataloaders.sampler.values():
-            sampler.set_epoch(self.trainer.current_epoch)
+        self.trainer.train_dataloader.set_epoch(self.trainer.current_epoch)
 
     def on_train_epoch_end(self) -> None:
         if self.ema_model is not None:

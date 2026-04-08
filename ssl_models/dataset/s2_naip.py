@@ -47,7 +47,7 @@ class S2NAIPDataset(GenericDataset):
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
-        idx, start_gcd = self.sample_gcd(
+        idx, start_gcd = self.set_gcd_rng(
             idx,
             base_length=self.base_length,
             repeats=self.repeats,

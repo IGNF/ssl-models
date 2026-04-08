@@ -51,7 +51,7 @@ class CircaDataset(GenericDataset):
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
-        idx, start_gcd = self.sample_gcd(
+        idx, start_gcd = self.set_gcd_rng(
             idx,
             base_length=self.base_length,
             repeats=self.repeats,
@@ -115,7 +115,7 @@ class CircaDataset(GenericDataset):
         meta["s2_cloud_mask_global_dates"] = meta["s2_global_dates"]
         meta["s2_cloud_mask_zoom_dates"] = meta["s2_zoom_dates"]
 
-        ref_date = np.random.choice(meta["s1_asc_zoom_dates"])
+        ref_date = self.rng.choice(meta["s1_asc_zoom_dates"])
         meta["ref_date"] = ref_date
 
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)

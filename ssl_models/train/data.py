@@ -69,7 +69,7 @@ class SSLDataModule(LightningDataModule):
                 shuffle=False,
                 drop_last=False,
             )
-        return CombinedLoader(train_loader, "min_size")
+        return CustomCombinedLoader(train_loader, "min_size")
 
     def val_dataloader(self) -> DataLoader:
         """Return val data loader."""
@@ -87,7 +87,7 @@ class SSLDataModule(LightningDataModule):
                 shuffle=False,
                 drop_last=False,
             )
-        return CombinedLoader(val_loader, "max_size")
+        return CustomCombinedLoader(val_loader, "max_size")
 
     def test_dataloader(self) -> DataLoader:
         """Return test data loader."""
@@ -105,4 +105,14 @@ class SSLDataModule(LightningDataModule):
                 shuffle=False,
                 drop_last=False,
             )
-        return CombinedLoader(test_loader, "max_size")
+        return CustomCombinedLoader(test_loader, "max_size")
+
+
+class CustomCombinedLoader(CombinedLoader):
+    """Custom combined loader with epoch setting."""
+
+    def set_epoch(self, epoch: int) -> None:
+        for sampler in self.sampler.values():
+            sampler.set_epoch(epoch)
+        for loader in self.iterables.values():
+            loader.dataset.set_epoch(epoch)

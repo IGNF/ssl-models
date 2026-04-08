@@ -78,7 +78,7 @@ class BaseMIM(nn.Module, ABC):
                 date_dim,
             )
 
-    def _init_mim_dataset(
+    def _init_mim_dataset(  # noqa: PLR0912, C901
         self,
         name_dataset: str,
         dataset: DatasetConfig,

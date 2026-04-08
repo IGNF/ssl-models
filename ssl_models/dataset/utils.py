@@ -24,8 +24,8 @@ def strs_datetimes(date_strs: list[str], fmt: str = "%Y-%m-%d") -> np.ndarray:
         for date_str in date_strs
     ]
     datetimes = [
-        datetime.strptime(date_str, fmt)
-        for date_str in date_strs  # noqa: DTZ007
+        datetime.strptime(date_str, fmt)  # noqa: DTZ007
+        for date_str in date_strs
     ]
     return dates_numpy(datetimes)
 

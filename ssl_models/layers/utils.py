@@ -9,6 +9,8 @@ import torch.nn.functional as F  # noqa: N812
 from einops import rearrange
 from torch import Tensor
 
+from ssl_models import RNG
+
 
 def shuffle_enc_to_dec(x: dict[str, Tensor]) -> dict[str, Tensor]:
     """Shuffle modalities and dates."""
@@ -31,8 +33,8 @@ def shuffle_enc_to_dec(x: dict[str, Tensor]) -> dict[str, Tensor]:
             range(x_dec[name_out].shape[1]),
         ):
             compat_row = compat_mat[name_ids.index((name_out, idx_out))]
-            if np.random.choice([True, False]) and compat_row.sum() > 0:
-                idx_in = np.random.choice(
+            if RNG.choice([True, False]) and compat_row.sum() > 0:
+                idx_in = RNG.choice(
                     range(len(name_ids)),
                     p=compat_row / compat_row.sum(),
                 )

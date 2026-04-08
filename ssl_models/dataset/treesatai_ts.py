@@ -61,8 +61,17 @@ class TreeSatAITSDataset(GenericDataset):
         self.sen_names = sen_names
         self.targets = csv_data[target_cols].to_numpy()
 
+        self.base_length = len(self.aerial_names)
+        self.repeats = 1
+
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
+        idx, _ = self.set_gcd_rng(
+            idx,
+            base_length=self.base_length,
+            repeats=self.repeats,
+        )
+
         sen_path = self.root_dir / "sentinel-ts" / self.sen_names[idx]
         aerial_path = self.root_dir / "aerial" / self.aerial_names[idx]
         aerial_date = self.aerial_dates[idx]
@@ -104,4 +113,4 @@ class TreeSatAITSDataset(GenericDataset):
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return len(self.aerial_names)
+        return self.base_length
