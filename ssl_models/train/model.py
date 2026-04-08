@@ -364,11 +364,10 @@ class SSLModule(BaseModule):
 
     def pretrain_step(
         self,
-        batch: dict[str, dict],
+        batch: dict[str, dict[str, Tensor]],
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Pretraining step."""
-        batch = batch[0]
         losses_rec, weights = {}, {}
         logs_inputs, logs_preds, logs_targets = {}, {}, {}
         for name_dataset, dataset in self.datasets.datasets.items():

@@ -67,7 +67,11 @@ class MixMAE(BaseMIM):
         match fusion_mode:
             case "msgfm" | "shared" | "monotemp":
                 name_models = (
-                    list(datasets.dataset.inputs.keys())
+                    [
+                        name_mod
+                        for dataset in datasets.datasets.values()
+                        for name_mod in dataset.inputs()
+                    ]
                     if fusion_mode == "monotemp"
                     else ["shared"]
                 )
@@ -90,7 +94,8 @@ class MixMAE(BaseMIM):
         # encoder layers
         max_patch_grid = max(
             mod.image_size // mod.patch_size.mixmae
-            for _, mod in datasets.dataset.inputs.items()
+            for dataset in datasets.datasets.values()
+            for mod in dataset.inputs.values()
         )
         num_windows = [
             max(1, max_patch_grid // (window_size[idx_layer] * 2**idx_layer))

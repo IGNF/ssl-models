@@ -4,8 +4,10 @@ from functools import partial
 from pathlib import Path
 from typing import Literal
 
+import torch
 from lightning.pytorch.utilities.combined_loader import CombinedLoader
 from pytorch_lightning import LightningDataModule
+from torch import Tensor
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
@@ -53,20 +55,29 @@ class SSLDataModule(LightningDataModule):
             )
             self.batch_size[name_dataset] = max(round(self.batch_size[name_dataset]), 1)
 
+    def is_distributed(self) -> bool:
+        return torch.distributed.is_available() and torch.distributed.is_initialized()
+
     def train_dataloader(self) -> DataLoader:
         """Return train data loader."""
         train_loader = {}
         for name_dataset in self.train_dataset:
-            train_loader[name_dataset] = DataLoader(
-                self.train_dataset[name_dataset],
-                sampler=DistributedSampler(
+            sampler = (
+                DistributedSampler(
                     self.train_dataset[name_dataset],
                     shuffle=True,
                     drop_last=True,
-                ),
+                )
+                if self.is_distributed()
+                else None
+            )
+
+            train_loader[name_dataset] = DataLoader(
+                self.train_dataset[name_dataset],
+                sampler=sampler,
                 batch_size=self.batch_size[name_dataset],
                 num_workers=self.num_workers,
-                shuffle=False,
+                shuffle=sampler is None,
                 drop_last=False,
             )
         return CustomCombinedLoader(train_loader, "min_size")
@@ -75,13 +86,19 @@ class SSLDataModule(LightningDataModule):
         """Return val data loader."""
         val_loader = {}
         for name_dataset in self.val_dataset:
+            sampler = (
+                DistributedSampler(
+                    self.val_dataset[name_dataset],
+                    shuffle=False,
+                    drop_last=True,
+                )
+                if self.is_distributed()
+                else None
+            )
+
             val_loader[name_dataset] = DataLoader(
                 self.val_dataset[name_dataset],
-                sampler=DistributedSampler(
-                    self.val_dataset[name_dataset],
-                    shuffle=True,
-                    drop_last=True,
-                ),
+                sampler=sampler,
                 batch_size=self.batch_size[name_dataset],
                 num_workers=self.num_workers,
                 shuffle=False,
@@ -93,13 +110,19 @@ class SSLDataModule(LightningDataModule):
         """Return test data loader."""
         test_loader = {}
         for name_dataset in self.test_dataset:
+            sampler = (
+                DistributedSampler(
+                    self.test_dataset[name_dataset],
+                    shuffle=False,
+                    drop_last=True,
+                )
+                if self.is_distributed()
+                else None
+            )
+
             test_loader[name_dataset] = DataLoader(
                 self.test_dataset[name_dataset],
-                sampler=DistributedSampler(
-                    self.test_dataset[name_dataset],
-                    shuffle=True,
-                    drop_last=True,
-                ),
+                sampler=sampler,
                 batch_size=self.batch_size[name_dataset],
                 num_workers=self.num_workers,
                 shuffle=False,
@@ -110,6 +133,11 @@ class SSLDataModule(LightningDataModule):
 
 class CustomCombinedLoader(CombinedLoader):
     """Custom combined loader with epoch setting."""
+
+    def __next__(self) -> dict[str, dict[str, Tensor]]:
+        """Get next batch."""
+        batch, _, _ = super().__next__()
+        return batch
 
     def set_epoch(self, epoch: int) -> None:
         for sampler in self.sampler.values():

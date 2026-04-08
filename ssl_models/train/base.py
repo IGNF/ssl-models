@@ -209,7 +209,7 @@ class BaseModule(LightningModule, ABC):
 
     def probe_or_finetune_step(
         self,
-        batch: dict[str, dict],
+        batch: dict[str, dict[str, Tensor]],
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Probing/finetuning step."""
@@ -222,7 +222,6 @@ class BaseModule(LightningModule, ABC):
         else:
             model = self.model
 
-        batch = batch[0]
         losses_pred, weights = {}, {}
         logs_inputs, logs_preds, logs_targets = {}, {}, {}
         for name_dataset, dataset in self.datasets.datasets.items():

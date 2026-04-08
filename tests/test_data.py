@@ -35,7 +35,7 @@ def test_data(
         random_crop=random_crop,
     )
     data_module.setup(stage=stage)
-    data_loader = data_module.val_dataloader()
+    data_loader = data_module.train_dataloader()
     num_cycles = 2
     for _ in range(num_cycles):
         for idx, batch in enumerate(data_loader):
@@ -43,4 +43,5 @@ def test_data(
             if int(idx) > num_cycles:
                 LOGGER.info("exit")
                 break
-            LOGGER.info(f"id: {idx}, batch: {batch.keys()}")
+            for name_dataset in batch:
+                LOGGER.info(f"id: {idx}, batch: {batch[name_dataset].keys()}")

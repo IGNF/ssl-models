@@ -3,6 +3,7 @@
     "fusion_mode": "mod",
     "model": "mae",
     "inter_depth": 0,
+    "unpool_dim": null,
     "num_levels": 1,
     "type_head": "attentive",
     "fac_abs_enc": 0,
@@ -19,7 +20,12 @@
     "decoder_mlp_ratio": 2,
     "datasets": {
         "root_dir": "/home/ALabatie/Bureau/ssl-models/tests/data",
-        "name_dataset": "bdfv2",
+        "name_datasets": [
+            "bdfv2"
+        ],
+        "sample_datasets": [
+            1.0
+        ],
         "bdfv2": {
             "rel_dir": "BDFV2",
             "csv_dir": null,

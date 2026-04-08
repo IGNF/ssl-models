@@ -1,7 +1,9 @@
 """Utils to convert between configs and dicts."""
 
 import inspect
+import types
 from dataclasses import asdict
+from typing import Union, get_origin
 
 from dacite.core import from_dict
 
@@ -26,7 +28,10 @@ def datasets_from_dict(datasets_dict: dict) -> DatasetsConfig:
             kwargs[name_arg] = type_arg()
             continue
 
-        if issubclass(type_arg, DatasetConfig):
+        if get_origin(type_arg) not in (Union, types.UnionType) and issubclass(
+            type_arg,
+            DatasetConfig,
+        ):
             kwargs[name_arg] = from_dict(
                 data_class=type_arg,
                 data=datasets_dict[name_arg],
@@ -45,7 +50,10 @@ def datasets_to_dict(datasets: DatasetsConfig) -> dict:
             continue
 
         attr = getattr(datasets, name_arg)
-        if issubclass(type_arg, DatasetConfig):
+        if get_origin(type_arg) not in (Union, types.UnionType) and issubclass(
+            type_arg,
+            DatasetConfig,
+        ):
             datasets_dict[name_arg] = asdict(attr)
         else:
             datasets_dict[name_arg] = attr
