@@ -69,6 +69,7 @@ def run_experiment(
             map_location=lambda storage, _: storage,
             strict=False,
             datasets=datasets,
+            mask=mask,
         )
     else:
         model = model_partial()

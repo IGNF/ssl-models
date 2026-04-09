@@ -18,7 +18,7 @@ from tests import TEST_DATA_DIR
 def datasets_treesat():
     return DatasetsConfig(
         root_dir=TEST_DATA_DIR,
-        name_dataset="treesatai_ts",
+        name_datasets=["treesatai_ts"],
         treesatai_ts=TreeSatAITSConfig(rel_dir=""),
     )
 

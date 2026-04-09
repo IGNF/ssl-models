@@ -23,7 +23,8 @@ class DatasetsConfig:
         # ruff: noqa: B008
         self,
         root_dir: str,
-        name_dataset: str,
+        name_datasets: list[str],
+        sample_datasets: list[float] | None = None,
         geopile: GeoPileConfig = GeoPileConfig(),
         flair: FLAIRConfig = FLAIRConfig(),
         pastis_hd: PASTISHDConfig = PASTISHDConfig(),
@@ -38,24 +39,38 @@ class DatasetsConfig:
             name_arg: val_arg
             for name_arg, val_arg in locals().items()
             if val_arg is not self
-            and (not is_dataclass(val_arg) or name_arg == name_dataset)
+            and (not is_dataclass(val_arg) or name_arg in name_datasets)
         }
         self.__post_init__()
 
     def __post_init__(self) -> None:
         """Check validity of dataset name and further define non configurable attrs."""
-        if self.name_dataset not in self.__dict__:
-            msg = f"Invalid dataset name {self.name_dataset}. Not an attribute."
+        if self.sample_datasets is None:
+            self.sample_datasets = [1.0] * len(self.name_datasets)
+
+        if len(self.name_datasets) != len(self.sample_datasets):
+            msg = "Number of datasets and sampling weights are inconsistent."
             raise ValueError(msg)
 
-        self.dataset = getattr(self, self.name_dataset)
-        self.dataset_class = self.dataset.dataset_class
+        self.datasets = {}
+        self.sample = {}
+        for name_dataset, sample_dataset in zip(
+            self.name_datasets,
+            self.sample_datasets,
+        ):
+            if name_dataset not in self.__dict__:
+                msg = f"Invalid dataset name {name_dataset}. Not an attribute."
+                raise ValueError(msg)
+
+            self.datasets[name_dataset] = getattr(self, name_dataset)
+            self.sample[name_dataset] = sample_dataset
 
 
 dataset_build = builds(
     DatasetsConfig,
     root_dir=MISSING,
-    name_dataset=MISSING,
+    name_datasets=MISSING,
+    sample_datasets=None,
     geopile=GeoPileConfig(),
     flair=FLAIRConfig(),
     pastis_hd=PASTISHDConfig(),

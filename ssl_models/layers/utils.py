@@ -38,7 +38,7 @@ def shuffle_enc_to_dec(x: dict[str, Tensor]) -> dict[str, Tensor]:
                     range(len(name_ids)),
                     p=compat_row / compat_row.sum(),
                 )
-                (name_in, idx_in) = name_ids[idx_in]
+                name_in, idx_in = name_ids[idx_in]
                 x_dec[name_out][idx_batch, idx_out] = x[name_in][idx_batch, idx_in]
     return x_dec
 
@@ -214,6 +214,7 @@ def posemb_sincos_2d(
     w: int,
     dim: int,
     date_dim: int,
+    fac_abs_enc: float | None = None,
     temperature: int = 10000,
     dtype: torch.dtype = torch.float32,
 ) -> Tensor:
@@ -231,4 +232,6 @@ def posemb_sincos_2d(
         [x.sin(), x.cos(), y.sin(), y.cos(), torch.zeros((h, w, date_dim))],
         dim=-1,
     )
+    if fac_abs_enc is not None:
+        pos_encoding *= fac_abs_enc
     return pos_encoding.to(dtype)

@@ -48,11 +48,10 @@ class CircaDataset(GenericDataset):
         self.patch_ids = csv_data["patch_id"].tolist()
         self.base_length = len(self.patch_ids)
         self.repeats = dataset.repeats
-        self.rng = np.random.default_rng(seed=42)
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
-        idx, start_gcd = self.sample_gcd(
+        idx, start_gcd = self.set_gcd_rng(
             idx,
             base_length=self.base_length,
             repeats=self.repeats,

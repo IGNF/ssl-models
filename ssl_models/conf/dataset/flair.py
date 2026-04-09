@@ -16,8 +16,10 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "FLAIR-HUB"
     csv_dir: str | None = None
     version: str | None = None
+    s2_l3a: bool = False
     balance_pretrain: bool = False
     val_pretrain: bool = True
+    test_pretrain: bool = False
     filter_percent: int | None = None
     repeats: int = 1
     crop_meters: float = 102.4

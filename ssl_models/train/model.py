@@ -10,6 +10,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
+from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.conf.mask import MaskConfig
 from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
@@ -21,6 +22,7 @@ from ssl_models.ssl.mixmae import (
     mixmae_tiny,
 )
 from ssl_models.train.base import BaseModule
+from ssl_models.train.condition_metric import ConditionMetric
 
 torch.set_float32_matmul_precision(precision="medium")
 
@@ -28,7 +30,7 @@ torch.set_float32_matmul_precision(precision="medium")
 class SSLModule(BaseModule):
     """Lightning SSL module."""
 
-    def __init__(  # noqa: PLR0913, PLR0915
+    def __init__(  # noqa: PLR0913, PLR0915, C901, PLR0912
         self,
         # shared args
         datasets: DatasetsConfig,
@@ -51,21 +53,8 @@ class SSLModule(BaseModule):
         swin_abs_enc: bool = False,
     ) -> None:
         super().__init__(datasets)
+        self.datasets = datasets
 
-        self.norm_bands = {
-            name_mod: tuple(
-                (
-                    mod.norm_bands
-                    if mod.norm_bands is not None
-                    else (
-                        [mod.bands]
-                        if isinstance(mod.bands, int)
-                        else list(map(len, mod.bands))
-                    )
-                ),
-            )
-            for name_mod, mod in datasets.dataset.inputs.items()
-        }
         match loss:
             case "l1":
                 self.norm_pix_loss = None
@@ -78,7 +67,7 @@ class SSLModule(BaseModule):
                 self.loss_fn = torch.abs
             case "l2_norm":
                 self.norm_pix_loss = "ln"
-                self.loss_fn = torch.square
+                self.loss_fn = torch.abs
             case "l1_ls":
                 self.norm_pix_loss = "ls"
                 self.loss_fn = torch.abs
@@ -91,7 +80,45 @@ class SSLModule(BaseModule):
 
         self.condition = condition
         self.max_condition = max_condition
-        self.mu, self.cov_inv_sqrt = {}, {}
+
+        self.mu = {}
+        self.cov_inv_sqrt = {}
+        self.condition_mods = {}
+        for dataset in datasets.datasets.values():
+            for name_mod, mod in dataset.inputs.items():
+                dim = mod.patch_size.mae**2 * (
+                    mod.bands
+                    if isinstance(mod.bands, int)
+                    else sum(map(len, mod.bands))
+                )
+                if (
+                    name_mod in self.condition_mods
+                    and self.condition_mods[name_mod] != dim
+                ):
+                    msg = "Inconsistent modality dimensionalities in multi-dataset"
+                    raise ValueError(msg)
+                self.condition_mods[name_mod] = dim
+        for name_mod, dim in self.condition_mods.items():
+            self.metrics[f"condition_{name_mod}"] = ConditionMetric(
+                dim=dim,
+            )
+
+        self.norm_bands = {}
+        for name_dataset, dataset in datasets.datasets.items():
+            self.norm_bands[name_dataset] = {
+                name_mod: tuple(
+                    (
+                        mod.norm_bands
+                        if mod.norm_bands is not None
+                        else (
+                            [mod.bands]
+                            if isinstance(mod.bands, int)
+                            else list(map(len, mod.bands))
+                        )
+                    ),
+                )
+                for name_mod, mod in dataset.inputs.items()
+            }
 
         match model:
             case "mae":
@@ -160,14 +187,13 @@ class SSLModule(BaseModule):
         else:
             self.ema_model = None
 
-        self.dataset = datasets.dataset
-        self.save_hyperparameters(ignore=["datasets"])
+        self.save_hyperparameters(ignore=["datasets", "mask"])
 
     def configure_optimizers(self) -> dict:
         """Configure optimizer."""
         total_steps = self.trainer.estimated_stepping_batches
         total_batch_size = (
-            self.trainer.train_dataloader.batch_size
+            self.trainer.batch_size
             * self.trainer.accumulate_grad_batches
             * self.trainer.num_nodes
             * self.trainer.num_devices
@@ -208,14 +234,17 @@ class SSLModule(BaseModule):
         batch: dict[str, Tensor],
         pixels_rec: dict[str, Tensor],
         mask_rec: dict[str, Tensor],
+        name_dataset: str,
+        dataset: DatasetConfig,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
     ) -> tuple[dict[str, Tensor], dict[str, Tensor], dict[str, Tensor]]:
         """Visu of reconstructed images."""
         log_inputs, log_preds, log_targets = {}, {}, {}
         for name_mod in pixels_rec:
-            if name_mod not in self.dataset.log_inputs:
+            if name_mod not in dataset.log_inputs:
                 continue
+
             inputs = torch.where(
                 mask_rec[name_mod],
                 0,
@@ -232,9 +261,16 @@ class SSLModule(BaseModule):
                 batch[name_mod],
             )
             targets = batch[name_mod]
-            log_inputs[f"{ssl_phase}_{stage}/_{name_mod}_input"] = inputs[0, 0]
-            log_preds[f"{ssl_phase}_{stage}/_{name_mod}_rec"] = preds[0, 0]
-            log_targets[f"{ssl_phase}_{stage}/_{name_mod}_target"] = targets[0, 0]
+            log_inputs[f"{ssl_phase}_{stage}/_{name_dataset}_{name_mod}_input"] = (
+                inputs[0, 0]
+            )
+            log_preds[f"{ssl_phase}_{stage}/_{name_dataset}_{name_mod}_rec"] = preds[
+                0,
+                0,
+            ]
+            log_targets[f"{ssl_phase}_{stage}/_{name_dataset}_{name_mod}_target"] = (
+                targets[0, 0]
+            )
 
         return log_inputs, log_preds, log_targets
 
@@ -243,16 +279,17 @@ class SSLModule(BaseModule):
         batch: dict[str, Tensor],
         pixels_rec: dict[str, Tensor],
         mask_rec: dict[str, Tensor],
+        name_dataset: str,
         stage: Literal["train", "val", "test"],
     ) -> Tensor:
         """Compute reconstruction loss."""
         losses_rec = []
         weights = []
         for name_mod in pixels_rec:
-            D = batch[name_mod].shape[1]  # noqa: N806
+            B, D = batch[name_mod].shape[:2]  # noqa: N806
             H, W = (  # noqa: N806
-                self.model.out_grid_size[name_mod],
-                self.model.out_grid_size[name_mod],
+                self.model.out_grid_size[name_dataset][name_mod],
+                self.model.out_grid_size[name_dataset][name_mod],
             )
             P = batch[name_mod].shape[3] // H  # noqa: N806
 
@@ -291,7 +328,7 @@ class SSLModule(BaseModule):
                 target_groups = list(
                     torch.split(
                         target,
-                        self.norm_bands[name_mod],
+                        self.norm_bands[name_dataset][name_mod],
                         dim=-1,
                     ),
                 )
@@ -314,41 +351,68 @@ class SSLModule(BaseModule):
                 p2=P,
             )
 
-            weight = D * H * W
+            weight = B * D * H * W
             weights.append(weight)
             loss_rec = self.loss_fn(target - pixels_rec[name_mod])
             loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod]).mean()
             losses_rec.append(weight * loss_rec)
 
-        loss_rec = torch.stack(losses_rec).sum() / sum(weights)
-        self.metrics[f"loss_rec_{stage}"].update(loss_rec)
-        return loss_rec
+        weight = sum(weights)
+        loss_rec = torch.stack(losses_rec).sum() / weight
+        self.metrics[f"loss_rec_{name_dataset}_{stage}"].update(loss_rec)
+        return loss_rec, weight
 
     def pretrain_step(
         self,
-        batch: dict[str, torch.Tensor],
+        batch: dict[str, dict[str, Tensor]],
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Pretraining step."""
-        batch, pixels_rec, mask_rec, _, _ = self.model(
-            batch,
-            ssl_phase=self.trainer.ssl_phase,
-        )
+        losses_rec, weights = {}, {}
+        logs_inputs, logs_preds, logs_targets = {}, {}, {}
+        for name_dataset, dataset in self.datasets.datasets.items():
+            if batch[name_dataset] is None:
+                continue
 
-        loss_rec = self.compute_loss_rec(batch, pixels_rec, mask_rec, stage=stage)
-        log_inputs, log_preds, log_targets = self.compute_logs_rec(
-            batch,
-            pixels_rec,
-            mask_rec,
-            ssl_phase=self.trainer.ssl_phase,
-            stage=stage,
-        )
+            batch[name_dataset], pixels_rec, mask_rec, _, _ = self.model(
+                batch[name_dataset],
+                name_dataset,
+                ssl_phase=self.trainer.ssl_phase,
+            )
 
+            loss_rec, weight = self.compute_loss_rec(
+                batch[name_dataset],
+                pixels_rec,
+                mask_rec,
+                name_dataset,
+                stage=stage,
+            )
+            losses_rec[name_dataset] = loss_rec
+            weights[name_dataset] = weight
+
+            log_inputs, log_preds, log_targets = self.compute_logs_rec(
+                batch[name_dataset],
+                pixels_rec,
+                mask_rec,
+                name_dataset,
+                dataset,
+                ssl_phase=self.trainer.ssl_phase,
+                stage=stage,
+            )
+            logs_inputs.update(log_inputs)
+            logs_preds.update(log_preds)
+            logs_targets.update(log_targets)
+
+        loss_rec = sum(
+            losses_rec[name_dataset] * weights[name_dataset]
+            for name_dataset in losses_rec
+        ) / sum(weights.values())
         return {
             "loss": loss_rec,
-            "log_inputs": log_inputs,
-            "log_preds": log_preds,
-            "log_targets": log_targets,
+            "losses": losses_rec,
+            "log_inputs": logs_inputs,
+            "log_preds": logs_preds,
+            "log_targets": logs_targets,
         }
 
     def on_fit_start(self) -> None:
@@ -357,32 +421,52 @@ class SSLModule(BaseModule):
         if not self.condition:
             return
 
-        dataset = self.trainer.datamodule.train_dataset
+        for name_dataset, dataset in self.datasets.datasets.items():
+            self.condition_dataset(name_dataset, dataset)
+
+        for name_mod in self.condition_mods:
+            mu, gram = self.metrics[f"condition_{name_mod}"].compute()
+            cov = gram - mu[:, None] * mu[None, :]
+            V, L = np.linalg.eig(cov.cpu().numpy().astype(np.float64))  # noqa: N806
+            if self.max_condition:
+                cov_inv_sqrt = np.matmul(
+                    L[:, : self.max_condition]
+                    * np.sqrt(1 / np.maximum(V[None, : self.max_condition], 1e-10)),
+                    np.linalg.inv(L)[: self.max_condition, :],
+                )
+            else:
+                cov_inv_sqrt = np.matmul(L * np.sqrt(1 / V), np.linalg.inv(L))
+            cov_inv_sqrt = torch.tensor(
+                cov_inv_sqrt,
+                device=cov.device,
+            ).float()
+
+            self.mu[name_mod] = mu
+            self.cov_inv_sqrt[name_mod] = cov_inv_sqrt
+
+    def condition_dataset(self, name_dataset: str, dataset: DatasetConfig) -> None:
         sampler = DistributedSampler(
-            dataset,
+            self.trainer.datamodule.train_dataset[name_dataset],
             num_replicas=self.trainer.world_size,
             rank=self.trainer.global_rank,
             shuffle=False,  # or True if you want shuffle
         )
 
-        data_loader = self.trainer.datamodule.train_dataloader()
         data_loader = DataLoader(
-            dataset,
-            batch_size=data_loader.batch_size,
+            self.trainer.datamodule.train_dataset[name_dataset],
+            batch_size=self.trainer.datamodule.batch_size[name_dataset],
+            num_workers=self.trainer.datamodule.num_workers,
             sampler=sampler,
-            num_workers=data_loader.num_workers,
-            pin_memory=data_loader.pin_memory,
-            drop_last=data_loader.drop_last,
-            collate_fn=data_loader.collate_fn,
+            drop_last=False,
         )
 
         with torch.no_grad():
             for batch in data_loader:
                 batch = self.trainer.strategy.batch_to_device(batch, self.device)  # noqa: PLW2901
-                batch = self.model.resize_and_rescale(batch)  # noqa: PLW2901
+                batch = self.model.resize_and_rescale(batch, name_dataset)  # noqa: PLW2901
 
-                for name_mod in self.dataset.inputs:
-                    H = self.model.out_grid_size[name_mod]  # noqa: N806
+                for name_mod in dataset.inputs:
+                    H = self.model.out_grid_size[name_dataset][name_mod]  # noqa: N806
                     P = batch[name_mod].shape[3] // H  # noqa: N806
 
                     target = rearrange(
@@ -402,23 +486,3 @@ class SSLModule(BaseModule):
                         gram=gram,
                         count=count,
                     )
-
-        for name_mod in self.dataset.inputs:
-            mu, gram = self.metrics[f"condition_{name_mod}"].compute()
-            cov = gram - mu[:, None] * mu[None, :]
-            V, L = np.linalg.eig(cov.cpu().numpy().astype(np.float64))  # noqa: N806
-            if self.max_condition:
-                cov_inv_sqrt = np.matmul(
-                    L[:, : self.max_condition]
-                    * np.sqrt(1 / np.maximum(V[None, : self.max_condition], 1e-10)),
-                    np.linalg.inv(L)[: self.max_condition, :],
-                )
-            else:
-                cov_inv_sqrt = np.matmul(L * np.sqrt(1 / V), np.linalg.inv(L))
-            cov_inv_sqrt = torch.tensor(
-                cov_inv_sqrt,
-                device=cov.device,
-            ).float()
-
-            self.mu[name_mod] = mu
-            self.cov_inv_sqrt[name_mod] = cov_inv_sqrt

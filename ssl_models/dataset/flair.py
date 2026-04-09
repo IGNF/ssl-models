@@ -41,6 +41,7 @@ class FLAIRDataset(GenericDataset):
             version=dataset.version,
             balance_pretrain=dataset.balance_pretrain,
             val_pretrain=dataset.val_pretrain,
+            test_pretrain=dataset.test_pretrain,
             filter_percent=dataset.filter_percent,
         )
 
@@ -54,8 +55,8 @@ class FLAIRDataset(GenericDataset):
             "aerial_rlt": "aerial-rlt_pan",
             "dem": "dem_elev",
             "spot": "spot_rgbi",
-            "s2": "sentinel2_ts",
-            "s2_mask": "sentinel2_msk-sc",
+            "s2": ("sentinel2-3a" if dataset.s2_l3a else "sentinel2") + "_ts",
+            "s2_mask": ("sentinel2-3a" if dataset.s2_l3a else "sentinel2") + "_msk-sc",
             "s1_asc": "sentinel1-asc_ts",
             "s1_des": "sentinel1-desc_ts",
             "cosia": "aerial_label-cosia",
@@ -96,7 +97,7 @@ class FLAIRDataset(GenericDataset):
 
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
-        idx, start_gcd = self.sample_gcd(
+        idx, start_gcd = self.set_gcd_rng(
             idx,
             base_length=self.base_length,
             repeats=self.repeats,

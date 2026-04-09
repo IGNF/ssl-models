@@ -1,10 +1,15 @@
 """SSL data module."""
 
+from functools import partial
 from pathlib import Path
 from typing import Literal
 
+import torch
+from lightning.pytorch.utilities.combined_loader import CombinedLoader
 from pytorch_lightning import LightningDataModule
+from torch import Tensor
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 
 from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
@@ -24,67 +29,118 @@ class SSLDataModule(LightningDataModule):
         random_crop: bool,
     ) -> None:
         super().__init__()
+        self.num_workers = num_workers
 
-        root_dir = Path(datasets.root_dir) / datasets.dataset.rel_dir
-        self.train_dataset = datasets.dataset_class(
-            dataset=datasets.dataset,
-            root_dir=root_dir,
-            stage="train",
-            ssl_phase=ssl_phase,
-            use_transform=use_transform,
-            random_dates=random_dates,
-            random_crop=random_crop,
-        )
-        self.train_loader = DataLoader(
-            self.train_dataset,
-            batch_size=opt.batch_size,
-            num_workers=num_workers,
-            shuffle=True,
-            drop_last=True,
-        )
+        self.batch_size = {}
+        self.train_dataset, self.val_dataset, self.test_dataset = {}, {}, {}
+        for name_dataset, dataset in datasets.datasets.items():
+            root_dir = Path(datasets.root_dir) / dataset.rel_dir
+            dataset_class = partial(
+                dataset.dataset_class,
+                dataset=dataset,
+                root_dir=root_dir,
+                ssl_phase=ssl_phase,
+                use_transform=use_transform,
+                random_dates=random_dates,
+                random_crop=random_crop,
+            )
+            self.train_dataset[name_dataset] = dataset_class(stage="train")
+            self.val_dataset[name_dataset] = dataset_class(stage="val")
+            self.test_dataset[name_dataset] = dataset_class(stage="test")
 
-        self.val_dataset = datasets.dataset_class(
-            dataset=datasets.dataset,
-            root_dir=root_dir,
-            stage="val",
-            ssl_phase=ssl_phase,
-            use_transform=use_transform,
-            random_dates=random_dates,
-            random_crop=random_crop,
-        )
-        self.val_loader = DataLoader(
-            self.val_dataset,
-            batch_size=opt.batch_size,
-            num_workers=num_workers,
-            shuffle=True,
-            drop_last=True,
-        )
+            self.batch_size[name_dataset] = (
+                opt.batch_size
+                * datasets.sample[name_dataset]
+                / sum(datasets.sample.values())
+            )
+            self.batch_size[name_dataset] = max(round(self.batch_size[name_dataset]), 1)
 
-        self.test_dataset = datasets.dataset_class(
-            dataset=datasets.dataset,
-            root_dir=root_dir,
-            stage="test",
-            ssl_phase=ssl_phase,
-            use_transform=use_transform,
-            random_dates=random_dates,
-            random_crop=random_crop,
-        )
-        self.test_loader = DataLoader(
-            self.test_dataset,
-            batch_size=opt.batch_size,
-            num_workers=num_workers,
-            shuffle=True,
-            drop_last=True,
-        )
+    def is_distributed(self) -> bool:
+        return torch.distributed.is_available() and torch.distributed.is_initialized()
 
     def train_dataloader(self) -> DataLoader:
         """Return train data loader."""
-        return self.train_loader
+        train_loader = {}
+        for name_dataset in self.train_dataset:
+            sampler = (
+                DistributedSampler(
+                    self.train_dataset[name_dataset],
+                    shuffle=True,
+                    drop_last=True,
+                )
+                if self.is_distributed()
+                else None
+            )
+
+            train_loader[name_dataset] = DataLoader(
+                self.train_dataset[name_dataset],
+                sampler=sampler,
+                batch_size=self.batch_size[name_dataset],
+                num_workers=self.num_workers,
+                shuffle=sampler is None,
+                drop_last=False,
+            )
+        return CustomCombinedLoader(train_loader, "min_size")
 
     def val_dataloader(self) -> DataLoader:
         """Return val data loader."""
-        return self.val_loader
+        val_loader = {}
+        for name_dataset in self.val_dataset:
+            sampler = (
+                DistributedSampler(
+                    self.val_dataset[name_dataset],
+                    shuffle=False,
+                    drop_last=True,
+                )
+                if self.is_distributed()
+                else None
+            )
+
+            val_loader[name_dataset] = DataLoader(
+                self.val_dataset[name_dataset],
+                sampler=sampler,
+                batch_size=self.batch_size[name_dataset],
+                num_workers=self.num_workers,
+                shuffle=False,
+                drop_last=False,
+            )
+        return CustomCombinedLoader(val_loader, "max_size")
 
     def test_dataloader(self) -> DataLoader:
         """Return test data loader."""
-        return self.test_loader
+        test_loader = {}
+        for name_dataset in self.test_dataset:
+            sampler = (
+                DistributedSampler(
+                    self.test_dataset[name_dataset],
+                    shuffle=False,
+                    drop_last=True,
+                )
+                if self.is_distributed()
+                else None
+            )
+
+            test_loader[name_dataset] = DataLoader(
+                self.test_dataset[name_dataset],
+                sampler=sampler,
+                batch_size=self.batch_size[name_dataset],
+                num_workers=self.num_workers,
+                shuffle=False,
+                drop_last=False,
+            )
+        return CustomCombinedLoader(test_loader, "max_size")
+
+
+class CustomCombinedLoader(CombinedLoader):
+    """Custom combined loader with epoch setting."""
+
+    def __next__(self) -> dict[str, dict[str, Tensor]]:
+        """Get next batch."""
+        batch, _, _ = super().__next__()
+        return batch
+
+    def set_epoch(self, epoch: int) -> None:
+        for sampler in self.sampler.values():
+            sampler.set_epoch(epoch)
+        for loader in self.iterables.values():
+            loader.dataset.set_epoch(epoch)

@@ -25,11 +25,14 @@ class GenericDataset(Dataset, ABC):
         random_dates: bool = False,
         random_crop: bool = False,
     ) -> None:
-        self.rng = np.random.default_rng(seed=42)
         self.use_transform = use_transform
         self.dataset = dataset
         self.random_dates = random_dates and stage == "train"
         self.random_crop = random_crop and stage == "train"
+
+        self.base_seed = 42
+        self.epoch = 0
+        self.rng = np.random.default_rng(self.base_seed)
 
     @staticmethod
     def unflatten(x: np.ndarray, axis: int, reshape_axis: tuple) -> np.ndarray:
@@ -39,13 +42,18 @@ class GenericDataset(Dataset, ABC):
         shape = (*x.shape[:axis], *reshape_axis, *x.shape[axis + 1 :])
         return x.reshape(shape)
 
-    def sample_gcd(
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = epoch
+
+    def set_gcd_rng(
         self,
         idx: int,
         base_length: int,
         repeats: int,
     ) -> tuple[int, np.ndarray]:
-        """Sample crop part in image based on index of repetition."""
+        """Set rng and sample crop part based on index."""
+        self.rng = np.random.default_rng(self.base_seed + 10**6 * self.epoch + idx)
+
         if not self.random_crop:
             idx_repeat = idx // base_length
             idx_repeat = (idx_repeat // repeats, idx_repeat % repeats)

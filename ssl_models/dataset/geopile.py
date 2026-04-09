@@ -63,8 +63,17 @@ class GeoPileDataset(GenericDataset):
             for name_target, col_target in zip(name_targets, col_targets)
         }
 
+        self.base_length = len(self.file_name)
+        self.repeats = 1
+
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
+        idx, _ = self.set_gcd_rng(
+            idx,
+            base_length=self.base_length,
+            repeats=self.repeats,
+        )
+
         meta = {}
         meta["rgb_path"] = self.root_dir / self.file_name[idx]
         meta["rgb_dates"] = strs_datetimes(["2019-07-01"])
@@ -81,4 +90,4 @@ class GeoPileDataset(GenericDataset):
 
     def __len__(self) -> int:
         """Return length of dataset."""
-        return len(self.file_name)
+        return self.base_length
