@@ -6,6 +6,7 @@ from hydra_zen import MISSING, builds, store
 
 from ssl_models.conf.dataset.bdfv2 import BDFV2Config
 from ssl_models.conf.dataset.circa import CircaConfig
+from ssl_models.conf.dataset.cosia_histo import COSIAHistoConfig
 from ssl_models.conf.dataset.flair import FLAIRConfig
 from ssl_models.conf.dataset.geopile import GeoPileConfig
 from ssl_models.conf.dataset.hi_ucd import HiUCDConfig
@@ -33,6 +34,7 @@ class DatasetsConfig:
         hi_ucd: HiUCDConfig = HiUCDConfig(),
         circa: CircaConfig = CircaConfig(),
         bdfv2: BDFV2Config = BDFV2Config(),
+        cosia_histo: COSIAHistoConfig = COSIAHistoConfig(),
     ) -> None:
         """Assign args to config attributes."""
         self.__dict__ = {
@@ -79,6 +81,7 @@ dataset_build = builds(
     hi_ucd=HiUCDConfig(),
     circa=CircaConfig(),
     bdfv2=BDFV2Config(),
+    cosia_histo=COSIAHistoConfig(),
 )
 
 dataset_store = store(group="datasets")
