@@ -7,6 +7,7 @@ import torch
 
 from ssl_models.baselines.croma import CROMABaseline
 from ssl_models.baselines.dinov2 import Dinov2Baseline
+from ssl_models.baselines.dinov3 import Dinov3Baseline
 from ssl_models.baselines.dofa import DOFABaseline
 from ssl_models.baselines.prithvi import PrithviBaseline
 from ssl_models.baselines.satmae import SatMAEBaseline
@@ -24,7 +25,15 @@ class BaselineModule(BaseModule):
         self,
         # shared args
         datasets: DatasetsConfig,
-        model: Literal["dinov2", "dofa", "croma", "prithvi", "satmae", "terramind"],
+        model: Literal[
+            "dinov2",
+            "dinov3",
+            "dofa",
+            "croma",
+            "prithvi",
+            "satmae",
+            "terramind",
+        ],
         fusion_mode: Literal["shared", "monotemp", "mod", "late-croma", "inter-croma"],
         model_size: Literal["small", "base", "large"],
         type_head: Literal["linear", "attentive"] = "attentive",
@@ -51,7 +60,7 @@ class BaselineModule(BaseModule):
             "keep_norm": keep_norm,
         }
         match model:
-            case "dinov2" | "dofa":
+            case "dinov2" | "dinov3" | "dofa":
                 if fusion_mode not in ("shared", "monotemp"):
                     msg = f"Fusion mode {fusion_mode} not supported with {model}."
                     raise ValueError(msg)
@@ -75,6 +84,23 @@ class BaselineModule(BaseModule):
             case "dinov2":
                 model_args = {**model_args, "weight_source": weight_source}
                 self.model = Dinov2Baseline(**model_args)
+            case "dinov3":
+                # Dinov3 uses different arg names:
+                # backbone_type instead of backbone_size,
+                # checkpoint_path instead of pretrained_path,
+                # and no weight_source.
+                model_args = {
+                    k: v for k, v in model_args.items()
+                    if k not in ("backbone_size", "pretrained_path")
+                }
+                model_args = {
+                    **model_args,
+                    "backbone_type": kwargs.get("backbone_type"),
+                    "checkpoint_path": kwargs.get("checkpoint_path"),
+                    "repo_dir": kwargs.get("repo_dir", "dinov3"),
+                    "hub_model": kwargs.get("hub_model"),
+                }
+                self.model = Dinov3Baseline(**model_args)
             case "dofa" | "croma" | "satmae":
                 model_dict = {
                     "dofa": DOFABaseline,
@@ -96,7 +122,14 @@ class BaselineModule(BaseModule):
         else:
             self.ema_model = None
 
-        self.dataset = datasets.dataset
+        if hasattr(datasets, "dataset"):
+            self.dataset = datasets.dataset
+        elif hasattr(datasets, "datasets") and len(datasets.datasets) > 0:
+            self.dataset = next(iter(datasets.datasets.values()))
+        else:
+            msg = "Invalid datasets config: expected 'dataset' or non-empty 'datasets'."
+            raise ValueError(msg)
+
         self.tb_logger = None
         self.save_hyperparameters(ignore=["datasets"])
 
@@ -104,7 +137,7 @@ class BaselineModule(BaseModule):
         """Configure optimizer."""
         total_steps = self.trainer.estimated_stepping_batches
         total_batch_size = (
-            self.trainer.train_dataloader.batch_size
+            self.trainer.batch_size
             * self.trainer.accumulate_grad_batches
             * self.trainer.num_nodes
             * self.trainer.num_devices
@@ -150,3 +183,4 @@ class BaselineModule(BaseModule):
                 "name": f"{self.trainer.ssl_phase}_AdamW_lr",
             },
         }
+

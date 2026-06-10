@@ -80,3 +80,77 @@ def test_cosia_histo_dataset_train_sample(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert sample["aerial"].shape == (1, 4, 512, 512)
     assert sample["cosia"].shape == (1, 1, 512, 512)
     assert sample["ref_date"].shape == (1, 3)
+
+
+def test_cosia_histo_remap_to_others(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    root_dir = tmp_path / "root"
+    root_dir.mkdir(parents=True, exist_ok=True)
+
+    modalities = gpd.GeoDataFrame(
+        {
+            "fid": [1],
+            "aerial_rgbi": ["aerial/patch_1.tif"],
+            "ground_truth": ["labels/label_1.tif"],
+        },
+    )
+    split = gpd.GeoDataFrame(
+        {
+            "fid": [1],
+            "split": ["train"],
+        },
+    )
+
+    def fake_read_file(path: Path, **kwargs):  # noqa: ARG001, ANN202
+        if "MODALITIES" in str(path):
+            return modalities
+        if "SPLIT" in str(path):
+            return split
+        raise AssertionError(f"Unexpected path: {path}")
+
+    monkeypatch.setattr(gpd, "read_file", fake_read_file)
+
+    def fake_preprocess_rasters(self, meta, start_gcd=None):  # noqa: ARG001, ANN202
+        return {
+            "aerial": np.zeros((1, 4, 4, 4), dtype=np.float32),
+            "cosia": np.array([[[[0, 1, 2, 3], [4, 5, 6, 18], [2, 18, 7, 8], [9, 10, 11, 12]]]], dtype=np.float32),
+            "aerial_dates": meta["aerial_dates"],
+            "cosia_dates": meta["cosia_dates"],
+        }
+
+    monkeypatch.setattr(COSIAHistoDataset, "preprocess_rasters", fake_preprocess_rasters)
+
+    dataset_cfg = COSIAHistoConfig(
+        rel_dir="",
+        modalities_gpkg="GLOBAL_ALL_MTD_MODALITIES",
+        split_gpkg="GLOBAL_ALL_MTD_SPLIT",
+        remap_to_others_after_class=2,
+    )
+
+    dataset = COSIAHistoDataset(
+        dataset=dataset_cfg,
+        root_dir=root_dir,
+        stage="train",
+        use_transform=False,
+        random_dates=False,
+        random_crop=False,
+        ssl_phase="probe",
+    )
+
+    sample = dataset[0]
+    assert dataset_cfg.cosia.num_classes == 3
+    assert dataset_cfg.cosia.class_names == ["Bâtiment", "Serre", "Autres"]
+
+    expected = np.array(
+        [
+            [
+                [
+                    [0, 1, 2, 2],
+                    [2, 2, 2, 2],
+                    [2, 2, 2, 2],
+                    [2, 2, 2, 2],
+                ],
+            ],
+        ],
+        dtype=np.float32,
+    )
+    assert np.array_equal(sample["cosia"], expected)

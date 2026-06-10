@@ -39,6 +39,7 @@ odeon = {git = "https://github.com/IGNF/odeon"}
 timm = "^1.0.19"
 terratorch = "1.0.1"
 dacite = "^1.9.2"
+termcolor = "^3.3.0"
 
 [[tool.poetry.source]]
 name = "pytorch"

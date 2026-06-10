@@ -38,6 +38,11 @@ class BaselineConfig:  # noqa: D101
     add_date_enc: bool = True
     use_ema: bool = True
     version: str = None
+    # dinov3-specific args
+    backbone_type: str = None
+    repo_dir: str = "dinov3"
+    hub_model: str = None
+    checkpoint_path: str = None
 
 
 model_store = store(group="model")

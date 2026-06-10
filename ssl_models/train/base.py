@@ -193,6 +193,17 @@ class BaseModule(LightningModule, ABC):
                 dim=0,
                 index=inds,
             )
+            # Convert logits to float32 for stability and clip targets to valid range
+            logits_selected = logits_selected.float()
+            invalid_targets = targets_selected >= target.num_classes
+            if invalid_targets.any():
+                print(
+                    f"WARNING: {name_target} has {invalid_targets.sum()} targets "
+                    f">= num_classes ({target.num_classes}). "
+                    f"Unique invalid values: {torch.unique(targets_selected[invalid_targets])}"
+                )
+                targets_selected = torch.clamp(targets_selected, 0, target.num_classes - 1)
+
             loss_pred += self.loss_pred[name_target](
                 logits_selected,
                 targets_selected,

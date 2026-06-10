@@ -138,7 +138,6 @@ def get_imagenat_dinov2_state_dict(
     # Charger le state_dict
     return torch.load(model_path, weights_only=True)
 
-
 def filter_dict(dictionnary: dict, head: str) -> dict:
     """Filter dictionnary by selecting keys beginning with head."""
     prefix = f"{head}."

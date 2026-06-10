@@ -111,6 +111,7 @@ class SSLTrainer(pl.Trainer):
                     monitor=f"{self.ssl_phase}_{self.monitor}",
                     patience=self.patience,
                     mode="max",
+                    strict=False,
                 ),
             )
         return callbacks

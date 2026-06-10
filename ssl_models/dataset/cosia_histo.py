@@ -33,8 +33,13 @@ class COSIAHistoDataset(GenericDataset):
             random_crop=random_crop,
         )
 
-        self.root_dir = root_dir
-        self.gpkg_dir = Path(dataset.gpkg_dir) if dataset.gpkg_dir else root_dir
+        self.root_dir = Path(root_dir)
+
+        if dataset.gpkg_dir:
+            self.gpkg_dir = self.root_dir / dataset.gpkg_dir
+        else:
+            self.gpkg_dir = self.root_dir
+
         modalities_path = self._resolve_gpkg_path(dataset.modalities_gpkg)
         split_path = self._resolve_gpkg_path(dataset.split_gpkg)
 
@@ -58,12 +63,32 @@ class COSIAHistoDataset(GenericDataset):
             how="inner",
         )
 
-        self.data = data.loc[data[dataset.split_col] == stage].reset_index(drop=True)
+        # Accept common validation aliases used in split files.
+        split_aliases = {
+            "train": "train",
+            "training": "train",
+            "val": "val",
+            "valid": "val",
+            "validation": "val",
+            "test": "test",
+            "testing": "test",
+        }
+        normalized_split = (
+            data[dataset.split_col]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .replace(split_aliases)
+        )
+        self.data = data.loc[normalized_split == stage].reset_index(drop=True)
         self.base_length = len(self.data)
         self.repeats = dataset.repeats
 
         self.aerial_path_col = dataset.aerial_path_col
         self.target_path_col = dataset.target_path_col
+        self.remap_to_others_after_class = dataset.remap_to_others_after_class
+        self.cosia_missing = dataset.cosia.missing_val
+        self.cosia_others_label = dataset.cosia.num_classes - 1
         self.default_dates = strs_datetimes(
             [dataset.default_date],
             fmt=dataset.default_date_fmt,
@@ -86,6 +111,13 @@ class COSIAHistoDataset(GenericDataset):
         }
 
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
+
+        if self.remap_to_others_after_class is not None and "cosia" in inputs:
+            cosia = inputs["cosia"]
+            valid_mask = cosia != self.cosia_missing
+            remap_mask = valid_mask & (cosia >= self.remap_to_others_after_class)
+            cosia[remap_mask] = self.cosia_others_label
+
         inputs["ref_date"] = meta["aerial_dates"]
         return self.transform_rasters(inputs)
 
@@ -101,7 +133,24 @@ class COSIAHistoDataset(GenericDataset):
 
     def _resolve_raster_path(self, path_value: str | Path) -> Path:
         path = Path(path_value)
-        return path if path.is_absolute() else self.root_dir / path
+
+        if path.is_absolute():
+            if not path.exists():
+                msg = f"Raster path {path} does not exist."
+                raise ValueError(msg)
+            return path
+        else:
+            resolved_path = self.root_dir / path
+            if not resolved_path.exists():
+                resolved_path = self.gpkg_dir / path
+                if not resolved_path.exists():
+                    msg = (
+                        f"Raster path {path} does not exist as absolute path, "
+                        f"nor relative to root_dir {self.root_dir}, "
+                        f"nor relative to gpkg_dir {self.gpkg_dir}."
+                    )
+                    raise ValueError(msg)
+            return resolved_path
 
     @staticmethod
     def _check_required_cols(
