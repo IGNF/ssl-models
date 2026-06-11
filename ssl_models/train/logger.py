@@ -237,14 +237,21 @@ class MetricsLogger(Callback):
 
         fig, ax = plt.subplots(figsize=figsize)
         sns.heatmap(cm_df, annot=True, fmt=fmt, ax=ax)
-        plt.xlabel("Predicted")
-        plt.ylabel("Target")
+        ax.set_xlabel("Predicted", labelpad=10)
+        ax.set_ylabel("Target", labelpad=10)
         if class_names is not None:
-            ax.set_xticklabels(ax.get_xticklabels(), rotation='vertical', ha="center")
-            ax.set_yticklabels(ax.get_yticklabels(), rotation='horizontal', va="center")
+            # Re-assign ticks/labels explicitly so rotation reliably applies.
+            ax.set_xticks(np.arange(len(cm_df.columns)) + 0.5)
+            ax.set_yticks(np.arange(len(cm_df.index)) + 0.5)
+            ax.set_xticklabels(cm_df.columns, rotation=90, ha="center")
+            ax.set_yticklabels(cm_df.index, rotation=0, va="center")
             ax.tick_params(axis="x", labelsize=8)
             ax.tick_params(axis="y", labelsize=8)
-        fig.tight_layout()
+            # Keep room for long class labels and axis titles in the exported image.
+            fig.subplots_adjust(left=0.22, bottom=0.22, right=0.98, top=0.98)
+        else:
+            fig.subplots_adjust(left=0.12, bottom=0.12, right=0.98, top=0.98)
+        fig.canvas.draw()
         rgba_buf = fig.canvas.buffer_rgba()
         w, h = fig.canvas.get_width_height()
         arr = (

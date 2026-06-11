@@ -64,15 +64,40 @@ def run_experiment(
         task.set_parameters_as_dict(config)
 
     if run.load_ckpt_path:
-        model = SSLModule.load_from_checkpoint(
-            run.load_ckpt_path,
-            map_location=lambda storage, _: storage,
-            strict=False,
-            datasets=datasets,
-            mask=mask,
-        )
+        if isinstance(model, BaselineConfig):
+            model = BaselineModule.load_from_checkpoint(
+                run.load_ckpt_path,
+                map_location=lambda storage, _: storage,
+                strict=False,
+                datasets=datasets,
+            )
+        else:
+            model = SSLModule.load_from_checkpoint(
+                run.load_ckpt_path,
+                map_location=lambda storage, _: storage,
+                strict=False,
+                datasets=datasets,
+                mask=mask,
+            )
     else:
         model = model_partial()
+
+    if run.test_only:
+        LOGGER.info(f"Test only on phase {run.test_phase}")
+        if run.test_phase == "pretrain":
+            opt_test = opt_pretrain
+        elif run.test_phase == "probe":
+            opt_test = opt_probe
+        else:
+            opt_test = opt_finetune
+
+        data_test = data_partial(ssl_phase=run.test_phase, opt=opt_test)
+        trainer_test = trainer_partial(
+            ssl_phase=run.test_phase,
+            opt=opt_test,
+        )
+        trainer_test.test(model=model, datamodule=data_test)
+        return
 
     if (
         opt_pretrain.epochs > 0
