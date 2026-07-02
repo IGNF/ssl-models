@@ -37,6 +37,7 @@ class RasterConfig:
     log_scale: bool = False
     rescale_elev: bool = False
     name_embed: str | None = None
+    class_names: list[str] | None = None
 
 
 @dataclass
@@ -55,6 +56,7 @@ class TargetConfig:
     type_target: str = MISSING
     num_classes: int = MISSING
     missing_val: int = -1
+    seg_loss: str = "cross_entropy"
 
     def __post_init__(self) -> None:
         """Check that attribute values are valid."""
@@ -62,6 +64,13 @@ class TargetConfig:
             msg = (
                 f"Invalid target {self.type_target}."
                 f"Expected one of {ALLOWED_TARGETS}"
+            )
+            raise ValueError(msg)
+        allowed_seg_losses = {"cross_entropy", "hungarian"}
+        if self.seg_loss not in allowed_seg_losses:
+            msg = (
+                f"Invalid seg_loss {self.seg_loss}. "
+                f"Expected one of {sorted(allowed_seg_losses)}"
             )
             raise ValueError(msg)
 
@@ -155,3 +164,4 @@ class DatasetConfig:
         }
 
         self.groups = self._set_groups()
+

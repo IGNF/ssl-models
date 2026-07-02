@@ -81,6 +81,7 @@ class COSIAHistoConfig(DatasetConfig):  # noqa: D101
                 "Autres",
             ],
             bands=1,
+            seg_loss="cross_entropy",
         ),
     )
 
@@ -116,3 +117,4 @@ class COSIAHistoConfig(DatasetConfig):  # noqa: D101
                 "aerial": 0.2,
             },
         )
+

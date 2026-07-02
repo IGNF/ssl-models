@@ -26,7 +26,8 @@ class RunConfig:  # noqa: D101
     clearml_project_name: str = "ssl"
     clearml_tags: list[str] = field(default_factory=lambda: ["multimodal", "hydra"])
     clearml_offline_mode: bool = False
-
+    test_only: bool = False
+    test_phase: str = "finetune"
 
 run_store = store(group="run")
 run_store(
