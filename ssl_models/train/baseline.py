@@ -99,6 +99,9 @@ class BaselineModule(BaseModule):
                     "checkpoint_path": kwargs.get("checkpoint_path"),
                     "repo_dir": kwargs.get("repo_dir", "dinov3"),
                     "hub_model": kwargs.get("hub_model"),
+                    "m2f_hidden_dim": kwargs.get("m2f_hidden_dim", 256),
+                    "interaction_indexes": kwargs.get("interaction_indexes"),
+                    "adapter_with_cp": kwargs.get("adapter_with_cp", False),
                 }
                 self.model = Dinov3Baseline(**model_args)
             case "dofa" | "croma" | "satmae":

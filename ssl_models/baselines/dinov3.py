@@ -4,10 +4,13 @@ Implementation inspired by `dinov2.py` but using `torch.hub.load` as weight
 source, with optional loading of a local `.pth` checkpoint.
 """
 
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal
 
 import torch
+import torch.nn.functional as F  # noqa: N812
 from torch import Tensor
 from torchvision.transforms import v2
 
@@ -28,7 +31,7 @@ class Dinov3Baseline(BaseModule):
         checkpoint_path: str | None = None,
         repo_dir: str = "dinov3",
         hub_model: str | None = None,
-        type_head: Literal["linear", "attentive"] = "attentive",
+        type_head: Literal["linear", "attentive", "m2f"] = "attentive",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fusion_mode: Literal["shared", "monotemp"] = "shared",
         add_date_enc: bool = True,
@@ -36,6 +39,9 @@ class Dinov3Baseline(BaseModule):
         date_dim: int = 8,
         keep_norm: bool = True,
         resize: bool = True,
+        m2f_hidden_dim: int = 256,
+        interaction_indexes: list[int] | None = None,
+        adapter_with_cp: bool = False,
         **kwargs,  # noqa: ANN003
     ) -> None:
         """Create the DinoV3 encoder model using torch.hub.
@@ -60,7 +66,7 @@ class Dinov3Baseline(BaseModule):
         hub_pretrained: bool
             Whether to load pretrained from hub.
         type_head: str
-            Segmentation head to use. Either "linear" or "attentive".
+            Segmentation head to use. Either "linear" or "attentive" or "m2f".
         interpolate: str
             Interpolation used in the image resizing before patchification.
         fusion_mode: str
@@ -73,6 +79,10 @@ class Dinov3Baseline(BaseModule):
             Dimension of the date embeddings.
         keep_norm: bool
             Whether to keep the final layernorm layer.
+        adapter_with_cp: bool
+            Whether to enable activation checkpointing inside DINOv3_Adapter.
+            Disabled by default because reentrant checkpointing can trigger
+            DDP "marked ready twice" errors when adapter blocks are trainable.
         kwargs:
             Arguments to pass to `BaseModule` constructor.
         """
@@ -88,6 +98,9 @@ class Dinov3Baseline(BaseModule):
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
         self.resize = resize
+        self.m2f_hidden_dim = m2f_hidden_dim
+        self.interaction_indexes = interaction_indexes
+        self.adapter_with_cp = adapter_with_cp
 
         self.patch_size = 16
 
@@ -140,6 +153,8 @@ class Dinov3Baseline(BaseModule):
 
         if freeze:
             self.freeze_backbone()
+        else:
+            self.unfreeze_backbone()
 
         self.rgb = {
             name_mod: self.len_bands[name_mod] <= RGB_BANDS
@@ -155,12 +170,188 @@ class Dinov3Baseline(BaseModule):
         self,
         backbone_type: Literal["web_base", "web_large", "sat_large"],
     ) -> None:
-        self.model = torch.hub.load(
-            self.repo_dir,
+        repo_path = self._resolve_repo_path()
+        self._resolved_repo_path = repo_path
+
+        if str(repo_path) not in sys.path:
+            sys.path.insert(0, str(repo_path))
+
+        # The compiled MultiScaleDeformableAttention C extension (.so) lives
+        # inside the ops sub-package and must be on sys.path to be importable.
+        ops_path = (
+            repo_path / "dinov3" / "eval" / "segmentation" / "models" / "utils" / "ops"
+        )
+        if str(ops_path) not in sys.path:
+            sys.path.insert(0, str(ops_path))
+            print("Added MultiScaleDeformableAttention ops path to sys.path:", ops_path)
+
+        if not any(ops_path.glob("MultiScaleDeformableAttention*.so")):
+            msg = (
+                "MultiScaleDeformableAttention extension not found in "
+                f"{ops_path}. Compile it before training Mask2Former."
+            )
+            raise RuntimeError(msg)
+
+        try:
+            import MultiScaleDeformableAttention  # noqa: PLC0415,F401
+            print("Successfully imported MultiScaleDeformableAttention.")
+        except Exception as exc:  # noqa: BLE001
+            msg = (
+                "Found MultiScaleDeformableAttention .so but failed to import it. "
+                 f"ops_path={ops_path}. Cause: {type(exc).__name__}: {exc}"
+            )
+            raise RuntimeError(msg) from exc
+
+        backbone = torch.hub.load(
+            str(repo_path),
             self._resolve_hub_model_name(backbone_type),
             source="local",
-            weights=self.checkpoint_path
+            weights=self.checkpoint_path,
         )
+        if self.type_head == "m2f":
+            self._build_m2f_decoder(backbone)
+        else:
+            self.model = backbone
+
+    def _resolve_repo_path(self) -> Path:
+        """Resolve DinoV3 local repo path in a way that is robust to DDP cwd."""
+        # Expected repo is the folder containing hubconf.py and the dinov3 package.
+        base_dir = Path(__file__).resolve().parents[2]
+        configured = Path(self.repo_dir).expanduser()
+
+        candidates = [
+            configured,
+            Path.cwd() / configured,
+            base_dir / configured,
+            base_dir.parent / "DinoV3" / "dinov3",
+        ]
+
+        seen: set[Path] = set()
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            if (resolved / "hubconf.py").exists() and (resolved / "dinov3").is_dir():
+                return resolved
+
+        msg = (
+            "Could not resolve DinoV3 repo path. "
+            f"repo_dir={self.repo_dir!r}. "
+            "Expected a folder containing hubconf.py and a dinov3/ package."
+        )
+        raise FileNotFoundError(msg)
+
+    def _resolve_interaction_indexes(self, backbone: torch.nn.Module) -> list[int]:
+        """Return block indices at which the adapter cross-attends with backbone."""
+        if self.interaction_indexes is not None:
+            return self.interaction_indexes
+        n_blocks = getattr(backbone, "n_blocks", 12)
+        if n_blocks == 24:  # ViT-L — indices from the paper
+            return [4, 11, 17, 23]
+        return [i * (n_blocks // 4) - 1 for i in range(1, 5)]
+
+    def _build_m2f_decoder(self, backbone: torch.nn.Module) -> None:
+        """Build DINOv3_Adapter + Mask2FormerHead from the local DINOv3 repo.
+
+        The backbone is frozen inside DINOv3_Adapter. The adapter (SPM,
+        interactions) and the Mask2FormerHead remain trainable.
+
+        Note: DINOv3_Adapter uses SyncBatchNorm; multi-GPU DDP is required.
+        For single-GPU use, convert norms manually before training.
+        """
+        from dinov3.eval.segmentation.models.backbone.dinov3_adapter import (  # noqa: PLC0415
+            DINOv3_Adapter,
+        )
+        from dinov3.eval.segmentation.models.heads.mask2former_head import (  # noqa: PLC0415
+            Mask2FormerHead,
+        )
+
+        interaction_indexes = self._resolve_interaction_indexes(backbone)
+        self.model = DINOv3_Adapter(
+            backbone,
+            interaction_indexes=interaction_indexes,
+            # Reentrant checkpointing in the adapter conflicts with DDP when
+            # interaction blocks are trainable.
+            with_cp=self.adapter_with_cp,
+        )
+
+        embed_dim = backbone.embed_dim
+        patch_size = backbone.patch_size
+
+        self.m2f_target_name = next(iter(self.dataset.targets))
+        num_classes = self.dataset.targets[self.m2f_target_name].num_classes
+
+        self.m2f_head = Mask2FormerHead(
+            input_shape={
+                "1": [embed_dim, patch_size * 4, patch_size * 4, 4],
+                "2": [embed_dim, patch_size * 2, patch_size * 2, 4],
+                "3": [embed_dim, patch_size, patch_size, 4],
+                "4": [embed_dim, patch_size // 2, patch_size // 2, 4],
+            },
+            hidden_dim=self.m2f_hidden_dim,
+            num_classes=num_classes,
+            ignore_value=255,
+        )
+
+    def _m2f_forward(
+        self,
+        batch: dict[str, Tensor],
+        group_batch: dict[str, Tensor],
+    ) -> tuple:
+        """Forward pass using DINOv3_Adapter + Mask2FormerHead.
+
+        The adapter produces 4-level pyramid features; Mask2Former returns
+        per-query class logits and masks that are fused into dense semantic
+        logits compatible with the existing cross-entropy training pipeline.
+
+        The no-object class (last class in pred_logits) is discarded before
+        the panoptic fusion. Dense predictions are returned as probabilities
+        in (B, 1, C, H, W); the existing F.cross_entropy loss is applied on
+        these values. For proper Mask2Former training, replace the loss with
+        the Hungarian-matching loss from the original implementation.
+        """
+        ref_input = self.dataset.ref_input or next(iter(self.dataset.inputs))
+        x = group_batch[ref_input]  # (B, C, H, W) after group op
+
+        # SpatialPriorModule.stem is Conv2d(3, ...) — slice to RGB if needed
+        if x.shape[1] > RGB_BANDS:
+            x = x[:, :RGB_BANDS]
+
+        h_in, w_in = x.shape[-2], x.shape[-1]
+
+        # Adapter forward: backbone frozen, adapter trainable
+        features = self.model(x)  # {"1": f1, "2": f2, "3": f3, "4": f4}
+
+        # Mask2Former forward
+        output = self.m2f_head(features)
+        pred_logits = output["pred_logits"]  # (B, Q, num_classes+1)
+        pred_masks_lowres = output["pred_masks"]  # (B, Q, H_small, W_small)
+
+        # Upsample masks to input spatial resolution
+        pred_masks = F.interpolate(
+            pred_masks_lowres,
+            size=(h_in, w_in),
+            mode=self.interpolate,
+            align_corners=False,
+        )
+
+        # Panoptic fusion → dense semantic probabilities (B, C, H, W)
+        mask_cls = pred_logits.softmax(-1)[..., :-1]  # (B, Q, C) — no-obj dropped
+        mask_pred = pred_masks.sigmoid()               # (B, Q, H, W)
+        semseg = torch.einsum("bqc,bqhw->bchw", mask_cls, mask_pred)
+
+        # Reshape to (B, 1, C, H, W) for pipeline compatibility.
+        # Raw M2F outputs are exposed under a dedicated key so an optional
+        # Hungarian criterion can be computed in the trainer.
+        return batch, None, None, None, {
+            self.m2f_target_name: semseg.unsqueeze(1),
+            f"{self.m2f_target_name}__m2f_raw": {
+                "pred_logits": pred_logits,
+                "pred_masks": pred_masks_lowres,
+                "aux_outputs": output.get("aux_outputs", []),
+            },
+        }
 
     def _resolve_hub_model_name(self, backbone_type: str) -> str:
         """Resolve hub model name from backbone type or explicit hub_model param."""
@@ -207,8 +398,30 @@ class Dinov3Baseline(BaseModule):
         ssl_phase: str
             SSL phase (probe, finetune). Only probing and finetuning are needed.
         """
-        for param in self.model.parameters():
-            param.requires_grad = False
+        if "backbone" in self.model.__dict__:
+            for param in self.model.backbone.parameters():
+                param.requires_grad = False
+        else:
+            for param in self.model.parameters():
+                param.requires_grad = False
+
+    def unfreeze_backbone(
+        self,
+        ssl_phase: Literal["probe", "finetune"] = "finetune",
+    ) -> None:
+        """Unfreeze the backbone's parameters.
+
+        Parameters
+        ----------
+        ssl_phase: str
+            SSL phase (probe, finetune). Only probing and finetuning are needed.
+        """
+        if "backbone" in self.model.__dict__:
+            for param in self.model.backbone.parameters():
+                param.requires_grad = True
+        else:
+            for param in self.model.parameters():
+                param.requires_grad = True
 
     def _make_transform(self, resize_size: int = 256):
         to_tensor = v2.ToImage()
@@ -258,6 +471,9 @@ class Dinov3Baseline(BaseModule):
             batch = self.resize_and_rescale(batch)
 
         group_batch = self.group(batch)
+
+        if self.type_head == "m2f":
+            return self._m2f_forward(batch, group_batch)
 
         x_enc, dates = {}, {}
         for name_mod in self.dataset.inputs:

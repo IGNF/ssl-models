@@ -30,7 +30,7 @@ class BaselineConfig:  # noqa: D101
     model: str = "dinov2"
     model_size: str = "small"
     type_head: str = "attentive"
-    interpolate: str = "nearest"
+    interpolate: str = "bilinear"
     freeze: bool = False
     weight_source: str = "imagenat"
     pretrained_path: str = None
@@ -43,8 +43,12 @@ class BaselineConfig:  # noqa: D101
     repo_dir: str = "dinov3"
     hub_model: str = None
     checkpoint_path: str = None
+    m2f_hidden_dim: int = 256
+    interaction_indexes: list = None
+    adapter_with_cp: bool = False
 
 
 model_store = store(group="model")
 model_store(ModelConfig, name="default_model")
 model_store(BaselineConfig, name="baseline_model")
+

@@ -40,6 +40,7 @@ timm = "^1.0.19"
 terratorch = "1.0.1"
 dacite = "^1.9.2"
 termcolor = "^3.3.0"
+scipy = "^1.14.1"
 
 [[tool.poetry.source]]
 name = "pytorch"

@@ -19,6 +19,7 @@ from ssl_models.layers.overlay import (
     onehot_pred_from_logits,
     onehot_target_from_batch,
 )
+from ssl_models.train.mask2former_loss import Mask2FormerHungarianCriterion
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
 RGB_BANDS = 3
@@ -33,6 +34,7 @@ class BaseModule(LightningModule, ABC):
 
         self.metrics = nn.ModuleDict()
         self.loss_pred = {}
+        self._hungarian_criteria: dict[str, Mask2FormerHungarianCriterion] = {}
 
         for name_dataset, dataset in datasets.datasets.items():
             self._init_dataset(name_dataset, dataset)
@@ -68,6 +70,13 @@ class BaseModule(LightningModule, ABC):
                         MultiLabelMetric,
                         num_labels=target.num_classes,
                     )
+
+            if target.type_target != "segment" and target.seg_loss != "cross_entropy":
+                msg = (
+                    f"Target '{name_target}' has seg_loss={target.seg_loss}, "
+                    "but seg_loss is only supported for type_target='segment'."
+                )
+                raise ValueError(msg)
             for stage in ("train", "val", "test"):
                 self.metrics[f"{name_target}_{stage}"] = metric_partial()
 
@@ -157,20 +166,16 @@ class BaseModule(LightningModule, ABC):
         for name_target, target in dataset.targets.items():
             logits_target = logits[name_target]
             targets = batch[name_target]
+            use_hungarian = (
+                target.type_target == "segment"
+                and target.seg_loss == "hungarian"
+            )
 
-            match target.type_target:
-                case "segment":
-                    logits_target = rearrange(logits_target, "b 1 c h w -> (b h w) c")
-                    targets = rearrange(targets, "b 1 1 h w -> (b h w)")
-                    targets = targets.long()
-                case "change_detect":
-                    logits_target = rearrange(logits_target, "b 1 1 h w -> (b h w)")
-                    targets = rearrange(targets, "b 1 1 h w -> (b h w)")
-                    targets = targets.float()
-                case "multilabel_classif":
-                    targets = targets.float()
-                case "classif":
-                    targets = targets.long()
+            logits_target, targets = self._prepare_logits_and_targets(
+                logits_target,
+                targets,
+                target.type_target,
+            )
 
             if targets.ndim > 1:
                 inds = (targets != target.missing_val).all(dim=1)
@@ -197,16 +202,26 @@ class BaseModule(LightningModule, ABC):
             logits_selected = logits_selected.float()
             invalid_targets = targets_selected >= target.num_classes
             if invalid_targets.any():
+                invalid_values = torch.unique(targets_selected[invalid_targets])
                 print(
                     f"WARNING: {name_target} has {invalid_targets.sum()} targets "
                     f">= num_classes ({target.num_classes}). "
-                    f"Unique invalid values: {torch.unique(targets_selected[invalid_targets])}"
+                    f"Unique invalid values: {invalid_values}"
                 )
-                targets_selected = torch.clamp(targets_selected, 0, target.num_classes - 1)
+                targets_selected = torch.clamp(
+                    targets_selected,
+                    0,
+                    target.num_classes - 1,
+                )
 
-            loss_pred += self.loss_pred[name_target](
-                logits_selected,
-                targets_selected,
+            loss_pred += self._compute_target_loss(
+                name_target=name_target,
+                target=target,
+                logits=logits,
+                logits_selected=logits_selected,
+                targets_selected=targets_selected,
+                batch_target=batch[name_target],
+                use_hungarian=use_hungarian,
             )
             self.metrics[f"{name_target}_{stage}"].update(
                 logits_selected,
@@ -217,6 +232,99 @@ class BaseModule(LightningModule, ABC):
 
         self.metrics[f"loss_pred_{name_dataset}_{stage}"].update(loss_pred)
         return loss_pred, weight
+
+    def _prepare_logits_and_targets(
+        self,
+        logits_target: Tensor,
+        targets: Tensor,
+        type_target: str,
+    ) -> tuple[Tensor, Tensor]:
+        """Normalize logits/targets shapes and dtypes for metric/loss usage."""
+        match type_target:
+            case "segment":
+                logits_target = rearrange(logits_target, "b 1 c h w -> (b h w) c")
+                targets = rearrange(targets, "b 1 1 h w -> (b h w)").long()
+            case "change_detect":
+                logits_target = rearrange(logits_target, "b 1 1 h w -> (b h w)")
+                targets = rearrange(targets, "b 1 1 h w -> (b h w)").float()
+            case "multilabel_classif":
+                targets = targets.float()
+            case "classif":
+                targets = targets.long()
+        return logits_target, targets
+
+    def _compute_target_loss(
+        self,
+        name_target: str,
+        target: DatasetConfig,
+        logits: dict[str, Tensor],
+        logits_selected: Tensor,
+        targets_selected: Tensor,
+        batch_target: Tensor,
+        use_hungarian: bool,
+    ) -> Tensor:
+        """Compute either default prediction loss or Hungarian loss."""
+        if use_hungarian:
+            raw_key = f"{name_target}__m2f_raw"
+            if raw_key not in logits:
+                msg = (
+                    f"seg_loss='hungarian' requested for target '{name_target}', "
+                    f"but '{raw_key}' is missing from model outputs."
+                )
+                raise KeyError(msg)
+
+            if name_target not in self._hungarian_criteria:
+                self._hungarian_criteria[name_target] = (
+                    Mask2FormerHungarianCriterion(
+                        num_classes=target.num_classes,
+                    )
+                )
+            criterion = self._hungarian_criteria[name_target]
+            raw_logits = logits[raw_key]["pred_logits"]
+            criterion = criterion.to(raw_logits.device)
+            self._hungarian_criteria[name_target] = criterion
+            m2f_targets = self._build_hungarian_targets(
+                batch_target=batch_target,
+                missing_val=target.missing_val,
+                num_classes=target.num_classes,
+            )
+            return criterion(logits[raw_key], m2f_targets)
+
+        return self.loss_pred[name_target](
+            logits_selected,
+            targets_selected,
+        )
+
+    @staticmethod
+    def _build_hungarian_targets(
+        batch_target: Tensor,
+        missing_val: int,
+        num_classes: int,
+    ) -> list[dict[str, Tensor]]:
+        """Build class/mask targets from semantic maps for Hungarian matching."""
+        semantic = batch_target[:, 0, 0].long()
+        target_list: list[dict[str, Tensor]] = []
+
+        for seg in semantic:
+            valid = (seg != missing_val) & (seg >= 0) & (seg < num_classes)
+            labels = torch.unique(seg[valid]).long()
+
+            if labels.numel() == 0:
+                empty_masks = torch.zeros(
+                    (0, seg.shape[-2], seg.shape[-1]),
+                    dtype=torch.float32,
+                    device=seg.device,
+                )
+                target_list.append({"labels": labels, "masks": empty_masks})
+                continue
+
+            masks = torch.stack(
+                [(seg == cls_idx) & valid for cls_idx in labels],
+                dim=0,
+            ).float()
+            target_list.append({"labels": labels, "masks": masks})
+
+        return target_list
 
     def probe_or_finetune_step(
         self,
