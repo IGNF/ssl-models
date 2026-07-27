@@ -55,6 +55,7 @@ class TargetConfig:
     type_target: str = MISSING
     num_classes: int = MISSING
     missing_val: int = -1
+    class_names: list[str] | None = None
 
     def __post_init__(self) -> None:
         """Check that attribute values are valid."""

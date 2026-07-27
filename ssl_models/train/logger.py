@@ -146,7 +146,68 @@ class MetricsLogger(Callback):
     """Log metrics."""
 
     @staticmethod
-    def cm2arr(cm: np.ndarray, normalized: bool = False) -> np.ndarray:
+    def class_metrics_from_cm(
+        cm: np.ndarray,
+        class_names: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """Compute per-class metrics from confusion matrix."""
+        cm = cm.astype(np.float64)
+        true_pos = np.diag(cm)
+        false_pos = cm.sum(axis=0) - true_pos
+        false_neg = cm.sum(axis=1) - true_pos
+        support = cm.sum(axis=1)
+        predicted = cm.sum(axis=0)
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            precision = np.divide(
+                true_pos,
+                true_pos + false_pos,
+                out=np.zeros_like(true_pos),
+                where=(true_pos + false_pos) != 0,
+            )
+            recall = np.divide(
+                true_pos,
+                true_pos + false_neg,
+                out=np.zeros_like(true_pos),
+                where=(true_pos + false_neg) != 0,
+            )
+            f1 = np.divide(
+                2 * precision * recall,
+                precision + recall,
+                out=np.zeros_like(true_pos),
+                where=(precision + recall) != 0,
+            )
+            iou = np.divide(
+                true_pos,
+                true_pos + false_pos + false_neg,
+                out=np.zeros_like(true_pos),
+                where=(true_pos + false_pos + false_neg) != 0,
+            )
+
+        if class_names is not None and len(class_names) == cm.shape[0]:
+            labels = class_names
+        else:
+            labels = [f"class_{idx}" for idx in range(cm.shape[0])]
+
+        return pd.DataFrame(
+            {
+                "class_id": np.arange(cm.shape[0]),
+                "class_name": labels,
+                "support": support.astype(np.int64),
+                "predicted": predicted.astype(np.int64),
+                "precision": precision,
+                "recall": recall,
+                "f1": f1,
+                "iou": iou,
+            },
+        )
+
+    @staticmethod
+    def cm2arr(
+        cm: np.ndarray,
+        normalized: bool = False,
+        class_names: list[str] | None = None,
+    ) -> np.ndarray:
         if cm.shape[0] <= 10:  # noqa: PLR2004
             figsize = (10, 7)
         elif cm.shape[0] > 10 and cm.shape[0] <= 16:  # noqa: PLR2004
@@ -158,21 +219,39 @@ class MetricsLogger(Callback):
 
         match normalized:
             case False:
-                cm_df = pd.DataFrame(cm)
+                cm_data = cm
                 fmt = ".0f"
             case True:
-                cm_df = pd.DataFrame(
-                    np.divide(
-                        cm.astype(np.float32),
-                        np.sum(cm, axis=1)[:, np.newaxis],
-                        out=np.zeros_like(cm.astype(np.float32)),
-                        where=(np.sum(cm, axis=1)[:, np.newaxis] != 0),
-                    ),
+                cm_data = np.divide(
+                    cm.astype(np.float32),
+                    np.sum(cm, axis=1)[:, np.newaxis],
+                    out=np.zeros_like(cm.astype(np.float32)),
+                    where=(np.sum(cm, axis=1)[:, np.newaxis] != 0),
                 )
                 fmt = ".3f"
 
-        fig, _ = plt.subplots(figsize=figsize)
-        sns.heatmap(cm_df, annot=True, fmt=fmt)
+        if class_names is not None and len(class_names) == cm.shape[0]:
+            cm_df = pd.DataFrame(cm_data, index=class_names, columns=class_names)
+        else:
+            cm_df = pd.DataFrame(cm_data)
+
+        fig, ax = plt.subplots(figsize=figsize)
+        sns.heatmap(cm_df, annot=True, fmt=fmt, ax=ax)
+        ax.set_xlabel("Predicted", labelpad=10)
+        ax.set_ylabel("Target", labelpad=10)
+        if class_names is not None:
+            # Re-assign ticks/labels explicitly so rotation reliably applies.
+            ax.set_xticks(np.arange(len(cm_df.columns)) + 0.5)
+            ax.set_yticks(np.arange(len(cm_df.index)) + 0.5)
+            ax.set_xticklabels(cm_df.columns, rotation=90, ha="center")
+            ax.set_yticklabels(cm_df.index, rotation=0, va="center")
+            ax.tick_params(axis="x", labelsize=8)
+            ax.tick_params(axis="y", labelsize=8)
+            # Keep room for long class labels and axis titles in the exported image.
+            fig.subplots_adjust(left=0.22, bottom=0.22, right=0.98, top=0.98)
+        else:
+            fig.subplots_adjust(left=0.12, bottom=0.12, right=0.98, top=0.98)
+        fig.canvas.draw()
         rgba_buf = fig.canvas.buffer_rgba()
         w, h = fig.canvas.get_width_height()
         arr = (
@@ -229,19 +308,38 @@ class MetricsLogger(Callback):
 
                 for name_target in dataset.targets:
                     metrics = pl_module.metrics[f"{name_target}_{stage}"].compute()
+                    class_names = dataset.targets[name_target].class_names
                     for name_metric, value in metrics.items():
                         if name_metric == "confusion_matrix":
                             cm = value.cpu().numpy()
+                            self.log_class_metrics(
+                                trainer=trainer,
+                                name=(
+                                    "class_metrics_"
+                                    f"{trainer.ssl_phase}_{name_dataset}_"
+                                    f"{name_target}_{stage}"
+                                ),
+                                cm=cm,
+                                class_names=class_names,
+                            )
                             self.log_confmat(
                                 trainer=trainer,
                                 name=f"confmat_{trainer.ssl_phase}_{name_target}_{stage}/confmat",
-                                arr=MetricsLogger.cm2arr(cm, normalized=False),
+                                arr=MetricsLogger.cm2arr(
+                                    cm,
+                                    normalized=False,
+                                    class_names=class_names,
+                                ),
                                 cm=cm,
                             )
                             self.log_confmat(
                                 trainer=trainer,
                                 name=f"confmat_{trainer.ssl_phase}_{name_target}_{stage}/confmat_norm",
-                                arr=MetricsLogger.cm2arr(cm, normalized=True),
+                                arr=MetricsLogger.cm2arr(
+                                    cm,
+                                    normalized=True,
+                                    class_names=class_names,
+                                ),
                             )
                         else:
                             self.log_metric(
@@ -309,7 +407,24 @@ class MetricsLogger(Callback):
     ) -> None:
         trainer.tb_logger.add_image(name, arr, trainer.current_epoch)
         if cm is not None:
-            np.save(f"{trainer.tb_logger.log_dir}/{name.split('/')[0]}.npy", cm)
+            prefix_name = name.split("/", maxsplit=1)[0]
+            np.save(f"{trainer.tb_logger.log_dir}/{prefix_name}.npy", cm)
+
+    @rank_zero_only
+    def log_class_metrics(
+        self,
+        trainer: Trainer,
+        name: str,
+        cm: np.ndarray,
+        class_names: list[str] | None = None,
+    ) -> None:
+        """Persist per-class metrics in CSV format."""
+        metrics_df = self.class_metrics_from_cm(cm=cm, class_names=class_names)
+        metrics_df.insert(0, "epoch", trainer.current_epoch)
+        metrics_df.to_csv(
+            f"{trainer.tb_logger.log_dir}/{name}.csv",
+            index=False,
+        )
 
     def log_metric(
         self,

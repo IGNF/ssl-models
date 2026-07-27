@@ -29,7 +29,6 @@ def strs_datetimes(date_strs: list[str], fmt: str = "%Y-%m-%d") -> np.ndarray:
     ]
     return dates_numpy(datetimes)
 
-
 def products_datetimes(products: list[str] | list[bytes], idx: int) -> np.ndarray:
     """Convert list of products to list of datetimes."""
     if isinstance(products[0], str):
@@ -87,7 +86,7 @@ def read_csv(
     val_pretrain: bool = False,
     test_pretrain: bool = False,
     **kwargs,  # noqa: ANN003
-) -> Path:
+) -> pd.DataFrame:
     """Read dataset csv."""
     csv_name = []
     if version:
@@ -113,6 +112,42 @@ def read_csv(
         ],
     )
 
+def read_json(
+    json_dir: Path,
+    stage: Literal["train", "val", "test"],
+    ssl_phase: Literal["pretrain", "probe", "finetune"],
+    version: str | None = None,
+    balance_pretrain: bool = False,
+    filter_percent: int | None = None,
+    fold: int | None = None,
+    val_pretrain: bool = False,
+    test_pretrain: bool = False,
+    **kwargs,  # noqa: ANN003
+) -> pd.DataFrame:
+    """Read dataset json."""
+    json_name = []
+    if version:
+        json_name += [version]
+    if balance_pretrain and ssl_phase == "pretrain":
+        json_name += ["balanced"]
+    if filter_percent:
+        json_name += [f"filtered_{filter_percent}"]
+    if fold:
+        json_name += [f"fold_{fold}"]
+
+    stages = [stage]
+    if stage == "train" and ssl_phase == "pretrain":
+        if val_pretrain:
+            stages.append("val")
+        if test_pretrain:
+            stages.append("test")
+
+    return pd.concat(
+        [
+            pd.read_json(json_dir / f"{'_'.join([stage, *json_name])}.json", **kwargs)
+            for stage in stages
+        ],
+    )
 
 def cloud_mask_correction(input_mask: np.ndarray, threshold: int = 50) -> np.ndarray:
     """Corrects cloud masks by identifying and removing inconsistent pixels based on temporal statistics."""  # noqa: E501
