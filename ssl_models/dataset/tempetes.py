@@ -74,6 +74,14 @@ class TempetesDataset(GenericDataset):
             self.label_ignore = ()
         self.label_missing = dataset.tempetes.missing_val
 
+        self.class_remap_lut = None
+        if dataset.class_remap is not None:
+            original_num_classes = dataset._original_num_classes
+            lut = np.arange(original_num_classes, dtype=np.int64)
+            for src, dst in dataset.class_remap.items():
+                lut[src] = dst
+            self.class_remap_lut = lut
+
     def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
         """Get dataset item."""
         idx, start_gcd = self.set_gcd_rng(
@@ -110,6 +118,11 @@ class TempetesDataset(GenericDataset):
         inputs["tempetes"][
             np.isin(inputs["tempetes"], self.label_ignore)
         ] = self.label_missing
+
+        if self.class_remap_lut is not None:
+            mask = inputs["tempetes"]
+            valid = mask != self.label_missing
+            mask[valid] = self.class_remap_lut[mask[valid].astype(np.int64)]
 
         inputs["ref_date"] = meta["tempetes_dates"]
 
