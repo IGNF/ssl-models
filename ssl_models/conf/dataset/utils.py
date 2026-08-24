@@ -37,6 +37,7 @@ class RasterConfig:
     log_scale: bool = False
     rescale_elev: bool = False
     name_embed: str | None = None
+    class_names: list[str] | None = None
 
 
 @dataclass
@@ -56,6 +57,7 @@ class TargetConfig:
     num_classes: int = MISSING
     missing_val: int = -1
     class_names: list[str] | None = None
+    seg_loss: str = "cross_entropy"
 
     def __post_init__(self) -> None:
         """Check that attribute values are valid."""
@@ -63,6 +65,13 @@ class TargetConfig:
             msg = (
                 f"Invalid target {self.type_target}."
                 f"Expected one of {ALLOWED_TARGETS}"
+            )
+            raise ValueError(msg)
+        allowed_seg_losses = {"cross_entropy", "hungarian"}
+        if self.seg_loss not in allowed_seg_losses:
+            msg = (
+                f"Invalid seg_loss {self.seg_loss}. "
+                f"Expected one of {sorted(allowed_seg_losses)}"
             )
             raise ValueError(msg)
 
@@ -108,8 +117,23 @@ class DatasetConfig:
             )
             raise ValueError(msg)
 
+        crop_gcd_int = round(crop_gcd)
+        if crop_gcd_int <= 0:
+            msg = (
+                f"Invalid crop_meters={self.crop_meters}: crop size in gcd pixels "
+                f"must be strictly positive (got {crop_gcd_int})."
+            )
+            raise ValueError(msg)
+        if crop_gcd_int > size_gcd:
+            msg = (
+                f"Invalid crop_meters={self.crop_meters}: crop window exceeds image "
+                f"extent (crop_gcd={crop_gcd_int}, size_gcd={size_gcd}). "
+                f"Set crop_meters <= total_meters ({self.total_meters})."
+            )
+            raise ValueError(msg)
+
         self.size_gcd = size_gcd
-        self.crop_gcd = round(crop_gcd)
+        self.crop_gcd = crop_gcd_int
 
     def _set_groups(self) -> list[tuple]:
         groups = []
@@ -156,3 +180,4 @@ class DatasetConfig:
         }
 
         self.groups = self._set_groups()
+

@@ -39,7 +39,7 @@ class SSLModule(BaseModule):
         inter_depth: int,
         model: Literal["mae", "mixmae"],
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
-        type_head: Literal["linear", "attentive"] = "attentive",
+        type_head: Literal["mean", "attentive", "modweight"] = "attentive",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         loss: Literal["l1", "l2", "l1_norm", "l2_norm", "l1_ls", "l2_ls"] = "l2_norm",
         condition: bool = False,

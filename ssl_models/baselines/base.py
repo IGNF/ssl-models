@@ -12,7 +12,7 @@ from torch.nn import Module, ModuleDict
 
 from ssl_models.conf.dataset.utils import RasterConfig
 from ssl_models.conf.datasets import DatasetsConfig
-from ssl_models.layers.head import ClassificationHead, PixelifyHead
+from ssl_models.layers.head import ClassificationHead, SegmentationHead, PixelifyHead
 from ssl_models.layers.utils import encode_dates, group_mods, ungroup_mods
 
 
@@ -25,8 +25,8 @@ class BaseModule(Module, ABC):
         fusion_mode: Literal["shared", "monotemp", "mod", "late-croma", "inter-croma"],
         patch_size: int,
         embed_dim: int,
-        type_head: Literal["linear", "attentive"] = "attentive",
-        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
+        type_head: Literal["linear", "attentive", "convdec", "m2f"] = "attentive",
+        interpolate: Literal["nearest", "bilinear", "bicubic"] = "bilinear",
         add_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
@@ -64,33 +64,44 @@ class BaseModule(Module, ABC):
         }
         # heads
         self.heads = ModuleDict()
-        for name_target, target in self.dataset.targets.items():
-            if isinstance(target, RasterConfig):
-                if self.dataset.ref_input is None:
-                    msg = f"Ref input must be provided for raster target {name_target}"
-                    raise ValueError(msg)
-                target_image_size = round(
-                    self.dataset.crop_meters / target.resolution_meters,
-                )
-                ref_grid_size = self.grid_size[self.dataset.ref_input]
-                if target_image_size % ref_grid_size:
-                    msg = (
-                        f"Target image size {target_image_size} "
-                        f"is not a multiple of ref input grid {ref_grid_size}"
+
+        if type_head != "m2f": #TEMPORAIRE
+            for name_target, target in self.dataset.targets.items():
+                if isinstance(target, RasterConfig):
+                    if self.dataset.ref_input is None:
+                        msg = f"Ref input must be provided for raster target {name_target}"
+                        raise ValueError(msg)
+                    target_image_size = round(
+                        self.dataset.crop_meters / target.resolution_meters,
                     )
-                    raise ValueError(msg)
-                self.heads[name_target] = PixelifyHead(
-                    type_head,
-                    embed_dim,
-                    target.num_classes,
-                    target_image_size // ref_grid_size,
-                )
-            else:
-                self.heads[name_target] = ClassificationHead(
-                    type_head,
-                    embed_dim,
-                    target.num_classes,
-                )
+                    ref_grid_size = self.grid_size[self.dataset.ref_input]
+                    if target_image_size % ref_grid_size:
+                        msg = (
+                            f"Target image size {target_image_size} "
+                            f"is not a multiple of ref input grid {ref_grid_size}"
+                        )
+                        raise ValueError(msg)
+                    if type_head == "convdec":
+                        self.heads[name_target] = SegmentationHead(
+                            "attentive",
+                            embed_dim,
+                            target.num_classes,
+                            grid_size=ref_grid_size,
+                            target_size=target_image_size,
+                        )
+                    else:
+                        self.heads[name_target] = PixelifyHead(
+                            type_head,
+                            embed_dim,
+                            target.num_classes,
+                            target_image_size // ref_grid_size,
+                        )
+                else:
+                    self.heads[name_target] = ClassificationHead(
+                        type_head,
+                        embed_dim,
+                        target.num_classes,
+                    )
 
         # flattening/unflattening of date dimensions
         self.group = partial(
@@ -215,3 +226,4 @@ class BaseModule(Module, ABC):
                     batch[name_mod][:, :, :1] - batch[name_mod][:, :, 1:]
                 )
         return batch
+

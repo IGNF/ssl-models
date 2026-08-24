@@ -14,7 +14,7 @@ from torch import Tensor, nn
 from ssl_models.conf.dataset.utils import DatasetConfig, RasterConfig
 from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.layers.embed import Patchify, Pixelify
-from ssl_models.layers.head import ClassificationHead, PixelifyHead
+from ssl_models.layers.head import ClassificationHead, SegmentationHead
 from ssl_models.layers.utils import (
     encode_dates,
     group_mods,
@@ -36,7 +36,7 @@ class BaseMIM(nn.Module, ABC):
         num_levels: Literal[1, 3, 4],
         embed_dim: int,
         decoder_dim: int,
-        type_head: Literal["linear", "attentive"] = "attentive",
+        type_head: Literal["mean", "attentive", "modweight"] = "attentive",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
@@ -86,7 +86,7 @@ class BaseMIM(nn.Module, ABC):
         model: Literal["mae", "mixmae"],
         embed_dim: int,
         decoder_dim: int,
-        type_head: Literal["linear", "attentive"] = "attentive",
+        type_head: Literal["mean", "attentive", "modweight"] = "attentive",
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
@@ -244,11 +244,23 @@ class BaseMIM(nn.Module, ABC):
                         f"is not a multiple of ref input grid {ref_grid_size}"
                     )
                     raise ValueError(msg)
-                self.heads[name_target] = PixelifyHead(
+                mod_sizes = None
+                mod_names = None
+                if type_head == "modweight":
+                    mod_sizes = [
+                        dataset.inputs[nm].num_dates
+                        * self.len_bands[name_dataset][nm]
+                        for nm in dataset.inputs
+                    ]
+                    mod_names = list(dataset.inputs.keys())
+                self.heads[name_target] = SegmentationHead(
                     type_head,
                     embed_dim * self.stride,
                     target.num_classes,
-                    target_image_size // ref_grid_size,
+                    grid_size=ref_grid_size,
+                    target_size=target_image_size,
+                    modality_sizes=mod_sizes,
+                    modality_names=mod_names,
                 )
             else:
                 self.heads[name_target] = ClassificationHead(

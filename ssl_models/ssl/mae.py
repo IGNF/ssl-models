@@ -35,7 +35,7 @@ class MAE(BaseMIM):
         decoder_heads: int,
         decoder_dim_head: int,
         decoder_mlp_ratio: float,
-        type_head: Literal["linear", "attentive"] = "attentive",
+        type_head: Literal["mean", "attentive", "modweight"] = "attentive",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,

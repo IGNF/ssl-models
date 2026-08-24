@@ -1,8 +1,10 @@
 """Trainer module."""
 
+import gc
 from typing import Literal
 
 import pytorch_lightning as pl
+import torch
 from pytorch_lightning import Callback, LightningDataModule, LightningModule
 from pytorch_lightning.callbacks import (
     EarlyStopping,
@@ -15,7 +17,12 @@ from pytorch_lightning.loggers.logger import Logger
 from ssl_models.conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
 from ssl_models.conf.run import RunConfig
 from ssl_models.hydra_utils import get_hydra_timestamp
-from ssl_models.train.logger import ImageLogger, MetricsLogger, TensorBoardLogger
+from ssl_models.train.logger import (
+    FeatureMapLogger,
+    ImageLogger,
+    MetricsLogger,
+    TensorBoardLogger,
+)
 
 
 class SSLTrainer(pl.Trainer):
@@ -87,6 +94,7 @@ class SSLTrainer(pl.Trainer):
         callbacks = []
         callbacks.append(TQDMProgressBar(refresh_rate=10))
         callbacks.append(ImageLogger())
+        callbacks.append(FeatureMapLogger())
         callbacks.append(MetricsLogger())
         callbacks.append(
             LearningRateMonitor(
@@ -125,4 +133,12 @@ class SSLTrainer(pl.Trainer):
 
         ckpt_path = self.checkpoint_callback.best_model_path
         if ckpt_path:
+            # Keep exact test protocol (best checkpoint) while reducing the peak
+            # memory footprint before loading ckpt for test.
+            if torch.cuda.is_available():
+                model.cpu()
+                if hasattr(model, "ema_model") and model.ema_model is not None:
+                    model.ema_model.cpu()
+                gc.collect()
+                torch.cuda.empty_cache()
             self.test(model=model, datamodule=datamodule, ckpt_path=ckpt_path)

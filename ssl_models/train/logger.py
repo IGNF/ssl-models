@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import torch
+from clearml import Logger as ClearMLLogger
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
@@ -78,8 +80,9 @@ class ImageLogger(Callback):
                 num_batches_per_epoch = len(trainer.val_dataloaders)
             case "test":
                 num_batches_per_epoch = len(trainer.test_dataloaders)
-        log_every_n_batches = round(
-            num_batches_per_epoch / trainer.logged_images_per_epoch,
+        log_every_n_batches = max(
+            1,
+            round(num_batches_per_epoch / trainer.logged_images_per_epoch),
         )
         if batch_idx % log_every_n_batches:
             return
@@ -142,8 +145,125 @@ class ImageLogger(Callback):
         )
 
 
+class FeatureMapLogger(Callback):
+    """Log PCA-projected encoder feature maps during test only."""
+
+    @staticmethod
+    def _to_numpy_chw(image: Tensor | np.ndarray) -> np.ndarray:
+        dim_chw, dim_bchw = 3, 4
+        if isinstance(image, Tensor):
+            arr = image.detach().cpu().numpy().astype(np.float32)
+        else:
+            arr = image.astype(np.float32)
+
+        if arr.ndim == dim_bchw:
+            # Keep the first sample when a batch dimension is present.
+            if arr.shape[0] < 1:
+                msg = (
+                    "Expected non-empty batch for BCHW/BHWC image, "
+                    f"got shape {arr.shape}"
+                )
+                raise ValueError(msg)
+            arr = arr[0]
+
+        if arr.ndim != dim_chw:
+            msg = f"Expected CHW/HWC image, got shape {arr.shape}"
+            raise ValueError(msg)
+
+        # Convert HWC to CHW when channel dim is last.
+        if arr.shape[0] != RGB_BANDS and arr.shape[-1] == RGB_BANDS:
+            arr = np.moveaxis(arr, -1, 0)
+
+        if arr.shape[0] < RGB_BANDS:
+            arr = np.repeat(arr[:1], RGB_BANDS, axis=0)
+        elif arr.shape[0] > RGB_BANDS:
+            arr = arr[:RGB_BANDS]
+
+        return np.clip(arr, 0.0, 1.0)
+
+    @staticmethod
+    def _report_to_clearml(
+        tag: str,
+        image_chw: np.ndarray,
+        iteration: int,
+    ) -> None:
+        clearml_logger = ClearMLLogger.current_logger()
+        if clearml_logger is None:
+            return
+
+        image_hwc = np.moveaxis((image_chw * 255.0).astype(np.uint8), 0, -1)
+        title, _, series = tag.partition("/")
+        clearml_logger.report_image(
+            title=title or "feature_maps_test",
+            series=series or "pca_rgb",
+            iteration=iteration,
+            image=image_hwc,
+        )
+
+    @rank_zero_only
+    def on_test_batch_end(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,  # noqa: ARG002
+        outputs: dict[str, Tensor],
+        batch: dict[str, Tensor],  # noqa: ARG002
+        batch_idx: int,
+        dataloader_idx: int = 0,  # noqa: ARG002
+    ) -> None:
+        """Log feature maps and original input images from model test outputs."""
+        feature_maps = outputs.get("feature_maps")
+        if not feature_maps:
+            return
+
+        num_batches_per_epoch = len(trainer.test_dataloaders)
+        log_every_n_batches = max(
+            1,
+            round(num_batches_per_epoch / trainer.logged_images_per_epoch),
+        )
+        if batch_idx % log_every_n_batches:
+            return
+
+        prefix_idx = batch_idx // log_every_n_batches
+        epoch = trainer.current_epoch
+
+        for feature_name, feature_map in feature_maps.items():
+            if feature_name.endswith("/_input"):
+                # Satellite images may have values outside [0, 1]:
+                # apply per-channel min-max normalisation before clipping.
+                arr = (
+                    feature_map.detach().cpu().numpy().astype(np.float32)
+                    if isinstance(feature_map, Tensor)
+                    else feature_map.astype(np.float32)
+                )
+                if arr.ndim == 4:  # noqa: PLR2004
+                    arr = arr[0]
+                if arr.shape[-1] == RGB_BANDS and arr.shape[0] != RGB_BANDS:
+                    arr = np.moveaxis(arr, -1, 0)
+                arr = (
+                    arr[:RGB_BANDS]
+                    if arr.shape[0] >= RGB_BANDS
+                    else np.repeat(arr[:1], RGB_BANDS, axis=0)
+                )
+                lo = arr.min(axis=(1, 2), keepdims=True)
+                hi = arr.max(axis=(1, 2), keepdims=True)
+                image_chw = np.where(hi > lo, (arr - lo) / (hi - lo + 1e-8), 0.0)
+            else:
+                image_chw = self._to_numpy_chw(feature_map)
+            tag = feature_name.replace("/", f"/{prefix_idx}/")
+            trainer.tb_logger.add_image(tag, image_chw, epoch)
+            self._report_to_clearml(tag=tag, image_chw=image_chw, iteration=epoch)
+
+
 class MetricsLogger(Callback):
     """Log metrics."""
+
+    @staticmethod
+    def _sanitize_metric_name(name: str) -> str:
+        """Convert a class label to a safe metric suffix."""
+        return "".join(
+            char.lower() if char.isalnum() else "_"
+            for char in name.strip()
+        ).strip("_")
 
     @staticmethod
     def class_metrics_from_cm(
@@ -312,6 +432,17 @@ class MetricsLogger(Callback):
                     for name_metric, value in metrics.items():
                         if name_metric == "confusion_matrix":
                             cm = value.cpu().numpy()
+                            class_metrics_df = self.class_metrics_from_cm(
+                                cm=cm,
+                                class_names=class_names,
+                            )
+                            self.log_per_class_iou(
+                                pl_module=pl_module,
+                                ssl_phase=trainer.ssl_phase,
+                                name_target=name_target,
+                                stage=stage,
+                                class_metrics_df=class_metrics_df,
+                            )
                             self.log_class_metrics(
                                 trainer=trainer,
                                 name=(
@@ -348,6 +479,29 @@ class MetricsLogger(Callback):
                                 value=value,
                             )
                     pl_module.metrics[f"{name_target}_{stage}"].reset()
+
+                # Log modality weights when head is ConvDecHead with modweight
+                if hasattr(pl_module, "model") and hasattr(pl_module.model, "heads"):
+                    for name_target in dataset.targets:
+                        if name_target not in pl_module.model.heads:
+                            continue
+                        head = pl_module.model.heads[name_target]
+                        weights = (
+                            head.get_modality_weights()
+                            if hasattr(head, "get_modality_weights")
+                            else None
+                        )
+                        if weights is None:
+                            continue
+                        for mod_name, w in weights.items():
+                            self.log_metric(
+                                pl_module=pl_module,
+                                name=(
+                                    f"{trainer.ssl_phase}_modality_weights"
+                                    f"/{name_target}/{mod_name}_{stage}"
+                                ),
+                                value=w,
+                            )
 
     def on_train_epoch_end(
         self,
@@ -425,6 +579,30 @@ class MetricsLogger(Callback):
             f"{trainer.tb_logger.log_dir}/{name}.csv",
             index=False,
         )
+
+    def log_per_class_iou(
+        self,
+        pl_module: LightningModule,
+        ssl_phase: str,
+        name_target: str,
+        stage: Literal["train", "val", "test"],
+        class_metrics_df: pd.DataFrame,
+    ) -> None:
+        """Log per-class IoU as scalar metrics for classes present in targets."""
+        for row in class_metrics_df.itertuples(index=False):
+            if int(row.support) == 0:
+                continue
+            class_tag = self._sanitize_metric_name(str(row.class_name))
+            class_suffix = (
+                f"{int(row.class_id)}_{class_tag}"
+                if class_tag
+                else f"{int(row.class_id)}"
+            )
+            self.log_metric(
+                pl_module=pl_module,
+                name=f"{ssl_phase}_{name_target}/iou_class_{class_suffix}_{stage}",
+                value=torch.tensor(float(row.iou), device=pl_module.device),
+            )
 
     def log_metric(
         self,

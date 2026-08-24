@@ -36,7 +36,7 @@ class MixMAE(BaseMIM):
         window_size: tuple,
         swin_version: Literal[1, 2],
         v2_attn: bool,
-        type_head: Literal["linear", "attentive"] = "linear",
+        type_head: Literal["mean", "attentive", "modweight"] = "mean",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
