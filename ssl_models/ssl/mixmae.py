@@ -27,7 +27,7 @@ class MixMAE(BaseMIM):
         self,
         datasets: DatasetsConfig,
         mask: MaskConfig,
-        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        fusion_mode: Literal["msgfm", "shared", "onlytemp", "monotemp", "mod", "group"],
         model: Literal["mixmae"],
         num_levels: Literal[3, 4],
         embed_dim: int,

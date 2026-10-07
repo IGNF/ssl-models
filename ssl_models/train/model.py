@@ -35,7 +35,7 @@ class SSLModule(BaseModule):
         # shared args
         datasets: DatasetsConfig,
         mask: MaskConfig,
-        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        fusion_mode: Literal["msgfm", "shared", "onlytemp", "monotemp", "mod", "group"],
         inter_depth: int,
         model: Literal["mae", "mixmae"],
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
@@ -289,7 +289,12 @@ class SSLModule(BaseModule):
             B, D = batch[name_mod].shape[:2]  # noqa: N806
             H, W = (  # noqa: N806
                 self.model.out_grid_size[name_dataset][name_mod],
-                self.model.out_grid_size[name_dataset][name_mod],
+                self.model.out_grid_size[n
+                        f"Target image size {target_image_size} "
+                        f"is not a multiple of ref input grid {ref_grid_size}"
+                    )
+                    raise ValueError(msg)
+                self.heads[name_target] = PixelifyHead(ame_dataset][name_mod],
             )
             P = batch[name_mod].shape[3] // H  # noqa: N806
 

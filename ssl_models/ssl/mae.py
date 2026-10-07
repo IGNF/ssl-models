@@ -21,7 +21,7 @@ class MAE(BaseMIM):
         self,
         datasets: DatasetsConfig,
         mask: MaskConfig,
-        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        fusion_mode: Literal["msgfm", "shared", "onlytemp", "monotemp", "mod", "group"],
         inter_depth: int,
         model: Literal["mae"],
         num_levels: Literal[1],
@@ -116,7 +116,7 @@ class MAE(BaseMIM):
         name_dataset: str,
         dataset: DatasetConfig,
         mask: MaskConfig,
-        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        fusion_mode: Literal["msgfm", "shared", "onlytemp", "monotemp", "mod", "group"],
     ) -> None:
         self.len_bands[name_dataset] = {
             name_mod: 1 if isinstance(mod.bands, int) else len(mod.bands)
@@ -135,10 +135,10 @@ class MAE(BaseMIM):
             num_dates_group[name_group] += num_dates
 
         match fusion_mode:
-            case "msgfm" | "shared" | "monotemp":
+            case "msgfm" | "shared" | "onlytemp" | "monotemp":
                 self.name_models += (
                     list(num_dates_mod.keys())
-                    if fusion_mode == "monotemp"
+                    if fusion_mode in ("onlytemp", "monotemp")
                     else ["shared"]
                 )
                 for name_mod in num_dates_mod:

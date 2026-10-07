@@ -31,7 +31,7 @@ class BaseMIM(nn.Module, ABC):
     def __init__(
         self,
         datasets: DatasetsConfig,
-        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        fusion_mode: Literal["msgfm", "shared", "onlytemp", "monotemp", "mod", "group"],
         model: Literal["mae", "mixmae"],
         num_levels: Literal[1, 3, 4],
         embed_dim: int,
@@ -82,7 +82,7 @@ class BaseMIM(nn.Module, ABC):
         self,
         name_dataset: str,
         dataset: DatasetConfig,
-        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
+        fusion_mode: Literal["msgfm", "shared", "onlytemp", "monotemp", "mod", "group"],
         model: Literal["mae", "mixmae"],
         embed_dim: int,
         decoder_dim: int,

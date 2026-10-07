@@ -48,6 +48,7 @@ def group_mods(
     fusion_mode: Literal[
         "msgfm",
         "shared",
+        "onlytemp",
         "monotemp",
         "mod",
         "group",
@@ -59,14 +60,23 @@ def group_mods(
     """Group modality sequences."""
     match fusion_mode:
         case "msgfm" | "shared" | "monotemp" | "late-croma" | "inter-croma":
+            permute = False
+            dim = 0
+            groups = None
+        case "onlytemp":
+            permute = True
             dim = 0
             groups = None
         case "mod":
+            permute = False
             dim = 1
             groups = None
         case "group":
+            permute = False
             dim = 1
 
+    if permute:
+        x = {name_mod: x_mod.transpose(1, 2) for name_mod, x_mod in x.items()}
     x = {name_mod: x_mod.flatten(dim, dim + 1) for name_mod, x_mod in x.items()}
 
     if groups is not None:
@@ -100,12 +110,19 @@ def ungroup_mods(
     """Ungroup modality sequences."""
     match fusion_mode:
         case "msgfm" | "shared" | "monotemp" | "late-croma" | "inter-croma":
+            permute = False
+            dim = 0
+            groups = None
+        case "onlytemp":
+            permute = True
             dim = 0
             groups = None
         case "mod":
+            permute = False
             dim = 1
             groups = None
         case "group":
+            permute = False
             dim = 1
 
     if groups is not None:
@@ -128,10 +145,14 @@ def ungroup_mods(
         x = dict(x_group)
 
     for name_mod in x:
+        unflatten_dim = grid_size[name_mod] ** 2 if permute else num_dates[name_mod]
         if dim == 0:
-            x[name_mod] = x[name_mod].unflatten(0, (-1, num_dates[name_mod]))
+            x[name_mod] = x[name_mod].unflatten(0, (-1, unflatten_dim))
         elif dim == 1:
-            x[name_mod] = x[name_mod].unflatten(1, (num_dates[name_mod], -1))
+            x[name_mod] = x[name_mod].unflatten(1, (unflatten_dim, -1))
+
+    if permute:
+        x = {name_mod: x_mod.transpose(1, 2) for name_mod, x_mod in x.items()}
 
     return x
 
