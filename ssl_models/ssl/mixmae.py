@@ -52,6 +52,11 @@ class MixMAE(BaseMIM):
         use_checkpoint: bool = False,
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
+        init_kwargs = {
+            name_arg: val_arg
+            for name_arg, val_arg in locals().items()
+            if name_arg not in ("self", "kwargs", "__class__", "datasets", "mask")
+        }
         super().__init__(
             datasets=datasets,
             fusion_mode=fusion_mode,
@@ -64,6 +69,7 @@ class MixMAE(BaseMIM):
             fac_abs_enc=fac_abs_enc,
             fac_date_enc=fac_date_enc,
         )
+        self.init_kwargs = init_kwargs  # used to export model config
         match fusion_mode:
             case "msgfm" | "shared" | "monotemp":
                 name_models = (

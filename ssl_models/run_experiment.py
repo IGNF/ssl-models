@@ -91,6 +91,10 @@ def run_experiment(
             ckpt_path=run.fit_ckpt_path,
         )
 
+    if run.export_weights:
+        LOGGER.info("Export model")
+        model.export()
+
     if (
         opt_probe.epochs > 0
         and (not run.load_ckpt_path or run.load_phase == "pretrain")

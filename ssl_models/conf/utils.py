@@ -3,6 +3,7 @@
 from dataclasses import asdict
 
 from dacite.core import from_dict
+from omegaconf import DictConfig, ListConfig, OmegaConf
 
 from ssl_models.conf.dataset.utils import DATASETS
 from ssl_models.conf.datasets import DatasetsConfig
@@ -47,3 +48,10 @@ def mask_from_dict(mask_dict: dict) -> MaskConfig:
 def mask_to_dict(mask: MaskConfig) -> dict:
     """Convert mask config to dict."""
     return asdict(mask)
+
+
+def json_default(obj: object) -> object:
+    """Serialize objects not handled by json, converting omegaconf containers."""
+    if isinstance(obj, (DictConfig, ListConfig)):
+        return OmegaConf.to_container(obj, resolve=True)
+    return str(obj)
