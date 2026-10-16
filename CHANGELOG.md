@@ -8,9 +8,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 <!-- insertion marker -->
 ## Unreleased
 
-<small>[Compare with latest](https://github.com/IGNF/ssl-models/compare/v1.2.0...HEAD)</small>
+<small>[Compare with latest](https://github.com/IGNF/ssl-models/compare/v1.3.0...HEAD)</small>
 
 <!-- insertion marker -->
+## [v1.3.0](https://github.com/IGNF/ssl-models/releases/tag/v1.3.0) - 2025-12-04
+
+<small>[Compare with v1.2.0](https://github.com/IGNF/ssl-models/compare/v1.2.0...v1.3.0)</small>
+
 ## [v1.2.0](https://github.com/IGNF/ssl-models/releases/tag/v1.2.0) - 2025-11-05
 
 <small>[Compare with v1.0.0](https://github.com/IGNF/ssl-models/compare/v1.0.0...v1.2.0)</small>
