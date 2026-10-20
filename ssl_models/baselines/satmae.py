@@ -213,11 +213,13 @@ class SatMAEBaseline(BaseModule):
     def forward(
         self,
         batch: dict[str, Tensor],
+        name_dataset: str,  # noqa: ARG002
         ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
     ) -> tuple[
         dict[str, Tensor] | None,
         None,
         None,
+        dict[str, Tensor] | None,
         dict[str, Tensor] | None,
     ]:
         """SatMAE forward pass.
@@ -226,6 +228,8 @@ class SatMAEBaseline(BaseModule):
         ----------
         batch: dict
             Dictionary containing the data.
+        name_dataset: str
+            Dataset name (unused, kept for compatibility with MIM modules).
         ssl_phase: str
             SSL phase (pretrain, probe, finetune). Only probing and finetuning
             are needed for baselines.
@@ -246,7 +250,7 @@ class SatMAEBaseline(BaseModule):
         x_enc["s2"] = output_satmae
 
         logits = self.compute_logits(x_enc)
-        return batch, None, None, logits
+        return batch, None, None, x_enc, logits
 
 
 class MaskedAutoencoderViT(nn.Module):
