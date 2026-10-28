@@ -7,10 +7,12 @@ from ssl_models.conf.dataset.utils import (
     InputRasterConfig,
     PatchSizeConfig,
     TargetRasterConfig,
+    register_dataset,
 )
 from ssl_models.dataset.hi_ucd import HiUCDDataset
 
 
+@register_dataset("hi_ucd")
 @dataclass
 class HiUCDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "Hi-UCD"

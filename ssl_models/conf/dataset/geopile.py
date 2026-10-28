@@ -7,10 +7,12 @@ from ssl_models.conf.dataset.utils import (
     InputRasterConfig,
     PatchSizeConfig,
     TargetConfig,
+    register_dataset,
 )
 from ssl_models.dataset.geopile import GeoPileDataset
 
 
+@register_dataset("geopile")
 @dataclass
 class GeoPileConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "GeoPileV0"

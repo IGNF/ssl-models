@@ -7,10 +7,12 @@ from ssl_models.conf.dataset.utils import (
     InputRasterConfig,
     PatchSizeConfig,
     TargetRasterConfig,
+    register_dataset,
 )
 from ssl_models.dataset.flair import FLAIRDataset
 
 
+@register_dataset("flair")
 @dataclass
 class FLAIRConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "FLAIR-HUB"

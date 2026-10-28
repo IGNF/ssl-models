@@ -7,10 +7,12 @@ from ssl_models.conf.dataset.utils import (
     InputRasterConfig,
     PatchSizeConfig,
     TargetConfig,
+    register_dataset,
 )
 from ssl_models.dataset.treesatai_ts import TreeSatAITSDataset
 
 
+@register_dataset("treesatai_ts")
 @dataclass
 class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "TreeSatAI-TS"

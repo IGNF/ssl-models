@@ -7,10 +7,12 @@ from ssl_models.conf.dataset.utils import (
     InputRasterConfig,
     PatchSizeConfig,
     TargetRasterConfig,
+    register_dataset,
 )
 from ssl_models.dataset.pastis_hd import PASTISHDDataset
 
 
+@register_dataset("pastis_hd")
 @dataclass
 class PASTISHDConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "PASTIS-HD"

@@ -1,62 +1,41 @@
 """Utils to convert between configs and dicts."""
 
-import inspect
-import types
 from dataclasses import asdict
-from typing import Union, get_origin
 
 from dacite.core import from_dict
 
-from ssl_models.conf.dataset.utils import DatasetConfig
+from ssl_models.conf.dataset.utils import DATASETS
 from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.conf.mask import MaskConfig
 
-DATASETS_TYPES = {
-    name_arg: val_arg.annotation
-    for name_arg, val_arg in inspect.signature(
-        DatasetsConfig.__init__,
-    ).parameters.items()
-    if val_arg.annotation != inspect._empty  # noqa: SLF001
-}
+DATASETS_GLOBAL_ARGS = ("root_dir", "name_datasets", "sample_datasets")
 
 
 def datasets_from_dict(datasets_dict: dict) -> DatasetsConfig:
     """Convert dict to datasets config."""
-    kwargs = {}
-    for name_arg, type_arg in DATASETS_TYPES.items():
-        if name_arg not in datasets_dict:
-            kwargs[name_arg] = type_arg()
-            continue
-
-        if get_origin(type_arg) not in (Union, types.UnionType) and issubclass(
-            type_arg,
-            DatasetConfig,
-        ):
-            kwargs[name_arg] = from_dict(
-                data_class=type_arg,
-                data=datasets_dict[name_arg],
+    kwargs = {
+        name_arg: datasets_dict[name_arg]
+        for name_arg in DATASETS_GLOBAL_ARGS
+        if name_arg in datasets_dict
+    }
+    for name_dataset, type_dataset in DATASETS.items():
+        if name_dataset in datasets_dict:
+            kwargs[name_dataset] = from_dict(
+                data_class=type_dataset,
+                data=datasets_dict[name_dataset],
             )
-        else:
-            kwargs[name_arg] = datasets_dict[name_arg]
 
     return DatasetsConfig(**kwargs)
 
 
 def datasets_to_dict(datasets: DatasetsConfig) -> dict:
     """Convert datasets config to dict."""
-    datasets_dict = {}
-    for name_arg, type_arg in DATASETS_TYPES.items():
-        if name_arg not in datasets.__dict__:
-            continue
-
-        attr = getattr(datasets, name_arg)
-        if get_origin(type_arg) not in (Union, types.UnionType) and issubclass(
-            type_arg,
-            DatasetConfig,
-        ):
-            datasets_dict[name_arg] = asdict(attr)
-        else:
-            datasets_dict[name_arg] = attr
+    datasets_dict = {
+        name_arg: getattr(datasets, name_arg) for name_arg in DATASETS_GLOBAL_ARGS
+    }
+    for name_dataset in DATASETS:
+        if name_dataset in datasets.__dict__:
+            datasets_dict[name_dataset] = asdict(getattr(datasets, name_dataset))
     return datasets_dict
 
 
