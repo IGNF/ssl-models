@@ -95,14 +95,8 @@ class FLAIRDataset(GenericDataset):
         self.lpis_ignore = (0,)
         self.lpis_missing = dataset.lpis.missing_val
 
-    def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
-        """Get dataset item."""
-        idx, start_gcd = self.set_gcd_rng(
-            idx,
-            base_length=self.base_length,
-            repeats=self.repeats,
-        )
-
+    def build_meta(self, idx: int) -> dict:
+        """Return paths and dates of each modality."""
         patch_id = self.patch_ids[idx]
         domain, area, pos = patch_id.split("_")
         zone_id = f"{domain}_{area}"
@@ -133,8 +127,15 @@ class FLAIRDataset(GenericDataset):
         meta["lpis_dates"] = meta["aerial_dates"]
         meta["cosia_dates"] = meta["aerial_dates"]
 
-        inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
+        return meta
 
+    def postprocess(
+        self,
+        inputs: dict[str, np.ndarray],
+        meta: dict,
+        idx: int,  # noqa: ARG002
+    ) -> dict[str, np.ndarray]:
+        """Mask ignored classes and set reference date."""
         for name_mod, labels_ignore, label_missing in zip(
             ["cosia", "lpis"],
             [self.cosia_ignore, self.lpis_ignore],
@@ -146,8 +147,4 @@ class FLAIRDataset(GenericDataset):
 
         inputs["ref_date"] = meta["aerial_dates"]
 
-        return self.transform_rasters(inputs)
-
-    def __len__(self) -> int:
-        """Return length of dataset."""
-        return self.base_length * self.repeats**2
+        return inputs

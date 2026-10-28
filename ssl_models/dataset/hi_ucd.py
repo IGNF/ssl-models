@@ -44,14 +44,8 @@ class HiUCDDataset(GenericDataset):
         self.base_length = len(self.targets)
         self.repeats = dataset.repeats
 
-    def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
-        """Get dataset item."""
-        idx, start_gcd = self.set_gcd_rng(
-            idx,
-            base_length=self.base_length,
-            repeats=self.repeats,
-        )
-
+    def build_meta(self, idx: int) -> dict:
+        """Return paths and dates of each modality."""
         meta = {}
 
         meta["image_1_path"] = self.root_dir / self.image_1[idx]
@@ -69,15 +63,19 @@ class HiUCDDataset(GenericDataset):
         meta["hi_ucd_seg_2_path"] = self.root_dir / self.targets[idx]
         meta["hi_ucd_seg_2_dates"] = strs_datetimes(["2019-07-01"])
 
-        inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
+        return meta
+
+    def postprocess(
+        self,
+        inputs: dict[str, np.ndarray],
+        meta: dict,  # noqa: ARG002
+        idx: int,  # noqa: ARG002
+    ) -> dict[str, np.ndarray]:
+        """Shift labels to start at 0 and set reference date."""
         inputs["ref_date"] = strs_datetimes(["2019-07-01"])
 
         for target in ("hi_ucd_change_detect", "hi_ucd_seg_1", "hi_ucd_seg_2"):
             if target in inputs:
                 inputs[target] = inputs[target] - 1  # to start labels at 0
 
-        return self.transform_rasters(inputs)
-
-    def __len__(self) -> int:
-        """Return length of dataset."""
-        return self.base_length * self.repeats**2
+        return inputs

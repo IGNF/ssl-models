@@ -14,6 +14,8 @@ from ssl_models.dataset.utils import strs_datetimes
 class GeoPileDataset(GenericDataset):
     """GeoPile dataset."""
 
+    use_crop_grid = False
+
     def __init__(
         self,
         dataset: DatasetConfig,
@@ -66,28 +68,25 @@ class GeoPileDataset(GenericDataset):
         self.base_length = len(self.file_name)
         self.repeats = 1
 
-    def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
-        """Get dataset item."""
-        idx, _ = self.set_gcd_rng(
-            idx,
-            base_length=self.base_length,
-            repeats=self.repeats,
-        )
-
+    def build_meta(self, idx: int) -> dict:
+        """Return paths and dates of each modality."""
         meta = {}
         meta["rgb_path"] = self.root_dir / self.file_name[idx]
         meta["rgb_dates"] = strs_datetimes(["2019-07-01"])
 
-        inputs = self.preprocess_rasters(meta)
+        return meta
 
+    def postprocess(
+        self,
+        inputs: dict[str, np.ndarray],
+        meta: dict,  # noqa: ARG002
+        idx: int,
+    ) -> dict[str, np.ndarray]:
+        """Add scalar targets and reference date."""
         for name_target, target in self.targets.items():
             inputs[name_target] = np.array(target[idx])
             inputs[f"{name_target}_dates"] = strs_datetimes(["2019-07-01"])
 
         inputs["ref_date"] = strs_datetimes(["2019-07-01"])
 
-        return self.transform_rasters(inputs)
-
-    def __len__(self) -> int:
-        """Return length of dataset."""
-        return self.base_length
+        return inputs
