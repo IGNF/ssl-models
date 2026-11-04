@@ -49,14 +49,8 @@ class CircaDataset(GenericDataset):
         self.base_length = len(self.patch_ids)
         self.repeats = dataset.repeats
 
-    def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
-        """Get dataset item."""
-        idx, start_gcd = self.set_gcd_rng(
-            idx,
-            base_length=self.base_length,
-            repeats=self.repeats,
-        )
-
+    def build_meta(self, idx: int) -> dict:
+        """Return paths and dates of each modality."""
         patch_id = self.patch_ids[idx]
         zone_id, row_col_id = patch_id.split("/")[2].split("_", maxsplit=1)
         zone_id = zone_id.split("-")[-1]
@@ -118,8 +112,16 @@ class CircaDataset(GenericDataset):
         ref_date = self.rng.choice(meta["s1_asc_zoom_dates"])
         meta["ref_date"] = ref_date
 
-        inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
-        inputs["ref_date"] = np.expand_dims(ref_date, axis=0)
+        return meta
+
+    def postprocess(
+        self,
+        inputs: dict[str, np.ndarray],
+        meta: dict,
+        idx: int,  # noqa: ARG002
+    ) -> dict[str, np.ndarray]:
+        """Set reference date and correct cloud masks."""
+        inputs["ref_date"] = np.expand_dims(meta["ref_date"], axis=0)
 
         if "s2_cloud_mask_global" in inputs:
             inputs["s2_cloud_mask_global"] = cloud_mask_correction(
@@ -130,8 +132,4 @@ class CircaDataset(GenericDataset):
                 inputs["s2_cloud_mask_zoom"],
             )
 
-        return self.transform_rasters(inputs)
-
-    def __len__(self) -> int:
-        """Return length of dataset."""
-        return self.base_length * self.repeats**2
+        return inputs

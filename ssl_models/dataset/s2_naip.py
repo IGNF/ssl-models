@@ -45,14 +45,8 @@ class S2NAIPDataset(GenericDataset):
         self.base_length = len(self.image_ids)
         self.repeats = dataset.repeats
 
-    def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
-        """Get dataset item."""
-        idx, start_gcd = self.set_gcd_rng(
-            idx,
-            base_length=self.base_length,
-            repeats=self.repeats,
-        )
-
+    def build_meta(self, idx: int) -> dict:
+        """Return paths and dates of each modality."""
         image_id = self.image_ids[idx]
         ref_date = naip_datetimes(
             str(
@@ -98,13 +92,17 @@ class S2NAIPDataset(GenericDataset):
 
         meta["osm_seg_path"] = self.root_dir / "openstreetmap" / f"{image_id}.geojson"
         meta["osm_seg_dates"] = ref_date
+        meta["ref_date"] = ref_date
 
-        inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
+        return meta
 
-        inputs["ref_date"] = ref_date
+    def postprocess(
+        self,
+        inputs: dict[str, np.ndarray],
+        meta: dict,
+        idx: int,  # noqa: ARG002
+    ) -> dict[str, np.ndarray]:
+        """Set reference date."""
+        inputs["ref_date"] = meta["ref_date"]
 
-        return self.transform_rasters(inputs)
-
-    def __len__(self) -> int:
-        """Return length of dataset."""
-        return self.base_length * self.repeats**2
+        return inputs

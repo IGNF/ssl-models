@@ -32,9 +32,10 @@ class PASTISHDDataset(GenericDataset):
             random_dates=random_dates,
             random_crop=random_crop,
         )
+        csv_dir = Path(dataset.csv_dir) if dataset.csv_dir else root_dir
 
         csv_data = read_csv(
-            csv_dir=root_dir,
+            csv_dir=csv_dir,
             stage=stage,
             ssl_phase=ssl_phase,
             balance_pretrain=dataset.balance_pretrain,
@@ -66,14 +67,8 @@ class PASTISHDDataset(GenericDataset):
             for image_id in image_ids
         ]
 
-    def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
-        """Get dataset item."""
-        idx, start_gcd = self.set_gcd_rng(
-            idx,
-            base_length=self.base_length,
-            repeats=self.repeats,
-        )
-
+    def build_meta(self, idx: int) -> dict:
+        """Return paths and dates of each modality."""
         image_id = self.image_ids[idx]
         spot_path = (
             self.root_dir
@@ -99,12 +94,15 @@ class PASTISHDDataset(GenericDataset):
         )
         meta["pastis_seg_dates"] = spot_date
 
-        inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
+        return meta
 
-        inputs["ref_date"] = spot_date
+    def postprocess(
+        self,
+        inputs: dict[str, np.ndarray],
+        meta: dict,
+        idx: int,  # noqa: ARG002
+    ) -> dict[str, np.ndarray]:
+        """Set reference date."""
+        inputs["ref_date"] = meta["spot_dates"]
 
-        return self.transform_rasters(inputs)
-
-    def __len__(self) -> int:
-        """Return length of dataset."""
-        return self.base_length * self.repeats**2
+        return inputs

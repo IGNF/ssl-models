@@ -7,10 +7,12 @@ from ssl_models.conf.dataset.utils import (
     InputRasterConfig,
     PatchSizeConfig,
     TargetConfig,
+    register_dataset,
 )
 from ssl_models.dataset.bdfv2 import BDFV2Dataset
 
 
+@register_dataset("bdfv2")
 @dataclass
 class BDFV2Config(DatasetConfig):  # noqa: D101
     rel_dir: str = "BDFV2"

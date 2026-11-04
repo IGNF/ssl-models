@@ -14,6 +14,8 @@ from ssl_models.dataset.utils import dates_numpy, products_datetimes, read_csv
 class TreeSatAITSDataset(GenericDataset):
     """TreeSatAI-TS dataset."""
 
+    use_crop_grid = False
+
     def __init__(
         self,
         dataset: DatasetConfig,
@@ -64,18 +66,11 @@ class TreeSatAITSDataset(GenericDataset):
         self.base_length = len(self.aerial_names)
         self.repeats = 1
 
-    def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
-        """Get dataset item."""
-        idx, _ = self.set_gcd_rng(
-            idx,
-            base_length=self.base_length,
-            repeats=self.repeats,
-        )
-
+    def build_meta(self, idx: int) -> dict:
+        """Return paths and dates of each modality."""
         sen_path = self.root_dir / "sentinel-ts" / self.sen_names[idx]
         aerial_path = self.root_dir / "aerial" / self.aerial_names[idx]
         aerial_date = self.aerial_dates[idx]
-        target = self.targets[idx]
 
         meta = {}
         meta["aerial_path"] = aerial_path
@@ -101,7 +96,17 @@ class TreeSatAITSDataset(GenericDataset):
                 5,
             )
 
-        inputs = self.preprocess_rasters(meta)
+        return meta
+
+    def postprocess(
+        self,
+        inputs: dict[str, np.ndarray],
+        meta: dict,
+        idx: int,
+    ) -> dict[str, np.ndarray]:
+        """Add multi-label targets and reference date."""
+        target = self.targets[idx]
+        aerial_date = meta["aerial_dates"]
 
         inputs["treesat_mlc"] = (target > 0).astype(int)
         inputs["treesat_mlc_dates"] = aerial_date
@@ -109,8 +114,4 @@ class TreeSatAITSDataset(GenericDataset):
         inputs["treesat_mlc_thresh_dates"] = aerial_date
         inputs["ref_date"] = aerial_date
 
-        return self.transform_rasters(inputs)
-
-    def __len__(self) -> int:
-        """Return length of dataset."""
-        return self.base_length
+        return inputs

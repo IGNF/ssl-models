@@ -90,14 +90,8 @@ class BDFV2Dataset(GenericDataset):
         target = target[["patch_id", "cls_idx"]].set_index("patch_id")
         self.target = target.loc[self.patch_ids]["cls_idx"].tolist()
 
-    def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
-        """Get dataset item."""
-        idx, start_gcd = self.set_gcd_rng(
-            idx,
-            base_length=self.base_length,
-            repeats=self.repeats,
-        )
-
+    def build_meta(self, idx: int) -> dict:
+        """Return paths and dates of each modality."""
         patch_id = self.patch_ids[idx]
         domain, pos = patch_id.split("_")
         year = int(domain.split("-")[-1])
@@ -123,13 +117,16 @@ class BDFV2Dataset(GenericDataset):
             )
         meta["dem_dates"] = meta["aerial_dates"]
 
-        inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
+        return meta
 
+    def postprocess(
+        self,
+        inputs: dict[str, np.ndarray],
+        meta: dict,
+        idx: int,
+    ) -> dict[str, np.ndarray]:
+        """Add class target and reference date."""
         inputs["bdfv2"] = np.array(self.target[idx])
         inputs["ref_date"] = meta["aerial_dates"]
 
-        return self.transform_rasters(inputs)
-
-    def __len__(self) -> int:
-        """Return length of dataset."""
-        return self.base_length * self.repeats**2
+        return inputs

@@ -6,10 +6,12 @@ from ssl_models.conf.dataset.utils import (
     DatasetConfig,
     InputRasterConfig,
     PatchSizeConfig,
+    register_dataset,
 )
 from ssl_models.dataset.circa import CircaDataset
 
 
+@register_dataset("circa")
 @dataclass
 class CircaConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "Circa"

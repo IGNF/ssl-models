@@ -1,6 +1,6 @@
 """Generic dataset module."""
 
-from abc import ABC
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Literal
 
@@ -15,7 +15,15 @@ from ssl_models.dataset.osm_to_seg import process_geojson_file
 
 
 class GenericDataset(Dataset, ABC):
-    """Generic dataset."""
+    """Generic dataset.
+
+    Subclasses set `base_length` and `repeats`, and implement `build_meta`.
+    """
+
+    base_length: int
+    repeats: int
+    # If False, crops are drawn randomly even when random_crop is disabled.
+    use_crop_grid: bool = True
 
     def __init__(
         self,
@@ -67,6 +75,37 @@ class GenericDataset(Dataset, ABC):
             start_gcd = None
 
         return (idx % base_length), start_gcd
+
+    @abstractmethod
+    def build_meta(self, idx: int) -> dict:
+        """Return paths and dates of each modality for the sample `idx`."""
+
+    def postprocess(
+        self,
+        inputs: dict[str, np.ndarray],
+        meta: dict,  # noqa: ARG002
+        idx: int,  # noqa: ARG002
+    ) -> dict[str, np.ndarray]:
+        """Add targets and reference date, or adjust the raster inputs."""
+        return inputs
+
+    def __getitem__(self, idx: int) -> dict[str, np.ndarray]:
+        """Get dataset item."""
+        idx, start_gcd = self.set_gcd_rng(
+            idx,
+            base_length=self.base_length,
+            repeats=self.repeats,
+        )
+        meta = self.build_meta(idx)
+        if not self.use_crop_grid:
+            start_gcd = None
+        inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
+        inputs = self.postprocess(inputs, meta, idx)
+        return self.transform_rasters(inputs)
+
+    def __len__(self) -> int:
+        """Return length of dataset."""
+        return self.base_length * self.repeats**2
 
     def preprocess_rasters(
         self,
