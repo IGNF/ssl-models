@@ -87,7 +87,7 @@ def read_csv(
     val_pretrain: bool = False,
     test_pretrain: bool = False,
     **kwargs,  # noqa: ANN003
-) -> Path:
+) -> pd.DataFrame:
     """Read dataset csv."""
     csv_name = []
     if version:
@@ -96,7 +96,7 @@ def read_csv(
         csv_name += ["balanced"]
     if filter_percent:
         csv_name += [f"filtered_{filter_percent}"]
-    if fold:
+    if fold is not None:
         csv_name += [f"fold_{fold}"]
 
     stages = [stage]
