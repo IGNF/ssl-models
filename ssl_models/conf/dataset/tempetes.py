@@ -11,6 +11,9 @@ from ssl_models.conf.dataset.utils import (
 )
 from ssl_models.dataset.tempetes import TempetesDataset
 
+# Number of classes before remapping.
+NUM_CLASSES = 22
+
 
 @register_dataset("tempetes")
 @dataclass
@@ -35,20 +38,20 @@ class TempetesConfig(DatasetConfig):  # noqa: D101
             5: 0,  # Sol nu
             6: 0,  # Eau
             7: 0,  # Neige
-            8: 1, # Conifère
+            8: 1,  # Conifère
             9: 0,  # Coupe
-            10: 2, # Feuillus
+            10: 2,  # Feuillus
             11: 0,  # Mixte
             12: 0,  # Ligneux
-            13: 3, # Broussailles
-            14: 4, # Vigne
-            15: 5, # Pelouse
-            16: 6, # Culture
+            13: 3,  # Broussailles
+            14: 4,  # Vigne
+            15: 5,  # Pelouse
+            16: 6,  # Culture
             17: 0,  # Terre labourée
             18: 0,  # Serre
-            19: 0, # Inconnu
-            20: 7, # Feuillus nus
-            21: 8, # Sinistre
+            19: 0,  # Inconnu
+            20: 7,  # Feuillus nus
+            21: 8,  # Sinistre
         },
     )
 
@@ -87,7 +90,7 @@ class TempetesConfig(DatasetConfig):  # noqa: D101
     tempetes: TargetRasterConfig = field(
         default_factory=lambda: TargetRasterConfig(
             type_target="segment",
-            num_classes=22,
+            num_classes=NUM_CLASSES,
             missing_val=-1,
             bands=1,
         ),
@@ -98,8 +101,8 @@ class TempetesConfig(DatasetConfig):  # noqa: D101
         self.dataset_class = TempetesDataset
         self.total_meters = 128
 
-        # Number of classes before remapping, needed to build the lookup table.
-        self._original_num_classes = self.tempetes.num_classes
+        # Not read from `tempetes.num_classes`, which is already remapped on reload.
+        self._original_num_classes = NUM_CLASSES
         if self.class_remap is not None:
             for src, dst in self.class_remap.items():
                 if not 0 <= src < self._original_num_classes:
