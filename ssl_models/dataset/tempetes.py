@@ -1,5 +1,6 @@
 """Tempetes dataset module."""
 
+from copy import copy
 from pathlib import Path
 from typing import Literal
 
@@ -46,6 +47,15 @@ class TempetesDataset(GenericDataset):
             random_dates=random_dates,
             random_crop=random_crop,
         )
+
+        if ssl_phase == "pretrain":
+            # Targets are unused in pretraining and missing for most patches.
+            self.dataset = copy(dataset)
+            self.dataset.rasters = {
+                name_mod: mod
+                for name_mod, mod in dataset.rasters.items()
+                if name_mod not in dataset.targets
+            }
 
         csv_dir = Path(dataset.csv_dir) if dataset.csv_dir else root_dir
         csv_data = read_csv(
