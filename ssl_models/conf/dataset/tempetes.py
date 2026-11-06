@@ -35,11 +35,20 @@ class TempetesConfig(DatasetConfig):  # noqa: D101
             5: 0,  # Sol nu
             6: 0,  # Eau
             7: 0,  # Neige
+            8: 1, # Conifère
             9: 0,  # Coupe
+            10: 2, # Feuillus
             11: 0,  # Mixte
             12: 0,  # Ligneux
+            13: 3, # Broussailles
+            14: 4, # Vigne
+            15: 5, # Pelouse
+            16: 6, # Culture
             17: 0,  # Terre labourée
             18: 0,  # Serre
+            19: 0, # Inconnu
+            20: 7, # Feuillus nus
+            21: 8, # Sinistre
         },
     )
 
