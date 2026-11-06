@@ -75,7 +75,7 @@ class TempetesDataset(GenericDataset):
         self.base_length = len(self.patch_ids)
         self.repeats = dataset.repeats
 
-        meta_path = csv_dir / f"global_metadata_{dataset.sizes['pleiades']}px.gpkg"
+        meta_path = csv_dir / f"global_metadata_{dataset.total_meters:g}m.gpkg"
         columns = [col for cols in MOD_COLUMNS.values() for col in cols if col]
         meta_data = read_dataframe(
             meta_path,
