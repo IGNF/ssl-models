@@ -2,7 +2,7 @@ import itertools
 
 import pytest
 
-from ssl_models.ssl.mixmae import (
+from ssl_models.mim.mixmae import (
     mixmae_base,
     mixmae_huge,
     mixmae_large,

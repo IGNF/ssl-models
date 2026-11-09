@@ -3,7 +3,7 @@ import json
 import torch
 
 from ssl_models.conf.utils import datasets_from_dict, mask_from_dict
-from ssl_models.ssl.mae import MAE
+from ssl_models.mim.mae import MAE
 from tests import TEST_DATA_DIR
 
 

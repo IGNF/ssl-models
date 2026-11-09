@@ -2,7 +2,7 @@ import itertools
 
 import pytest
 
-from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
+from ssl_models.mim.mae import mae_large, mae_medium, mae_small, mae_tiny
 
 
 @pytest.fixture()

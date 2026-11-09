@@ -20,6 +20,7 @@ class PatchSizeConfig:
 
     mae: int = MISSING
     mixmae: int = MISSING
+    dino: int | None = None  # defaults to the mae patch size
     dinov2_imagenat: int = 14
     dinov2_sat: int = 16
     dofa: int = 16
@@ -47,6 +48,7 @@ class InputConfig:
     image_size: int = MISSING
     patch_size: PatchSizeConfig = MISSING
     name_group: str | None = None
+    local_size: int | None = None  # DINO local crop size, derived if None
 
 
 @dataclass

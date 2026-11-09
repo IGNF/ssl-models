@@ -13,6 +13,7 @@ class Patchify(nn.Module):
         bands: int | list[list[int]],
         embed_dim: int,
         patch_size: int,
+        norm: bool = True,
     ) -> None:
         super().__init__()
         self.num_bands = [bands] if isinstance(bands, int) else list(map(len, bands))
@@ -24,6 +25,7 @@ class Patchify(nn.Module):
                     embed_dim=embed_dim,
                     in_chans=in_chans,
                     patch_size=patch_size,
+                    norm=norm,
                 )
                 for in_chans in self.num_bands
             ],
@@ -43,6 +45,7 @@ class PatchifyBands(nn.Module):
         in_chans: int,
         embed_dim: int,
         patch_size: int,
+        norm: bool = True,
     ) -> None:
         super().__init__()
         self.patch_size = patch_size
@@ -53,7 +56,7 @@ class PatchifyBands(nn.Module):
             kernel_size=self.patch_size,
             stride=self.patch_size,
         )
-        self.norm = nn.GroupNorm(1, embed_dim)
+        self.norm = nn.GroupNorm(1, embed_dim) if norm else nn.Identity()
 
     def forward(self, x: Tensor) -> tuple[Tensor, list[Tensor]]:
         _, D, _, _, _ = x.shape  # noqa: N806

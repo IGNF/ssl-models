@@ -15,9 +15,9 @@ from timm.models.vision_transformer import Block
 from torch import Tensor, nn
 
 from ssl_models.conf.datasets import DatasetsConfig
-from ssl_models.conf.mask import MaskConfig
+from ssl_models.conf.mask import MiMMaskConfig
 from ssl_models.layers.swin import MixMAELayer
-from ssl_models.ssl.mim import BaseMIM
+from ssl_models.mim.mim import BaseMIM
 
 
 class MixMAE(BaseMIM):
@@ -26,7 +26,7 @@ class MixMAE(BaseMIM):
     def __init__(  # noqa: PLR0913
         self,
         datasets: DatasetsConfig,
-        mask: MaskConfig,
+        mask: MiMMaskConfig,
         fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         model: Literal["mixmae"],
         num_levels: Literal[3, 4],

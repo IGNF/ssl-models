@@ -2,7 +2,8 @@ import itertools
 
 import pytest
 
-from ssl_models.train.model import SSLModule
+from ssl_models.conf.loss import MiMLossConfig
+from ssl_models.train.mim import MiMModule
 
 
 @pytest.mark.parametrize(
@@ -24,7 +25,7 @@ def test_ssl_mae(
     interpolate,
     stage,
 ):
-    ssl_module = SSLModule(
+    ssl_module = MiMModule(
         datasets=datasets_treesat,
         mask=mask,
         fusion_mode=fusion_mode,
@@ -55,7 +56,7 @@ def test_ssl_inter_mae(
     interpolate,
     stage,
 ):
-    ssl_module = SSLModule(
+    ssl_module = MiMModule(
         datasets=datasets_treesat,
         mask=mask,
         fusion_mode=fusion_mode,
@@ -90,7 +91,7 @@ def test_ssl_head_loss(
     loss,
     stage,
 ):
-    ssl_module = SSLModule(
+    ssl_module = MiMModule(
         datasets=datasets_treesat,
         mask=mask,
         fusion_mode=fusion_mode,
@@ -99,7 +100,7 @@ def test_ssl_head_loss(
         model_size=model_size,
         type_head=type_head,
         interpolate=interpolate,
-        loss=loss,
+        loss=MiMLossConfig(name=loss),
     )
     ssl_module.setup(stage=stage)
 
@@ -129,7 +130,7 @@ def test_ssl_mixmae(
     swin_abs_enc,
     stage,
 ):
-    ssl_module = SSLModule(
+    ssl_module = MiMModule(
         datasets=datasets_treesat,
         mask=mask,
         fusion_mode=fusion_mode,
@@ -146,7 +147,7 @@ def test_ssl_mixmae(
 
 @pytest.mark.xfail
 def test_model_mod_mixmae_should_fail(datasets_treesat, mask):
-    _ = SSLModule(
+    _ = MiMModule(
         datasets=datasets_treesat,
         mask=mask,
         fusion_mode="mod",
@@ -158,7 +159,7 @@ def test_model_mod_mixmae_should_fail(datasets_treesat, mask):
 
 @pytest.mark.xfail
 def test_model_group_mixmae_should_fail(datasets_treesat, mask):
-    _ = SSLModule(
+    _ = MiMModule(
         datasets=datasets_treesat,
         mask=mask,
         fusion_mode="group",
@@ -170,7 +171,7 @@ def test_model_group_mixmae_should_fail(datasets_treesat, mask):
 
 @pytest.mark.xfail
 def test_levels_should_fail(datasets_treesat, mask):
-    _ = SSLModule(
+    _ = MiMModule(
         datasets=datasets_treesat,
         mask=mask,
         fusion_mode="shared",
@@ -183,7 +184,7 @@ def test_levels_should_fail(datasets_treesat, mask):
 
 @pytest.mark.xfail
 def test_model_should_fail(datasets_treesat, mask):
-    _ = SSLModule(
+    _ = MiMModule(
         datasets=datasets_treesat,
         mask=mask,
         fusion_mode="shared",
@@ -195,4 +196,4 @@ def test_model_should_fail(datasets_treesat, mask):
 
 @pytest.mark.xfail
 def test_missing_args_should_fail():
-    _ = SSLModule(model="mae", model_size="tiny")
+    _ = MiMModule(model="mae", model_size="tiny")

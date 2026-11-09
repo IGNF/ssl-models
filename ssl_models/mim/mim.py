@@ -20,6 +20,7 @@ from ssl_models.layers.utils import (
     group_mods,
     posemb_sincos_2d,
     reshape_encoding,
+    resize_and_rescale,
     shuffle_enc_to_dec,
     ungroup_mods,
 )
@@ -514,17 +515,11 @@ class BaseMIM(nn.Module, ABC):
         name_dataset: str,
     ) -> dict[str, Tensor]:
         """Resize and/or rescale input rasters based on dataset config."""
-        for name_mod, mod in self.datasets.datasets[name_dataset].inputs.items():
-            batch[name_mod] = F.interpolate(
-                batch[name_mod].flatten(0, 1),
-                size=(mod.image_size,) * 2,
-                mode=self.interpolate,
-            ).unflatten(0, (-1, mod.num_dates))
-            if mod.rescale_elev:
-                batch[name_mod][:, :, 1:] = 30 * (
-                    batch[name_mod][:, :, :1] - batch[name_mod][:, :, 1:]
-                )
-        return batch
+        return resize_and_rescale(
+            batch,
+            self.datasets.datasets[name_dataset],
+            self.interpolate,
+        )
 
     @abstractmethod
     def mask_struct(self, x: Tensor) -> dict[str, Tensor | None]:

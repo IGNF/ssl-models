@@ -10,8 +10,8 @@ from vit_pytorch.vit import Transformer
 
 from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.conf.datasets import DatasetsConfig
-from ssl_models.conf.mask import MaskConfig
-from ssl_models.ssl.mim import BaseMIM
+from ssl_models.conf.mask import MiMMaskConfig
+from ssl_models.mim.mim import BaseMIM
 
 
 class MAE(BaseMIM):
@@ -20,7 +20,7 @@ class MAE(BaseMIM):
     def __init__(  # noqa: PLR0913
         self,
         datasets: DatasetsConfig,
-        mask: MaskConfig,
+        mask: MiMMaskConfig,
         fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         inter_depth: int,
         model: Literal["mae"],
@@ -115,7 +115,7 @@ class MAE(BaseMIM):
         self,
         name_dataset: str,
         dataset: DatasetConfig,
-        mask: MaskConfig,
+        mask: MiMMaskConfig,
         fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
     ) -> None:
         self.len_bands[name_dataset] = {

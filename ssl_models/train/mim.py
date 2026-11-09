@@ -12,9 +12,10 @@ from torch.utils.data.distributed import DistributedSampler
 
 from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.conf.datasets import DatasetsConfig
-from ssl_models.conf.mask import MaskConfig
-from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
-from ssl_models.ssl.mixmae import (
+from ssl_models.conf.loss import MiMLossConfig
+from ssl_models.conf.mask import MiMMaskConfig
+from ssl_models.mim.mae import mae_large, mae_medium, mae_small, mae_tiny
+from ssl_models.mim.mixmae import (
     mixmae_base,
     mixmae_huge,
     mixmae_large,
@@ -27,21 +28,21 @@ from ssl_models.train.condition_metric import ConditionMetric
 torch.set_float32_matmul_precision(precision="medium")
 
 
-class SSLModule(BaseModule):
+class MiMModule(BaseModule):
     """Lightning SSL module."""
 
     def __init__(  # noqa: PLR0913, PLR0915, C901, PLR0912
         self,
         # shared args
         datasets: DatasetsConfig,
-        mask: MaskConfig,
+        mask: MiMMaskConfig,
         fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         inter_depth: int,
         model: Literal["mae", "mixmae"],
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
         type_head: Literal["linear", "attentive"] = "attentive",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
-        loss: Literal["l1", "l2", "l1_norm", "l2_norm", "l1_ls", "l2_ls"] = "l2_norm",
+        loss: MiMLossConfig | None = None,
         condition: bool = False,
         max_condition: int | None = None,
         use_date_enc: bool = True,
@@ -55,27 +56,28 @@ class SSLModule(BaseModule):
         super().__init__(datasets)
         self.datasets = datasets
 
-        match loss:
+        loss = loss or MiMLossConfig()
+        match loss.name:
             case "l1":
                 self.norm_pix_loss = None
                 self.loss_fn = torch.abs
-            case "l2":
-                self.norm_pix_loss = None
-                self.loss_fn = torch.square
             case "l1_norm":
-                self.norm_pix_loss = "ln"
-                self.loss_fn = torch.abs
-            case "l2_norm":
                 self.norm_pix_loss = "ln"
                 self.loss_fn = torch.abs
             case "l1_ls":
                 self.norm_pix_loss = "ls"
                 self.loss_fn = torch.abs
+            case "l2":
+                self.norm_pix_loss = None
+                self.loss_fn = torch.square
+            case "l2_norm":
+                self.norm_pix_loss = "ln"
+                self.loss_fn = torch.square
             case "l2_ls":
                 self.norm_pix_loss = "ls"
                 self.loss_fn = torch.square
             case _:
-                msg = f"Invalid loss {loss}."
+                msg = f"Invalid loss {loss.name}."
                 raise ValueError(msg)
 
         self.condition = condition
@@ -187,7 +189,7 @@ class SSLModule(BaseModule):
         else:
             self.ema_model = None
 
-        self.save_hyperparameters(ignore=["datasets", "mask"])
+        self.save_hyperparameters(ignore=["datasets", "mask", "loss"])
 
     def configure_optimizers(self) -> dict:
         """Configure optimizer."""

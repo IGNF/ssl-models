@@ -10,6 +10,7 @@ from einops import rearrange
 from torch import Tensor
 
 from ssl_models import RNG
+from ssl_models.conf.dataset.utils import DatasetConfig
 
 
 def shuffle_enc_to_dec(x: dict[str, Tensor]) -> dict[str, Tensor]:
@@ -235,3 +236,22 @@ def posemb_sincos_2d(
     if fac_abs_enc is not None:
         pos_encoding *= fac_abs_enc
     return pos_encoding.to(dtype)
+
+
+def resize_and_rescale(
+    batch: dict[str, Tensor],
+    dataset: DatasetConfig,
+    interpolate: Literal["nearest", "bilinear", "bicubic"],
+) -> dict[str, Tensor]:
+    """Resize and/or rescale input rasters based on dataset config."""
+    for name_mod, mod in dataset.inputs.items():
+        batch[name_mod] = F.interpolate(
+            batch[name_mod].flatten(0, 1),
+            size=(mod.image_size,) * 2,
+            mode=interpolate,
+        ).unflatten(0, (-1, mod.num_dates))
+        if mod.rescale_elev:
+            batch[name_mod][:, :, 1:] = 30 * (
+                batch[name_mod][:, :, :1] - batch[name_mod][:, :, 1:]
+            )
+    return batch

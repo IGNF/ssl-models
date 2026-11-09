@@ -6,7 +6,7 @@ from dacite.core import from_dict
 
 from ssl_models.conf.dataset.utils import DATASETS
 from ssl_models.conf.datasets import DatasetsConfig
-from ssl_models.conf.mask import MaskConfig
+from ssl_models.conf.mask import MiMMaskConfig
 
 DATASETS_GLOBAL_ARGS = ("root_dir", "name_datasets", "sample_datasets")
 
@@ -39,11 +39,11 @@ def datasets_to_dict(datasets: DatasetsConfig) -> dict:
     return datasets_dict
 
 
-def mask_from_dict(mask_dict: dict) -> MaskConfig:
+def mask_from_dict(mask_dict: dict) -> MiMMaskConfig:
     """Convert dict to mask config."""
-    return from_dict(data_class=MaskConfig, data=mask_dict)
+    return from_dict(data_class=MiMMaskConfig, data=mask_dict)
 
 
-def mask_to_dict(mask: MaskConfig) -> dict:
+def mask_to_dict(mask: MiMMaskConfig) -> dict:
     """Convert mask config to dict."""
     return asdict(mask)
