@@ -14,6 +14,69 @@ from ssl_models.dataset.tempetes import TempetesDataset
 # Number of classes before remapping.
 NUM_CLASSES = 22
 
+# Maps original class ids to new ones; unlisted classes keep their id.
+DEFAULT_CLASS_REMAP = {
+    1: 0,  # Bâtiment
+    2: 0,  # Zone perméable
+    3: 0,  # Zone imperméable
+    4: 0,  # Piscine
+    5: 0,  # Sol nu
+    6: 0,  # Eau
+    7: 0,  # Neige
+    8: 1,  # Conifère
+    9: 0,  # Coupe
+    10: 2,  # Feuillus
+    11: 0,  # Mixte
+    12: 0,  # Ligneux
+    13: 3,  # Broussailles
+    14: 4,  # Vigne
+    15: 5,  # Pelouse
+    16: 6,  # Culture
+    17: 0,  # Terre labourée
+    18: 0,  # Serre
+    19: 0,  # Inconnu
+    20: 7,  # Feuillus nus
+    21: 8,  # Sinistre
+}
+
+CLASS_NAMES = [
+    "background",
+    "building",
+    "pervious surface",
+    "impervious surface",
+    "swimming pool",
+    "bare soil",
+    "water",
+    "snow",
+    "coniferous",
+    "clear-cut",
+    "deciduous",
+    "mixed",
+    "woody",
+    "brushwood",
+    "vineyard",
+    "grassland",
+    "cropland",
+    "plowed land",
+    "greenhouse",
+    "unknown",
+    "bare deciduous",
+    "damaged",
+]
+
+# Names of the classes obtained with `DEFAULT_CLASS_REMAP`.
+REMAPPED_CLASS_NAMES = [
+    "other",
+    "coniferous",
+    "deciduous",
+    "brushwood",
+    "vineyard",
+    "grassland",
+    "cropland",
+    "bare deciduous",
+    "damaged",
+]
+
 
 @register_dataset("tempetes")
 @dataclass
@@ -28,31 +91,8 @@ class TempetesConfig(DatasetConfig):  # noqa: D101
     repeats: int = 1
     crop_meters: float = 128
     grid_pos_enc: int | None = 160
-    # Maps original class ids to new ones; unlisted classes keep their id.
     class_remap: dict[int, int] | None = field(
-        default_factory=lambda: {
-            1: 0,  # Bâtiment
-            2: 0,  # Zone perméable
-            3: 0,  # Zone imperméable
-            4: 0,  # Piscine
-            5: 0,  # Sol nu
-            6: 0,  # Eau
-            7: 0,  # Neige
-            8: 1,  # Conifère
-            9: 0,  # Coupe
-            10: 2,  # Feuillus
-            11: 0,  # Mixte
-            12: 0,  # Ligneux
-            13: 3,  # Broussailles
-            14: 4,  # Vigne
-            15: 5,  # Pelouse
-            16: 6,  # Culture
-            17: 0,  # Terre labourée
-            18: 0,  # Serre
-            19: 0,  # Inconnu
-            20: 7,  # Feuillus nus
-            21: 8,  # Sinistre
-        },
+        default_factory=lambda: dict(DEFAULT_CLASS_REMAP),
     )
 
     ref_input: str | None = "pleiades"  # defines grid for raster targets
@@ -119,6 +159,13 @@ class TempetesConfig(DatasetConfig):  # noqa: D101
             for src, dst in self.class_remap.items():
                 lut[src] = dst
             self.tempetes.num_classes = max(lut) + 1
+
+        if self.tempetes.class_names is None:
+            if self.class_remap is None:
+                self.tempetes.class_names = list(CLASS_NAMES)
+            elif self.class_remap == DEFAULT_CLASS_REMAP:
+                self.tempetes.class_names = list(REMAPPED_CLASS_NAMES)
+        self.tempetes.check_class_names()
 
         super().__post_init__(
             resolutions_meters={

@@ -11,6 +11,18 @@ from ssl_models.conf.dataset.utils import (
 )
 from ssl_models.dataset.hi_ucd import HiUCDDataset
 
+HI_UCD_CLASS_NAMES = [
+    "water",
+    "grass",
+    "building",
+    "greenhouse",
+    "road",
+    "bridge",
+    "others",
+    "bare land",
+    "woodland",
+]
+
 
 @register_dataset("hi_ucd")
 @dataclass
@@ -66,6 +78,7 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
             num_classes=9,
             missing_val=-1,
             bands=[[0]],
+            class_names=HI_UCD_CLASS_NAMES,
         ),
     )
     hi_ucd_seg_2: TargetRasterConfig = field(
@@ -74,6 +87,7 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
             num_classes=9,
             missing_val=-1,
             bands=[[1]],
+            class_names=HI_UCD_CLASS_NAMES,
         ),
     )
 

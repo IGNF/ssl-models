@@ -116,6 +116,23 @@ class FLAIRConfig(DatasetConfig):  # noqa: D101
             num_classes=15,
             missing_val=-1,
             bands=1,
+            class_names=[
+                "building",
+                "greenhouse",
+                "swimming pool",
+                "impervious surface",
+                "pervious surface",
+                "bare soil",
+                "water",
+                "snow",
+                "herbaceous vegetation",
+                "agricultural land",
+                "plowed land",
+                "vineyard",
+                "deciduous",
+                "coniferous",
+                "brushwood",
+            ],
         ),
     )
     lpis: TargetRasterConfig = field(
