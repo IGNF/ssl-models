@@ -15,6 +15,24 @@ from torchmetrics.functional.classification.precision_recall_curve import (
 )
 from torchmetrics.utilities.data import dim_zero_cat
 
+SEGMENT_METRIC_NAMES = [
+    "overall_accuracy",
+    "average_f1",
+    "average_iou",
+    "average_precision",
+    "average_recall",
+    "per_class_f1",
+    "per_class_iou",
+    "per_class_precision",
+    "per_class_recall",
+    "confusion_matrix",
+]
+
+
+def _safe_div(num: Tensor, den: Tensor) -> Tensor:
+    """Divide, returning 0 where the denominator is 0."""
+    return torch.where(den > 0, num / den.clamp(min=1), torch.zeros_like(num))
+
 
 class MonoLabelMetric(Metric):
     """Store confusion matrix."""
@@ -38,21 +56,11 @@ class MonoLabelMetric(Metric):
             case "segment":
                 self.task = "multiclass"
                 self.num_classes = num_classes
-                self.metric_names = [
-                    "overall_accuracy",
-                    "average_f1",
-                    "average_iou",
-                    "confusion_matrix",
-                ]
+                self.metric_names = SEGMENT_METRIC_NAMES
             case "change_detect":
                 self.task = "binary"
                 self.num_classes = 2
-                self.metric_names = [
-                    "overall_accuracy",
-                    "average_f1",
-                    "average_iou",
-                    "confusion_matrix",
-                ]
+                self.metric_names = SEGMENT_METRIC_NAMES
 
         self.add_state(
             "cm",
@@ -79,28 +87,27 @@ class MonoLabelMetric(Metric):
     def compute(self) -> dict[str, Tensor]:
         """Compute metrics."""
         overall_acc = self.cm.trace() / self.cm.sum()  # OA
-        true_pos = torch.diag(self.cm)  # TP
-        false_pos = self.cm.sum(0) - torch.diag(self.cm)  # FP
-        false_neg = self.cm.sum(1) - torch.diag(self.cm)  # FN
+        true_pos = torch.diag(self.cm).float()  # TP
+        false_pos = self.cm.sum(0).float() - true_pos  # FP
+        false_neg = self.cm.sum(1).float() - true_pos  # FN
 
-        per_class_f1 = (2 * true_pos) / (2 * true_pos + false_pos + false_neg)
-        per_class_iou = true_pos / (true_pos + false_pos + false_neg)
-
-        valid_classes_inds = (true_pos + false_neg).nonzero().squeeze(dim=1)
-        metrics = {
-            "overall_accuracy": overall_acc,
-            "average_f1": torch.index_select(
-                per_class_f1,
-                dim=0,
-                index=valid_classes_inds,
-            ).mean(),
-            "average_iou": torch.index_select(
-                per_class_iou,
-                dim=0,
-                index=valid_classes_inds,
-            ).mean(),
-            "confusion_matrix": self.cm,
+        per_class = {
+            "f1": _safe_div(2 * true_pos, 2 * true_pos + false_pos + false_neg),
+            "iou": _safe_div(true_pos, true_pos + false_pos + false_neg),
+            "precision": _safe_div(true_pos, true_pos + false_pos),
+            "recall": _safe_div(true_pos, true_pos + false_neg),
         }
+
+        # Classes absent from the ground truth are excluded from averages.
+        valid_classes = (true_pos + false_neg) > 0
+        metrics = {"overall_accuracy": overall_acc, "confusion_matrix": self.cm}
+        for name, values in per_class.items():
+            metrics[f"average_{name}"] = values[valid_classes].mean()
+            metrics[f"per_class_{name}"] = torch.where(
+                valid_classes,
+                values,
+                torch.full_like(values, torch.nan),
+            )
         return {
             metric_name: metric_val
             for metric_name, metric_val in metrics.items()

@@ -230,6 +230,8 @@ class MetricsLogger(Callback):
                 for name_target in dataset.targets:
                     metrics = pl_module.metrics[f"{name_target}_{stage}"].compute()
                     for name_metric, value in metrics.items():
+                        if name_metric.startswith("per_class_"):
+                            continue
                         if name_metric == "confusion_matrix":
                             cm = value.cpu().numpy()
                             self.log_confmat(
