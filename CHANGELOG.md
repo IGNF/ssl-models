@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - add `average_precision` and `average_recall` for `segment` and `change_detect` targets.
 - log per-class IoU, F1, precision and recall, enabled with `run.log_per_class_metrics` (options: `per_class_metrics`, `per_class_stages`).
 - add optional `class_names` to target configs, set for FLAIR (cosia), Hi-UCD, PASTIS-HD, S2-NAIP and Tempetes.
-- label confusion matrix axes with class names, save one `.npy` per epoch with a `_classes.json` file, and allow disabling it with `run.log_confusion_matrix`.
+- label confusion matrix axes with class names, save one `.npy` per epoch, and allow disabling it with `run.log_confusion_matrix`.
 
 <!-- insertion marker -->
 ## [v1.3.0](https://github.com/IGNF/ssl-models/releases/tag/v1.3.0) - 2025-12-04

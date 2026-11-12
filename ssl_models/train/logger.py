@@ -1,7 +1,5 @@
 """Logger module."""
 
-import json
-from pathlib import Path
 from typing import Literal
 
 import matplotlib.pyplot as plt
@@ -185,9 +183,10 @@ class MetricsLogger(Callback):
         fig, _ = plt.subplots(figsize=figsize)
         sns.heatmap(cm_df, annot=True, fmt=fmt)
         if class_names is not None:
-            plt.xticks(rotation=45, ha="right")
+            plt.xticks(rotation=90)
             plt.yticks(rotation=0)
             fig.tight_layout()
+        fig.canvas.draw()  # buffer_rgba would otherwise miss the labels set above
         rgba_buf = fig.canvas.buffer_rgba()
         w, h = fig.canvas.get_width_height()
         arr = (
@@ -269,7 +268,6 @@ class MetricsLogger(Callback):
                                     class_names=class_names,
                                 ),
                                 cm=cm,
-                                class_names=class_names,
                             )
                             self.log_confmat(
                                 trainer=trainer,
@@ -378,17 +376,11 @@ class MetricsLogger(Callback):
         name: str,
         arr: np.ndarray,
         cm: np.ndarray | None = None,
-        class_names: list[str] | None = None,
     ) -> None:
         trainer.tb_logger.add_image(name, arr, trainer.current_epoch)
         if cm is not None:
             prefix = f"{trainer.tb_logger.log_dir}/{name.split('/')[0]}"
             np.save(f"{prefix}_epoch{trainer.current_epoch}.npy", cm)
-            if class_names is not None and len(class_names) == cm.shape[0]:
-                Path(f"{prefix}_classes.json").write_text(
-                    json.dumps(class_names),
-                    encoding="utf-8",
-                )
 
     def log_metric(
         self,
