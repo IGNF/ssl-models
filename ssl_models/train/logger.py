@@ -1,5 +1,7 @@
 """Logger module."""
 
+import json
+from pathlib import Path
 from typing import Literal
 
 import matplotlib.pyplot as plt
@@ -146,7 +148,14 @@ class MetricsLogger(Callback):
     """Log metrics."""
 
     @staticmethod
-    def cm2arr(cm: np.ndarray, normalized: bool = False) -> np.ndarray:
+    def cm2arr(
+        cm: np.ndarray,
+        normalized: bool = False,
+        class_names: list[str] | None = None,
+    ) -> np.ndarray:
+        if class_names is not None and len(class_names) != cm.shape[0]:
+            class_names = None
+
         if cm.shape[0] <= 10:  # noqa: PLR2004
             figsize = (10, 7)
         elif cm.shape[0] > 10 and cm.shape[0] <= 16:  # noqa: PLR2004
@@ -158,7 +167,7 @@ class MetricsLogger(Callback):
 
         match normalized:
             case False:
-                cm_df = pd.DataFrame(cm)
+                cm_df = pd.DataFrame(cm, index=class_names, columns=class_names)
                 fmt = ".0f"
             case True:
                 cm_df = pd.DataFrame(
@@ -168,11 +177,17 @@ class MetricsLogger(Callback):
                         out=np.zeros_like(cm.astype(np.float32)),
                         where=(np.sum(cm, axis=1)[:, np.newaxis] != 0),
                     ),
+                    index=class_names,
+                    columns=class_names,
                 )
                 fmt = ".3f"
 
         fig, _ = plt.subplots(figsize=figsize)
         sns.heatmap(cm_df, annot=True, fmt=fmt)
+        if class_names is not None:
+            plt.xticks(rotation=45, ha="right")
+            plt.yticks(rotation=0)
+            fig.tight_layout()
         rgba_buf = fig.canvas.buffer_rgba()
         w, h = fig.canvas.get_width_height()
         arr = (
@@ -241,17 +256,29 @@ class MetricsLogger(Callback):
                                 stage=stage,
                             )
                         elif name_metric == "confusion_matrix":
+                            if not trainer.log_confusion_matrix:
+                                continue
+                            class_names = dataset.targets[name_target].class_names
                             cm = value.cpu().numpy()
                             self.log_confmat(
                                 trainer=trainer,
                                 name=f"confmat_{trainer.ssl_phase}_{name_target}_{stage}/confmat",
-                                arr=MetricsLogger.cm2arr(cm, normalized=False),
+                                arr=MetricsLogger.cm2arr(
+                                    cm,
+                                    normalized=False,
+                                    class_names=class_names,
+                                ),
                                 cm=cm,
+                                class_names=class_names,
                             )
                             self.log_confmat(
                                 trainer=trainer,
                                 name=f"confmat_{trainer.ssl_phase}_{name_target}_{stage}/confmat_norm",
-                                arr=MetricsLogger.cm2arr(cm, normalized=True),
+                                arr=MetricsLogger.cm2arr(
+                                    cm,
+                                    normalized=True,
+                                    class_names=class_names,
+                                ),
                             )
                         else:
                             self.log_metric(
@@ -351,10 +378,17 @@ class MetricsLogger(Callback):
         name: str,
         arr: np.ndarray,
         cm: np.ndarray | None = None,
+        class_names: list[str] | None = None,
     ) -> None:
         trainer.tb_logger.add_image(name, arr, trainer.current_epoch)
         if cm is not None:
-            np.save(f"{trainer.tb_logger.log_dir}/{name.split('/')[0]}.npy", cm)
+            prefix = f"{trainer.tb_logger.log_dir}/{name.split('/')[0]}"
+            np.save(f"{prefix}_epoch{trainer.current_epoch}.npy", cm)
+            if class_names is not None and len(class_names) == cm.shape[0]:
+                Path(f"{prefix}_classes.json").write_text(
+                    json.dumps(class_names),
+                    encoding="utf-8",
+                )
 
     def log_metric(
         self,
@@ -362,7 +396,7 @@ class MetricsLogger(Callback):
         name: str,
         value: Tensor,
     ) -> None:
-        """Log accuracy metric."""
+        """Log metric."""
         pl_module.log(
             name=name,
             value=value,
