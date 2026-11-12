@@ -231,8 +231,16 @@ class MetricsLogger(Callback):
                     metrics = pl_module.metrics[f"{name_target}_{stage}"].compute()
                     for name_metric, value in metrics.items():
                         if name_metric.startswith("per_class_"):
-                            continue
-                        if name_metric == "confusion_matrix":
+                            self.log_per_class_metric(
+                                trainer=trainer,
+                                pl_module=pl_module,
+                                name_target=name_target,
+                                name_metric=name_metric.removeprefix("per_class_"),
+                                values=value,
+                                class_names=dataset.targets[name_target].class_names,
+                                stage=stage,
+                            )
+                        elif name_metric == "confusion_matrix":
                             cm = value.cpu().numpy()
                             self.log_confmat(
                                 trainer=trainer,
@@ -299,6 +307,41 @@ class MetricsLogger(Callback):
                 prog_bar=True,
                 logger=True,
                 sync_dist=True,
+            )
+
+    def log_per_class_metric(  # noqa: PLR0913
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,
+        name_target: str,
+        name_metric: str,
+        values: Tensor,
+        class_names: list[str] | None,
+        stage: Literal["train", "val", "test"],
+    ) -> None:
+        """Log one scalar per class, skipping classes absent from the targets."""
+        if (
+            not trainer.log_per_class_metrics
+            or stage not in trainer.per_class_stages
+            or name_metric not in trainer.per_class_metrics
+        ):
+            return
+        if class_names is None or len(class_names) != len(values):
+            class_names = [str(idx) for idx in range(len(values))]
+        is_present = (~values.isnan()).tolist()
+        for class_name, value, present in zip(
+            class_names,
+            values,
+            is_present,
+            strict=True,
+        ):
+            if not present:
+                continue
+            class_name = class_name.replace("/", "_").replace(" ", "_")  # noqa: PLW2901
+            self.log_metric(
+                pl_module=pl_module,
+                name=f"{trainer.ssl_phase}_{name_target}/{name_metric}_{class_name}_{stage}",
+                value=value,
             )
 
     @rank_zero_only
