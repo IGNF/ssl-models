@@ -15,6 +15,8 @@ from torchmetrics.functional.classification.precision_recall_curve import (
 )
 from torchmetrics.utilities.data import dim_zero_cat
 
+PER_CLASS_METRICS = ("iou", "f1", "precision", "recall")
+
 SEGMENT_METRIC_NAMES = [
     "overall_accuracy",
     "average_f1",
