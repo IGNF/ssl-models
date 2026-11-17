@@ -91,9 +91,9 @@ class TempetesConfig(DatasetConfig):  # noqa: D101
     repeats: int = 1
     crop_meters: float = 128
     grid_pos_enc: int | None = 160
-    class_remap: dict[int, int] | None = field(
+    class_remap: dict[int, int] = field(
         default_factory=lambda: dict(DEFAULT_CLASS_REMAP),
-    )
+    )  # applied to the `tempetes_remap` target
 
     ref_input: str | None = "pleiades"  # defines grid for raster targets
     log_inputs: list[str] = field(
@@ -103,7 +103,7 @@ class TempetesConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: ["pleiades", "s2"],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: ["tempetes"],
+        default_factory=lambda: ["tempetes_remap"],
     )  # selected target modalities
 
     pleiades: InputRasterConfig = field(
@@ -133,6 +133,16 @@ class TempetesConfig(DatasetConfig):  # noqa: D101
             num_classes=NUM_CLASSES,
             missing_val=-1,
             bands=1,
+            class_names=list(CLASS_NAMES),
+        ),
+    )
+    tempetes_remap: TargetRasterConfig = field(
+        default_factory=lambda: TargetRasterConfig(
+            type_target="segment",
+            num_classes=len(REMAPPED_CLASS_NAMES),
+            missing_val=-1,
+            bands=1,
+            class_names=list(REMAPPED_CLASS_NAMES),
         ),
     )
 
@@ -141,41 +151,25 @@ class TempetesConfig(DatasetConfig):  # noqa: D101
         self.dataset_class = TempetesDataset
         self.total_meters = 128
 
-        # Not read from `tempetes.num_classes`, which is already remapped on reload.
-        self._original_num_classes = NUM_CLASSES
-        if self.class_remap is not None:
-            for src, dst in self.class_remap.items():
-                if not 0 <= src < self._original_num_classes:
-                    msg = (
-                        f"class_remap key {src} is out of range "
-                        f"[0, {self._original_num_classes})."
-                    )
-                    raise ValueError(msg)
-                if dst < 0:
-                    msg = f"class_remap value {dst} must be >= 0."
-                    raise ValueError(msg)
+        for src, dst in self.class_remap.items():
+            if not 0 <= src < NUM_CLASSES:
+                msg = f"class_remap key {src} is out of range [0, {NUM_CLASSES})."
+                raise ValueError(msg)
+            if dst < 0:
+                msg = f"class_remap value {dst} must be >= 0."
+                raise ValueError(msg)
 
-            lut = list(range(self._original_num_classes))
-            for src, dst in self.class_remap.items():
-                lut[src] = dst
-            self.tempetes.num_classes = max(lut) + 1
-
-        generated_class_names = self.tempetes.class_names in (
-            CLASS_NAMES,
-            REMAPPED_CLASS_NAMES,
-        )
-        if self.tempetes.class_names is None or generated_class_names:
-            if self.class_remap is None:
-                self.tempetes.class_names = list(CLASS_NAMES)
-            elif self.class_remap == DEFAULT_CLASS_REMAP:
-                self.tempetes.class_names = list(REMAPPED_CLASS_NAMES)
-            else:
-                self.tempetes.class_names = None
-        self.tempetes.check_class_names()
+        lut = list(range(NUM_CLASSES))
+        for src, dst in self.class_remap.items():
+            lut[src] = dst
+        self.tempetes_remap.num_classes = max(lut) + 1
+        # Set `tempetes_remap.class_names` along with a custom `class_remap`.
+        self.tempetes_remap.check_class_names()
 
         super().__post_init__(
             resolutions_meters={
                 "tempetes": 0.5,
+                "tempetes_remap": 0.5,
                 "pleiades": 0.5,
                 "s2": 8,  # 8 m for a 256 px patch, 10.24 m for 512 px
             },

@@ -17,6 +17,7 @@ MOD_COLUMNS = {
     "pleiades": ("PLEIADES_RGBI", "PLEIADES_RGBI_DATES"),
     "s2": ("SENTINEL2_TS", "SENTINEL2_TS_DATES"),
     "tempetes": ("PLEIADES_LABEL-TEMPETE", None),
+    "tempetes_remap": ("PLEIADES_LABEL-TEMPETE", None),
 }
 
 
@@ -76,7 +77,9 @@ class TempetesDataset(GenericDataset):
         self.repeats = dataset.repeats
 
         meta_path = csv_dir / f"global_metadata_{dataset.total_meters:g}m.gpkg"
-        columns = [col for cols in MOD_COLUMNS.values() for col in cols if col]
+        columns = list(
+            dict.fromkeys(col for cols in MOD_COLUMNS.values() for col in cols if col),
+        )
         meta_data = read_dataframe(
             meta_path,
             columns=["id_patch", *columns],
@@ -95,14 +98,11 @@ class TempetesDataset(GenericDataset):
             if col_dates
         }
 
-        self.label_missing = dataset.tempetes.missing_val
+        self.label_missing = dataset.tempetes_remap.missing_val
 
-        self.class_remap_lut = None
-        if dataset.class_remap is not None:
-            lut = np.arange(dataset._original_num_classes, dtype=np.int64)  # noqa: SLF001
-            for src, dst in dataset.class_remap.items():
-                lut[src] = dst
-            self.class_remap_lut = lut
+        self.class_remap_lut = np.arange(dataset.tempetes.num_classes, dtype=np.int64)
+        for src, dst in dataset.class_remap.items():
+            self.class_remap_lut[src] = dst
 
     def build_meta(self, idx: int) -> dict:
         """Return paths and dates of each modality."""
@@ -114,6 +114,7 @@ class TempetesDataset(GenericDataset):
         meta["pleiades_dates"] = self.dates["pleiades"][idx]
         meta["s2_dates"] = self.dates["s2"][idx]
         meta["tempetes_dates"] = meta["pleiades_dates"]
+        meta["tempetes_remap_dates"] = meta["pleiades_dates"]
 
         return meta
 
@@ -124,8 +125,8 @@ class TempetesDataset(GenericDataset):
         idx: int,  # noqa: ARG002
     ) -> dict[str, np.ndarray]:
         """Remap classes and set reference date."""
-        if self.class_remap_lut is not None and "tempetes" in inputs:
-            mask = inputs["tempetes"]
+        if "tempetes_remap" in inputs:
+            mask = inputs["tempetes_remap"]
             valid = mask != self.label_missing
             mask[valid] = self.class_remap_lut[mask[valid].astype(np.int64)]
 
