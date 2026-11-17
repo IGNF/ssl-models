@@ -334,7 +334,7 @@ class MetricsLogger(Callback):
                 sync_dist=True,
             )
 
-    def log_per_class_metric(  # noqa: PLR0913
+    def log_per_class_metric(
         self,
         trainer: Trainer,
         pl_module: LightningModule,

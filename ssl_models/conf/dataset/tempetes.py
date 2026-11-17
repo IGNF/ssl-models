@@ -160,11 +160,17 @@ class TempetesConfig(DatasetConfig):  # noqa: D101
                 lut[src] = dst
             self.tempetes.num_classes = max(lut) + 1
 
-        if self.tempetes.class_names is None:
+        generated_class_names = self.tempetes.class_names in (
+            CLASS_NAMES,
+            REMAPPED_CLASS_NAMES,
+        )
+        if self.tempetes.class_names is None or generated_class_names:
             if self.class_remap is None:
                 self.tempetes.class_names = list(CLASS_NAMES)
             elif self.class_remap == DEFAULT_CLASS_REMAP:
                 self.tempetes.class_names = list(REMAPPED_CLASS_NAMES)
+            else:
+                self.tempetes.class_names = None
         self.tempetes.check_class_names()
 
         super().__post_init__(
