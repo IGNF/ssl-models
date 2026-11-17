@@ -92,6 +92,14 @@ class S2NAIPConfig(DatasetConfig):  # noqa: D101
             num_classes=6,
             missing_val=-1,
             bands=1,
+            class_names=[
+                "background",
+                "building",
+                "transport",
+                "industrial energy",
+                "water",
+                "other",
+            ],
         ),
     )
 

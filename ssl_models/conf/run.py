@@ -22,6 +22,12 @@ class RunConfig:  # noqa: D101
     reproducible: bool = True
     seed: int = 42
     logged_images_per_epoch: int = 5
+    log_per_class_metrics: bool = False
+    per_class_metrics: list[str] = field(
+        default_factory=lambda: ["iou", "f1", "precision", "recall"],
+    )
+    per_class_stages: list[str] = field(default_factory=lambda: ["val", "test"])
+    log_confusion_matrix: bool = True
     use_clearml: bool = True
     clearml_project_name: str = "ssl"
     clearml_tags: list[str] = field(default_factory=lambda: ["multimodal", "hydra"])

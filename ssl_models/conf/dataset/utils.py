@@ -56,6 +56,7 @@ class TargetConfig:
     type_target: str = MISSING
     num_classes: int = MISSING
     missing_val: int = -1
+    class_names: list[str] | None = None
 
     def __post_init__(self) -> None:
         """Check that attribute values are valid."""
@@ -63,6 +64,18 @@ class TargetConfig:
             msg = (
                 f"Invalid target {self.type_target}."
                 f"Expected one of {ALLOWED_TARGETS}"
+            )
+            raise ValueError(msg)
+        self.check_class_names()
+
+    def check_class_names(self) -> None:
+        """Check that class names match the number of classes."""
+        if self.class_names is None or not isinstance(self.num_classes, int):
+            return
+        if len(self.class_names) != self.num_classes:
+            msg = (
+                f"Got {len(self.class_names)} class names "
+                f"for {self.num_classes} classes."
             )
             raise ValueError(msg)
 

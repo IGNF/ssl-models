@@ -16,6 +16,9 @@ from ssl_models.conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeCo
 from ssl_models.conf.run import RunConfig
 from ssl_models.hydra_utils import get_hydra_timestamp
 from ssl_models.train.logger import ImageLogger, MetricsLogger, TensorBoardLogger
+from ssl_models.train.metric import PER_CLASS_METRICS
+
+STAGES = ("train", "val", "test")
 
 
 class SSLTrainer(pl.Trainer):
@@ -39,6 +42,11 @@ class SSLTrainer(pl.Trainer):
         self.exp_version = get_hydra_timestamp()
 
         self.logged_images_per_epoch = run.logged_images_per_epoch
+        self.log_per_class_metrics = run.log_per_class_metrics
+        self.per_class_metrics = run.per_class_metrics
+        self.per_class_stages = run.per_class_stages
+        self.log_confusion_matrix = run.log_confusion_matrix
+        self._check_per_class_options()
 
         self.base_lr = opt.base_lr
         if isinstance(opt, OptFinetuneConfig):
@@ -70,6 +78,16 @@ class SSLTrainer(pl.Trainer):
             num_nodes=num_nodes,
             accumulate_grad_batches=opt.accumulate_grad_batches,
         )
+
+    def _check_per_class_options(self) -> None:
+        for name, values, allowed in (
+            ("per_class_metrics", self.per_class_metrics, PER_CLASS_METRICS),
+            ("per_class_stages", self.per_class_stages, STAGES),
+        ):
+            unknown = set(values) - set(allowed)
+            if unknown:
+                msg = f"Invalid {name} {sorted(unknown)}. Expected among {allowed}."
+                raise ValueError(msg)
 
     def configure_loggers(self) -> list[Logger]:
         """Configure loggers."""
