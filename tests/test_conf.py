@@ -21,53 +21,31 @@ def test_class_names_length_is_validated():
         TargetConfig(type_target="segment", num_classes=3, class_names=["a", "b"])
 
 
-def test_tempetes_class_names():
-    remapped = TempetesConfig().tempetes
-    assert len(remapped.class_names) == remapped.num_classes == 9
+def test_tempetes_targets():
+    config = TempetesConfig()
+    assert len(config.tempetes.class_names) == config.tempetes.num_classes == 22
+    remap = config.tempetes_remap
+    assert len(remap.class_names) == remap.num_classes == 9
+    assert list(config.targets) == ["tempetes_remap"]
 
-    original = TempetesConfig(class_remap=None).tempetes
-    assert len(original.class_names) == original.num_classes == 22
-
-    custom = TempetesConfig(class_remap={1: 0}).tempetes
-    assert custom.class_names is None
-
-
-def test_tempetes_recomputes_generated_names_after_remap():
-    generated_names = TargetRasterConfig(
-        type_target="segment",
-        num_classes=9,
-        class_names=list(REMAPPED_CLASS_NAMES),
-    )
-    remapped = TempetesConfig(
-        class_remap={1: 0},
-        tempetes=generated_names,
-    ).tempetes
-    assert remapped.num_classes == 22
-    assert remapped.class_names is None
-
-    custom_nine_classes = TempetesConfig(
-        class_remap={**TempetesConfig().class_remap, 8: 0},
-        tempetes=TargetRasterConfig(
-            type_target="segment",
-            num_classes=9,
-            class_names=list(REMAPPED_CLASS_NAMES),
-        ),
-    ).tempetes
-    assert custom_nine_classes.num_classes == 9
-    assert custom_nine_classes.class_names is None
+    both = TempetesConfig(filter_targets=["tempetes", "tempetes_remap"])
+    assert list(both.targets) == ["tempetes", "tempetes_remap"]
 
 
-def test_tempetes_preserves_explicit_class_names():
-    class_names = [f"class_{i}" for i in range(9)]
+def test_tempetes_custom_remap_needs_matching_class_names():
+    custom_remap = {**TempetesConfig().class_remap, 21: 0}  # leaves 8 classes
+    with pytest.raises(ValueError, match="class names"):
+        TempetesConfig(class_remap=custom_remap)
+
     config = TempetesConfig(
-        class_remap={**TempetesConfig().class_remap, 8: 0},
-        tempetes=TargetRasterConfig(
+        class_remap=custom_remap,
+        tempetes_remap=TargetRasterConfig(
             type_target="segment",
-            num_classes=9,
-            class_names=class_names,
+            num_classes=8,
+            class_names=REMAPPED_CLASS_NAMES[:8],
         ),
     )
-    assert config.tempetes.class_names == class_names
+    assert config.tempetes_remap.num_classes == 8
 
 
 def test_segmentation_datasets_have_class_names():
