@@ -3,7 +3,7 @@ import itertools
 import pytest
 
 from ssl_models.conf.loss import MiMLossConfig
-from ssl_models.train.mim import MiMModule
+from ssl_models.train.lit_mim import LitMiM
 
 
 @pytest.mark.parametrize(
@@ -25,7 +25,7 @@ def test_ssl_mae(
     interpolate,
     stage,
 ):
-    ssl_module = MiMModule(
+    ssl_module = LitMiM(
         dataset=dataset_treesat,
         mask=mask,
         fusion_mode=fusion_mode,
@@ -56,7 +56,7 @@ def test_ssl_inter_mae(
     interpolate,
     stage,
 ):
-    ssl_module = MiMModule(
+    ssl_module = LitMiM(
         dataset=dataset_treesat,
         mask=mask,
         fusion_mode=fusion_mode,
@@ -91,7 +91,7 @@ def test_ssl_head_loss(
     loss,
     stage,
 ):
-    ssl_module = MiMModule(
+    ssl_module = LitMiM(
         dataset=dataset_treesat,
         mask=mask,
         fusion_mode=fusion_mode,
@@ -130,7 +130,7 @@ def test_ssl_mixmae(
     swin_abs_enc,
     stage,
 ):
-    ssl_module = MiMModule(
+    ssl_module = LitMiM(
         dataset=dataset_treesat,
         mask=mask,
         fusion_mode=fusion_mode,
@@ -147,7 +147,7 @@ def test_ssl_mixmae(
 
 @pytest.mark.xfail
 def test_model_mod_mixmae_should_fail(dataset_treesat, mask):
-    _ = MiMModule(
+    _ = LitMiM(
         dataset=dataset_treesat,
         mask=mask,
         fusion_mode="mod",
@@ -159,7 +159,7 @@ def test_model_mod_mixmae_should_fail(dataset_treesat, mask):
 
 @pytest.mark.xfail
 def test_model_group_mixmae_should_fail(dataset_treesat, mask):
-    _ = MiMModule(
+    _ = LitMiM(
         dataset=dataset_treesat,
         mask=mask,
         fusion_mode="group",
@@ -171,7 +171,7 @@ def test_model_group_mixmae_should_fail(dataset_treesat, mask):
 
 @pytest.mark.xfail
 def test_levels_should_fail(dataset_treesat, mask):
-    _ = MiMModule(
+    _ = LitMiM(
         dataset=dataset_treesat,
         mask=mask,
         fusion_mode="shared",
@@ -184,7 +184,7 @@ def test_levels_should_fail(dataset_treesat, mask):
 
 @pytest.mark.xfail
 def test_model_should_fail(dataset_treesat, mask):
-    _ = MiMModule(
+    _ = LitMiM(
         dataset=dataset_treesat,
         mask=mask,
         fusion_mode="shared",
@@ -196,4 +196,4 @@ def test_model_should_fail(dataset_treesat, mask):
 
 @pytest.mark.xfail
 def test_missing_args_should_fail():
-    _ = MiMModule(model="mae", model_size="tiny")
+    _ = LitMiM(model="mae", model_size="tiny")

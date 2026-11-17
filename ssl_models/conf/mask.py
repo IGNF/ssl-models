@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class MiMMaskConfig:
-    """MiM masking, see `ssl_models.train.mim.MiMModule`."""
+    """MiM masking, see `ssl_models.train.lit_mim.LitMiM`."""
 
     mask_ratio: float = 0.75
     nb_mix_images: int = 4
@@ -18,7 +18,7 @@ class MiMMaskConfig:
 
 @dataclass
 class DINOv3MaskConfig:
-    """iBOT masking, see `ssl_models.train.dino.DINOModule`."""
+    """iBOT masking, see `ssl_models.train.lit_dino.LitDINOv3`."""
 
     ibot_mask_prob: float = 0.5
     ibot_mask_ratio: list[float] = field(default_factory=lambda: [0.1, 0.5])

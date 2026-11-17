@@ -12,12 +12,12 @@ from ssl_models.baselines.prithvi import PrithviBaseline
 from ssl_models.baselines.satmae import SatMAEBaseline
 from ssl_models.baselines.terramind import TerramindBaseline
 from ssl_models.conf.dataset.utils import DatasetConfig
-from ssl_models.train.base import BaseModule
+from ssl_models.train.lit_base import LitBase
 
 torch.set_float32_matmul_precision(precision="medium")
 
 
-class BaselineModule(BaseModule):
+class LitBaseline(LitBase):
     """Baseline module for fine-tuning."""
 
     def __init__(
@@ -94,7 +94,7 @@ class BaselineModule(BaseModule):
                 param.requires_grad = False
         else:
             self.ema_model = None
-        self.
+
         self.save_hyperparameters(ignore=["dataset"])
 
     def configure_optimizers(self) -> dict:

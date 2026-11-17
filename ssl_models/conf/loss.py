@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 @dataclass
 class MiMLossConfig:
-    """MiM reconstruction loss, see `ssl_models.train.mim.MiMModule`.
+    """MiM reconstruction loss, see `ssl_models.train.lit_mim.LitMiM`.
 
     `name` is one of "l1", "l2", "l1_norm", "l2_norm", "l1_ls", "l2_ls".
     """
@@ -15,7 +15,10 @@ class MiMLossConfig:
 
 @dataclass
 class DINOv3LossConfig:
-    """DINO + iBOT + KoLeo losses and heads, see `ssl_models.train.dino.DINOModule`."""
+    """DINO + iBOT + KoLeo losses and heads.
+
+    See `ssl_models.train.lit_dino.LitDINOv3`.
+    """
 
     # heads
     dino_n_prototypes: int = 65536

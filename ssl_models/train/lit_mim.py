@@ -21,13 +21,13 @@ from ssl_models.mim.mixmae import (
     mixmae_small,
     mixmae_tiny,
 )
-from ssl_models.train.base import BaseModule
 from ssl_models.train.condition_metric import ConditionMetric
+from ssl_models.train.lit_base import LitBase
 
 torch.set_float32_matmul_precision(precision="medium")
 
 
-class MiMModule(BaseModule):
+class LitMiM(LitBase):
     """Lightning SSL module."""
 
     def __init__(  # noqa: PLR0913, PLR0915, C901, PLR0912

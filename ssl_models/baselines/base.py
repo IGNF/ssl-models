@@ -15,7 +15,7 @@ from ssl_models.layers.head import ClassificationHead, PixelifyHead
 from ssl_models.layers.utils import encode_dates, group_mods, ungroup_mods
 
 
-class BaseModule(Module, ABC):
+class BaseBaseline(Module, ABC):
     """Base Module for baselines."""
 
     def __init__(

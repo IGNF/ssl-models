@@ -15,7 +15,7 @@ from timm.models.vision_transformer import Block, PatchEmbed
 from torch import Tensor, nn
 
 from ssl_models import LOGGER
-from ssl_models.baselines.base import BaseModule
+from ssl_models.baselines.base import BaseBaseline
 from ssl_models.baselines.utils import interpolate_pos_encoding
 from ssl_models.conf.dataset.utils import DatasetConfig
 
@@ -23,7 +23,7 @@ BASE_IMAGE_SIZE = 224
 ORIG_BANDS = (0, 1, 2)  # S2 bands included in original model
 
 
-class SatMAEBaseline(BaseModule):
+class SatMAEBaseline(BaseBaseline):
     """Baseline model based on SatMAE."""
 
     def __init__(

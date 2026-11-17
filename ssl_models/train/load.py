@@ -6,10 +6,10 @@ from ssl_models.conf.augment import DinoAugmentConfig
 from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.conf.model import BaselineConfig, DINOv3Config, MiMConfig
 from ssl_models.conf.utils import load_config
-from ssl_models.train.base import BaseModule
-from ssl_models.train.baseline import BaselineModule
-from ssl_models.train.dino import DINOModule
-from ssl_models.train.mim import MiMModule
+from ssl_models.train.lit_base import LitBase
+from ssl_models.train.lit_baseline import LitBaseline
+from ssl_models.train.lit_dino import LitDINOv3
+from ssl_models.train.lit_mim import LitMiM
 
 
 def build_module(
@@ -17,7 +17,7 @@ def build_module(
     dataset: DatasetConfig,
     augment: DinoAugmentConfig,
     ckpt_path: str | Path | None = None,
-) -> BaseModule:
+) -> LitBase:
     """Build the Lightning module matching `model`, from scratch or from a checkpoint.
 
     When loading a checkpoint, hyperparameters come from the checkpoint, except the
@@ -26,13 +26,13 @@ def build_module(
     """
     match model:
         case MiMConfig():
-            module_class = MiMModule
+            module_class = LitMiM
             kwargs = {}
         case DINOv3Config():
-            module_class = DINOModule
+            module_class = LitDINOv3
             kwargs = {"augment": augment}
         case BaselineConfig():
-            module_class = BaselineModule
+            module_class = LitBaseline
             kwargs = {}
         case _:
             msg = f"Unknown model config {type(model).__name__}."
@@ -41,6 +41,9 @@ def build_module(
     if ckpt_path is None:
         return module_class(dataset=dataset, **kwargs, **vars(model))
 
+    for key in ("mask", "loss"):  # ignored by save_hyperparameters
+        if hasattr(model, key):
+            kwargs[key] = getattr(model, key)
     return module_class.load_from_checkpoint(
         ckpt_path,
         map_location=lambda storage, _: storage,
@@ -50,7 +53,7 @@ def build_module(
     )
 
 
-def load_module(ckpt_path: str | Path) -> BaseModule:
+def load_module(ckpt_path: str | Path) -> LitBase:
     """Reload a trained module from a checkpoint, using its run's resolved config.
 
     For MiM and baseline modules, the bare torch model is `load_module(path).model`.

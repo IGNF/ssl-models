@@ -7,11 +7,11 @@ from terratorch import BACKBONE_REGISTRY
 from torch import Tensor
 from torch.nn import Module
 
-from ssl_models.baselines.base import BaseModule
+from ssl_models.baselines.base import BaseBaseline
 from ssl_models.conf.dataset.utils import DatasetConfig
 
 
-class TerramindBaseline(BaseModule):
+class TerramindBaseline(BaseBaseline):
     """Baseline model based on Terramind."""
 
     def __init__(

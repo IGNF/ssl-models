@@ -55,7 +55,7 @@ def local_view_size(
     return min(max(size, min_patches * patch_size), image_size)
 
 
-class DINOv3Backbone(nn.Module):
+class DINOv3(nn.Module):
     """Multi-modal RoPE ViT with CLS and register tokens."""
 
     def __init__(  # noqa: PLR0913
@@ -423,7 +423,7 @@ class DINOv3Backbone(nn.Module):
         }
 
 
-def dinov3_tiny(**kwargs) -> DINOv3Backbone:  # noqa: ANN003
+def dinov3_tiny(**kwargs) -> DINOv3:  # noqa: ANN003
     """Construct DINOv3 backbone tiny."""
     args = {
         "embed_dim": 192,
@@ -433,10 +433,10 @@ def dinov3_tiny(**kwargs) -> DINOv3Backbone:  # noqa: ANN003
         "ffn": "mlp",
     }
     args.update(kwargs)
-    return DINOv3Backbone(**args)
+    return DINOv3(**args)
 
 
-def dinov3_small(**kwargs) -> DINOv3Backbone:  # noqa: ANN003
+def dinov3_small(**kwargs) -> DINOv3:  # noqa: ANN003
     """Construct DINOv3 backbone small."""
     args = {
         "embed_dim": 384,
@@ -446,10 +446,10 @@ def dinov3_small(**kwargs) -> DINOv3Backbone:  # noqa: ANN003
         "ffn": "mlp",
     }
     args.update(kwargs)
-    return DINOv3Backbone(**args)
+    return DINOv3(**args)
 
 
-def dinov3_base(**kwargs) -> DINOv3Backbone:  # noqa: ANN003
+def dinov3_base(**kwargs) -> DINOv3:  # noqa: ANN003
     """Construct DINOv3 backbone base."""
     args = {
         "embed_dim": 768,
@@ -459,10 +459,10 @@ def dinov3_base(**kwargs) -> DINOv3Backbone:  # noqa: ANN003
         "ffn": "mlp",
     }
     args.update(kwargs)
-    return DINOv3Backbone(**args)
+    return DINOv3(**args)
 
 
-def dinov3_large(**kwargs) -> DINOv3Backbone:  # noqa: ANN003
+def dinov3_large(**kwargs) -> DINOv3:  # noqa: ANN003
     """Construct DINOv3 backbone large."""
     args = {
         "embed_dim": 1024,
@@ -472,10 +472,10 @@ def dinov3_large(**kwargs) -> DINOv3Backbone:  # noqa: ANN003
         "ffn": "mlp",
     }
     args.update(kwargs)
-    return DINOv3Backbone(**args)
+    return DINOv3(**args)
 
 
-def dinov3_huge_plus(**kwargs) -> DINOv3Backbone:  # noqa: ANN003
+def dinov3_huge_plus(**kwargs) -> DINOv3:  # noqa: ANN003
     """Construct DINOv3 backbone huge+."""
     args = {
         "embed_dim": 1280,
@@ -485,4 +485,4 @@ def dinov3_huge_plus(**kwargs) -> DINOv3Backbone:  # noqa: ANN003
         "ffn": "swiglu",
     }
     args.update(kwargs)
-    return DINOv3Backbone(**args)
+    return DINOv3(**args)

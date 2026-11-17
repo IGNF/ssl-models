@@ -5,15 +5,15 @@ from pytorch_lightning import Trainer
 from ssl_models.conf.augment import DinoAugmentConfig
 from ssl_models.conf.loss import DINOv3LossConfig
 from ssl_models.conf.model import DINOv3Config, MiMConfig
-from ssl_models.train.dino import DINOModule
+from ssl_models.train.lit_dino import LitDINOv3
 from ssl_models.train.load import build_module
-from ssl_models.train.mim import MiMModule
+from ssl_models.train.lit_mim import LitMiM
 
 
 @pytest.mark.parametrize(
     "model, module_class",
     [
-        (MiMConfig(model_size="tiny"), MiMModule),
+        (MiMConfig(model_size="tiny"), LitMiM),
         (
             DINOv3Config(
                 model_size="tiny",
@@ -24,7 +24,7 @@ from ssl_models.train.mim import MiMModule
                     head_bottleneck_dim=32,
                 ),
             ),
-            DINOModule,
+            LitDINOv3,
         ),
     ],
 )

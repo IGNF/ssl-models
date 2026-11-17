@@ -12,11 +12,11 @@ from einops import rearrange
 from torch import Tensor, einsum, nn
 from torch.nn import Module
 
-from ssl_models.baselines.base import BaseModule
+from ssl_models.baselines.base import BaseBaseline
 from ssl_models.conf.dataset.utils import DatasetConfig
 
 
-class CROMABaseline(BaseModule):
+class CROMABaseline(BaseBaseline):
     """Baseline model based on CROMA."""
 
     def __init__(

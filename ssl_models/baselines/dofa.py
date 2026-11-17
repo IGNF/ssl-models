@@ -3,7 +3,6 @@
 Model from https://arxiv.org/abs/2403.15356.
 """
 
-from abc import ABC
 from functools import partial
 from typing import Literal
 
@@ -14,12 +13,12 @@ from torch import Tensor, nn
 from torch.nn import Identity, Module, ModuleDict, Parameter, ParameterDict, init
 from torchgeo.models import DOFABase16_Weights, DOFALarge16_Weights
 
-from ssl_models.baselines.base import BaseModule
+from ssl_models.baselines.base import BaseBaseline
 from ssl_models.baselines.utils import filter_dict, interpolate_pos_encoding
 from ssl_models.conf.dataset.utils import DatasetConfig
 
 
-class DOFABaseline(BaseModule, ABC):
+class DOFABaseline(BaseBaseline):
     """Baseline model based on DOFA."""
 
     def __init__(

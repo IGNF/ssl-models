@@ -20,7 +20,7 @@ from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.conf.loss import DINOv3LossConfig
 from ssl_models.conf.mask import DINOv3MaskConfig
 from ssl_models.dino.augment import MultiCropAugment
-from ssl_models.dino.backbone import (
+from ssl_models.dino.dino import (
     dinov3_base,
     dinov3_huge_plus,
     dinov3_large,
@@ -37,12 +37,12 @@ from ssl_models.dino.loss import (
 )
 from ssl_models.dino.masking import ibot_masks, view_keep
 from ssl_models.dino.schedule import cosine, linear_warmup, lr_factor
-from ssl_models.train.base import BaseModule
+from ssl_models.train.lit_base import LitBase
 
 NO_WD_PARAMS = ("cls_token", "register_tokens", "mask_token")
 
 
-class DINOModule(BaseModule):
+class LitDINOv3(LitBase):
     """Lightning DINOv3-style pretraining module."""
 
     def __init__(  # noqa: PLR0913
@@ -172,7 +172,7 @@ class DINOModule(BaseModule):
 
         self.save_hyperparameters(ignore=["dataset", "mask", "loss", "augment"])
 
-    def train(self, mode: bool = True) -> "DINOModule":
+    def train(self, mode: bool = True) -> "LitDINOv3":
         """Keep the teacher in eval mode (no drop path, no RoPE augmentation)."""
         super().train(mode)
         self.teacher.eval()

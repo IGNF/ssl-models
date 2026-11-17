@@ -23,7 +23,7 @@ from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 RGB_BANDS = 3
 
 
-class BaseModule(LightningModule, ABC):
+class LitBase(LightningModule, ABC):
     """Lightning base module."""
 
     def __init__(

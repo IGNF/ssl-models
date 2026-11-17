@@ -13,7 +13,7 @@ from torch.nn import LayerNorm, Module, ModuleDict
 from transformers import AutoConfig, Dinov2Config
 from transformers.models.dinov2.modeling_dinov2 import Dinov2Embeddings, Dinov2Encoder
 
-from ssl_models.baselines.base import BaseModule
+from ssl_models.baselines.base import BaseBaseline
 from ssl_models.baselines.utils import (
     filter_dict,
     get_imagenat_dinov2_state_dict,
@@ -24,7 +24,7 @@ from ssl_models.conf.dataset.utils import DatasetConfig
 RGB_BANDS = 3
 
 
-class Dinov2Baseline(BaseModule):
+class Dinov2Baseline(BaseBaseline):
     """Baseline model based on DinoV2."""
 
     def __init__(
