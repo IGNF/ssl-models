@@ -24,7 +24,7 @@ class TerramindBaseline(BaseModule):
         type_head: Literal["linear", "attentive"] = "linear",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fusion_mode: Literal["mod"] = "shared",
-        add_date_enc: bool = False,
+        use_date_enc: bool = False,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -50,7 +50,7 @@ class TerramindBaseline(BaseModule):
             Interpolation used in the image resizing before patchification.
         fusion_mode: str
             Fusion strategy. Necessarily "shared".
-        add_date_enc: bool
+        use_date_enc: bool
             Whether to add the date encodings to the embeddings.
         fac_date_enc: float
             Factor used to compute the date encodings.
@@ -72,7 +72,7 @@ class TerramindBaseline(BaseModule):
         self.interpolate = interpolate
         self.fusion_mode = fusion_mode
 
-        self.add_date_enc = add_date_enc
+        self.use_date_enc = use_date_enc
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
         self.keep_norm = keep_norm
@@ -99,7 +99,7 @@ class TerramindBaseline(BaseModule):
             self.encoder_dim,
             self.type_head,
             self.interpolate,
-            self.add_date_enc,
+            self.use_date_enc,
             self.fac_date_enc,
             self.date_dim,
             self.keep_norm,
@@ -257,8 +257,6 @@ class TerramindBaseline(BaseModule):
         tuple: Terramind's outputs.
 
         """
-        batch = self.resize_and_rescale(batch)
-
         x_smashed = self._smash_dates(batch)
         x_smashed = self.group(x_smashed)
 
@@ -267,7 +265,7 @@ class TerramindBaseline(BaseModule):
         x_enc = features_terramind[-1]
         x_enc = self._unsmash_dates(x_enc)
 
-        if self.add_date_enc:
+        if self.use_date_enc:
             dates = {}
             for name_mod in self.dataset.inputs:
                 dates[name_mod] = batch[f"{name_mod}_dates"]

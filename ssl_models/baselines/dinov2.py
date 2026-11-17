@@ -37,7 +37,7 @@ class Dinov2Baseline(BaseModule):
         type_head: Literal["linear", "attentive"] = "attentive",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fusion_mode: Literal["shared", "monotemp"] = "shared",
-        add_date_enc: bool = True,
+        use_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -63,7 +63,7 @@ class Dinov2Baseline(BaseModule):
             Interpolation used in the image resizing before patchification.
         fusion_mode: str
             Fusion strategy. Either "shared" or "monotemp".
-        add_date_enc: bool
+        use_date_enc: bool
             Whether to add date encodings to the embeddings.
         fac_date_enc: float
             Factor used to compute the date encodings.
@@ -84,7 +84,7 @@ class Dinov2Baseline(BaseModule):
         self.backbone_size = backbone_size
         self.std = 0.01
         self.keep_norm = keep_norm
-        self.add_date_enc = add_date_enc
+        self.use_date_enc = use_date_enc
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
 
@@ -128,7 +128,7 @@ class Dinov2Baseline(BaseModule):
             self.embed_dim,
             self.type_head,
             self.interpolate,
-            self.add_date_enc,
+            self.use_date_enc,
             self.fac_date_enc,
             self.date_dim,
             self.keep_norm,
@@ -401,8 +401,6 @@ class Dinov2Baseline(BaseModule):
         tuple: DinoV2's outputs.
 
         """
-        batch = self.resize_and_rescale(batch)
-
         group_batch = self.group(batch)
 
         x_enc, dates = {}, {}
@@ -420,7 +418,7 @@ class Dinov2Baseline(BaseModule):
             x_enc[name_mod] = x_mod
             dates[name_mod] = batch[f"{name_mod}_dates"]
 
-        if self.add_date_enc:
+        if self.use_date_enc:
             ref_date = batch["ref_date"]
             x_enc = self._add_date_encodings(x_enc, dates, ref_date)
 

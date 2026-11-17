@@ -2,8 +2,6 @@
 
 from dataclasses import dataclass, field
 
-from hydra_zen import store
-
 
 @dataclass
 class MiMMaskConfig:
@@ -19,15 +17,10 @@ class MiMMaskConfig:
 
 
 @dataclass
-class DinoMaskConfig:
+class DINOv3MaskConfig:
     """iBOT masking, see `ssl_models.train.dino.DINOModule`."""
 
     ibot_mask_prob: float = 0.5
     ibot_mask_ratio: list[float] = field(default_factory=lambda: [0.1, 0.5])
     ibot_blob_grid: int = 4
     ibot_mask_shared: float = 1.0
-
-
-mask_store = store(group="mask")
-mask_store(MiMMaskConfig, name="mim_mask")
-mask_store(DinoMaskConfig, name="dino_mask")

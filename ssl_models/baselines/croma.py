@@ -28,7 +28,7 @@ class CROMABaseline(BaseModule):
         type_head: Literal["linear", "attentive"] = "attentive",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fusion_mode: Literal["late-croma", "inter-croma"] = "inter-croma",
-        add_date_enc: bool = True,
+        use_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -52,7 +52,7 @@ class CROMABaseline(BaseModule):
             Interpolation used in the image resizing before patchification.
         fusion_mode: str
             Fusion strategy. Either "late-croma" or "inter-croma".
-        add_date_enc: bool
+        use_date_enc: bool
             Whether to add date encodings to the embeddings.
         fac_date_enc: float
             Factor used to compute the date encodings.
@@ -72,7 +72,7 @@ class CROMABaseline(BaseModule):
         self.fusion_mode = fusion_mode
 
         self.pretrained_path = pretrained_path
-        self.add_date_enc = add_date_enc
+        self.use_date_enc = use_date_enc
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
         self.keep_norm = keep_norm
@@ -101,7 +101,7 @@ class CROMABaseline(BaseModule):
             self.encoder_dim,
             self.type_head,
             self.interpolate,
-            self.add_date_enc,
+            self.use_date_enc,
             self.fac_date_enc,
             self.date_dim,
             self.keep_norm,
@@ -283,8 +283,6 @@ class CROMABaseline(BaseModule):
         tuple: CROMA's outputs.
 
         """
-        batch = self.resize_and_rescale(batch)
-
         batch["s1"] = torch.concat((batch["s1_asc"], batch["s1_des"]), dim=1)
 
         group_batch = self.group(batch)
@@ -304,7 +302,7 @@ class CROMABaseline(BaseModule):
         if self.fusion_mode == "inter-croma":
             x_enc["joint"] = output_croma["joint_encodings"]
 
-        if self.add_date_enc:
+        if self.use_date_enc:
             dates = {}
             for name_mod in self.dataset.inputs:
                 dates[name_mod] = batch[f"{name_mod}_dates"]

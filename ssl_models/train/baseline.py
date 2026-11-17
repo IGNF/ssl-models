@@ -34,7 +34,7 @@ class BaselineModule(BaseModule):
         freeze: bool = False,
         use_ema: bool = False,
         keep_norm: bool = True,
-        add_date_enc: bool = True,
+        use_date_enc: bool = True,
         **kwargs,  # noqa: ANN003
     ) -> None:
         super().__init__(datasets)
@@ -47,7 +47,7 @@ class BaselineModule(BaseModule):
             "pretrained_path": pretrained_path,
             "type_head": type_head,
             "interpolate": interpolate,
-            "add_date_enc": add_date_enc,
+            "use_date_enc": use_date_enc,
             "keep_norm": keep_norm,
         }
         match model:
@@ -113,7 +113,8 @@ class BaselineModule(BaseModule):
 
         lr = (
             # use sqrt scaling rule with Adam
-            self.trainer.base_lr * total_batch_size**0.5
+            self.trainer.base_lr
+            * total_batch_size**0.5
         )
         match self.trainer.lw_decay:
             case None:

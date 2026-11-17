@@ -146,12 +146,14 @@ class DINOv3Backbone(nn.Module):
             {name: nn.Parameter(torch.zeros(1, 1, embed_dim)) for name in name_models},
         )
         self.register_tokens = nn.ParameterDict(
-            {
-                name: nn.Parameter(torch.zeros(1, n_registers, embed_dim))
-                for name in name_models
-            }
-            if n_registers
-            else {},
+            (
+                {
+                    name: nn.Parameter(torch.zeros(1, n_registers, embed_dim))
+                    for name in name_models
+                }
+                if n_registers
+                else {}
+            ),
         )
         self.mask_token = nn.Parameter(torch.zeros(embed_dim))
         for param in (*self.cls_token.values(), *self.register_tokens.values()):

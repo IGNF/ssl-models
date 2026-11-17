@@ -35,7 +35,7 @@ class SatMAEBaseline(BaseModule):
         type_head: Literal["linear", "attentive"] = "attentive",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fusion_mode: Literal["mod"] = "mod",
-        add_date_enc: bool = True,
+        use_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -59,7 +59,7 @@ class SatMAEBaseline(BaseModule):
             Interpolation used in the image resizing before patchification.
         fusion_mode: str
             Fusion strategy. Necessarily "mod".
-        add_date_enc: bool
+        use_date_enc: bool
             Whether to add the date encodings to the embeddings.
         fac_date_enc: float
             Factor used to compute the date encodings.
@@ -78,7 +78,7 @@ class SatMAEBaseline(BaseModule):
         self.fusion_mode = fusion_mode
 
         self.pretrained_path = pretrained_path
-        self.add_date_enc = add_date_enc
+        self.use_date_enc = use_date_enc
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
         self.keep_norm = keep_norm
@@ -110,7 +110,7 @@ class SatMAEBaseline(BaseModule):
             self.encoder_dim,
             self.type_head,
             self.interpolate,
-            self.add_date_enc,
+            self.use_date_enc,
             self.fac_date_enc,
             self.date_dim,
             self.keep_norm,
@@ -239,8 +239,6 @@ class SatMAEBaseline(BaseModule):
         tuple: SatMAE's outputs.
 
         """
-        batch = self.resize_and_rescale(batch)
-
         output_satmae = self.encoder.forward_encoder(
             batch["s2"],
             self.format_dates(batch["s2_dates"]),

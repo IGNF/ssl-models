@@ -19,8 +19,6 @@ def _import_dataset_configs() -> None:
 _import_dataset_configs()
 
 
-# It does not seems possible to have nested dataclasses at all config levels,
-# so we do not use a dataclass at the top level.
 class DatasetsConfig:
     """Dataset config."""
 

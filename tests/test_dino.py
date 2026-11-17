@@ -111,7 +111,9 @@ def test_backbone(datasets_treesat, fusion_mode, inter_depth, view):
 
     shapes = backbone.token_shapes(NAME, view)
     mask = ibot_masks(shapes, 2, 1.0, (0.3, 0.5), 4, 1.0, "cpu")
-    keep = view_keep({"aerial": 1, "s2": 16, "s1_asc": 4, "s1_des": 4}, 2, 0.3, 0.3, "cpu")
+    keep = view_keep(
+        {"aerial": 1, "s2": 16, "s1_asc": 4, "s1_des": 4}, 2, 0.3, 0.3, "cpu"
+    )
     out = backbone(inputs, NAME, view, ibot_mask=mask, keep=keep)
 
     num_tokens = sum(s * h * w for s, h, w in shapes.values())
@@ -172,7 +174,9 @@ def coordinate_batch(sizes, batch_size=3):
     for name_mod, size in sizes.items():
         c = (torch.arange(size, dtype=torch.float32) + 0.5) / size * 2 - 1
         yy, xx = torch.meshgrid(c, c, indexing="ij")
-        batch[name_mod] = torch.stack([xx, yy])[None, None].repeat(batch_size, 2, 1, 1, 1)
+        batch[name_mod] = torch.stack([xx, yy])[None, None].repeat(
+            batch_size, 2, 1, 1, 1
+        )
     return batch
 
 
@@ -232,7 +236,9 @@ def test_ibot_masks():
 def test_ibot_masks_aligned():
     """Shared masks are aligned in space across modalities."""
     torch.manual_seed(0)
-    masks = ibot_masks({"a": (1, 12, 12), "b": (1, 3, 3)}, 32, 1.0, (0.5, 0.5), 2, 1.0, "cpu")
+    masks = ibot_masks(
+        {"a": (1, 12, 12), "b": (1, 3, 3)}, 32, 1.0, (0.5, 0.5), 2, 1.0, "cpu"
+    )
     a = masks["a"].float().reshape(32, 1, 12, 12)
     b = masks["b"].float().reshape(32, 1, 3, 3)
     a_low = F.adaptive_avg_pool2d(a, 3)
@@ -263,10 +269,13 @@ def test_dino_head():
 
 def test_sinkhorn():
     torch.manual_seed(0)
-    logits = F.normalize(torch.randn(256, 32), dim=-1) @ F.normalize(
-        torch.randn(64, 32),
-        dim=-1,
-    ).t()
+    logits = (
+        F.normalize(torch.randn(256, 32), dim=-1)
+        @ F.normalize(
+            torch.randn(64, 32),
+            dim=-1,
+        ).t()
+    )
     probs = sinkhorn_knopp(logits, temp=0.1, n_iter=20)
     assert torch.allclose(probs.sum(dim=1), torch.ones(256), atol=1e-4)
     # equipartition over prototypes
@@ -281,9 +290,9 @@ def test_dino_loss():
     student_local = torch.randn(3, 8, 16)
     losses = dino_loss(student_global, student_local, teacher, student_temp=1.0)
     n_global_pairs, n_local_pairs = 2, 6
-    expected = (
-        n_global_pairs * losses["global"] + n_local_pairs * losses["local"]
-    ) / (n_global_pairs + n_local_pairs)
+    expected = (n_global_pairs * losses["global"] + n_local_pairs * losses["local"]) / (
+        n_global_pairs + n_local_pairs
+    )
     assert torch.allclose(losses["total"], expected)
 
     # minimum = entropy of targets, reached when student matches the other view
@@ -436,10 +445,13 @@ def test_sinkhorn_distributed():
     import torch.multiprocessing as mp
 
     torch.manual_seed(0)
-    logits = F.normalize(torch.randn(50, 16), dim=-1) @ F.normalize(
-        torch.randn(32, 16),
-        dim=-1,
-    ).t()
+    logits = (
+        F.normalize(torch.randn(50, 16), dim=-1)
+        @ F.normalize(
+            torch.randn(32, 16),
+            dim=-1,
+        ).t()
+    )
     splits = [30, 20]
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))

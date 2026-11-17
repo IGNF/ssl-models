@@ -2,8 +2,6 @@
 
 from dataclasses import dataclass
 
-from hydra_zen import store
-
 
 @dataclass
 class MiMLossConfig:
@@ -16,7 +14,7 @@ class MiMLossConfig:
 
 
 @dataclass
-class DinoLossConfig:
+class DINOv3LossConfig:
     """DINO + iBOT + KoLeo losses and heads, see `ssl_models.train.dino.DINOModule`."""
 
     # heads
@@ -33,8 +31,3 @@ class DinoLossConfig:
     w_dino: float = 1.0
     w_ibot: float = 1.0
     w_koleo: float = 0.1
-
-
-loss_store = store(group="loss")
-loss_store(MiMLossConfig, name="mim_loss")
-loss_store(DinoLossConfig, name="dino_loss")

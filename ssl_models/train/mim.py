@@ -203,7 +203,8 @@ class MiMModule(BaseModule):
         )
         lr = (
             # use sqrt scaling rule with Adam
-            self.trainer.base_lr * total_batch_size**0.5
+            self.trainer.base_lr
+            * total_batch_size**0.5
         )
 
         optimizer = torch.optim.AdamW(
@@ -464,8 +465,10 @@ class MiMModule(BaseModule):
 
         with torch.no_grad():
             for batch in data_loader:
-                batch = self.trainer.strategy.batch_to_device(batch, self.device)  # noqa: PLW2901
-                batch = self.model.resize_and_rescale(batch, name_dataset)  # noqa: PLW2901
+                batch = self.trainer.strategy.batch_to_device(
+                    batch, self.device
+                )  # noqa: PLW2901
+                batch = self.resize_and_rescale(batch)  # noqa: PLW2901
 
                 for name_mod in dataset.inputs:
                     H = self.model.out_grid_size[name_dataset][name_mod]  # noqa: N806

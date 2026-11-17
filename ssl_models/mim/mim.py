@@ -20,7 +20,6 @@ from ssl_models.layers.utils import (
     group_mods,
     posemb_sincos_2d,
     reshape_encoding,
-    resize_and_rescale,
     shuffle_enc_to_dec,
     ungroup_mods,
 )
@@ -509,18 +508,6 @@ class BaseMIM(nn.Module, ABC):
 
         return x
 
-    def resize_and_rescale(
-        self,
-        batch: dict[str, Tensor],
-        name_dataset: str,
-    ) -> dict[str, Tensor]:
-        """Resize and/or rescale input rasters based on dataset config."""
-        return resize_and_rescale(
-            batch,
-            self.datasets.datasets[name_dataset],
-            self.interpolate,
-        )
-
     @abstractmethod
     def mask_struct(self, x: Tensor) -> dict[str, Tensor | None]:
         """Abstract method for structural masking."""
@@ -568,8 +555,6 @@ class BaseMIM(nn.Module, ABC):
         dict[str, Tensor] | None,
     ]:
         """Shared forward pass for all MIM modules."""
-        batch = self.resize_and_rescale(batch, name_dataset)
-
         x_enc, mask_token, dates, ref_date = self.embed(batch, name_dataset)
         x_enc = self.enc_add_encodings(x_enc, dates, ref_date, name_dataset)
 

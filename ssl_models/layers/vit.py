@@ -133,9 +133,9 @@ def build_norm(norm: Literal["layernorm", "rmsnorm"], dim: int) -> nn.Module:
     """Build normalization layer."""
     match norm:
         case "layernorm":
-            return nn.LayerNorm(dim, eps=1e-6)
+            return nn.LayerNorm(dim, eps=1e-5)
         case "rmsnorm":
-            return nn.RMSNorm(dim, eps=1e-6)
+            return nn.RMSNorm(dim, eps=1e-5)
         case _:
             msg = f"Invalid norm {norm}. Expected 'layernorm' or 'rmsnorm'."
             raise ValueError(msg)
@@ -369,4 +369,3 @@ def init_weights(module: nn.Module) -> None:
         nn.init.trunc_normal_(module.weight, std=0.02)
         if module.bias is not None:
             nn.init.zeros_(module.bias)
-

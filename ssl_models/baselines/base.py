@@ -27,7 +27,7 @@ class BaseModule(Module, ABC):
         embed_dim: int,
         type_head: Literal["linear", "attentive"] = "attentive",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
-        add_date_enc: bool = True,
+        use_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -41,7 +41,7 @@ class BaseModule(Module, ABC):
         self.patch_size = patch_size
         self.fusion_mode = fusion_mode
         self.keep_norm = keep_norm
-        self.add_date_enc = add_date_enc
+        self.use_date_enc = use_date_enc
 
         self.num_bands = {
             name_mod: (
@@ -201,17 +201,3 @@ class BaseModule(Module, ABC):
                         ssl_phase="finetune",
                     )
         return logits
-
-    def resize_and_rescale(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
-        """Resize and/or rescale input rasters based on dataset config."""
-        for name_mod, mod in self.dataset.inputs.items():
-            batch[name_mod] = F.interpolate(
-                batch[name_mod].flatten(0, 1),
-                size=(mod.image_size,) * 2,
-                mode=self.interpolate,
-            ).unflatten(0, (-1, mod.num_dates))
-            if mod.rescale_elev:
-                batch[name_mod][:, :, 1:] = 30 * (
-                    batch[name_mod][:, :, :1] - batch[name_mod][:, :, 1:]
-                )
-        return batch

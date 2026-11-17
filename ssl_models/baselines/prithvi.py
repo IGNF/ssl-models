@@ -26,7 +26,7 @@ class PrithviBaseline(BaseModule):
         type_head: Literal["linear", "attentive"] = "attentive",
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fusion_mode: Literal["mod"] = "mod",
-        add_date_enc: bool = True,
+        use_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
         keep_norm: bool = True,
@@ -52,7 +52,7 @@ class PrithviBaseline(BaseModule):
             Interpolation used in the image resizing before patchification.
         fusion_mode: str
             Fusion strategy. Necessarily "mod".
-        add_date_enc: bool
+        use_date_enc: bool
             Whether to add the date encodings to the embeddings.
         fac_date_enc: float
             Factor used to compute the date encodings.
@@ -72,7 +72,7 @@ class PrithviBaseline(BaseModule):
         self.fusion_mode = fusion_mode
 
         self.pretrained_path = pretrained_path
-        self.add_date_enc = add_date_enc
+        self.use_date_enc = use_date_enc
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
         self.keep_norm = keep_norm
@@ -115,7 +115,7 @@ class PrithviBaseline(BaseModule):
             self.encoder_dim,
             self.type_head,
             self.interpolate,
-            self.add_date_enc,
+            self.use_date_enc,
             self.fac_date_enc,
             self.date_dim,
             self.keep_norm,
@@ -135,7 +135,7 @@ class PrithviBaseline(BaseModule):
             ("base", "v1", False),
         ]
 
-        return (self.backbone_size, self.version, self.add_date_enc) in model_assoc
+        return (self.backbone_size, self.version, self.use_date_enc) in model_assoc
 
     def _build_backbone(self) -> Module:
         model_dict = {
@@ -145,7 +145,7 @@ class PrithviBaseline(BaseModule):
         }
 
         self.encoder = BACKBONE_REGISTRY.build(
-            model_dict[self.backbone_size, self.version, self.add_date_enc],
+            model_dict[self.backbone_size, self.version, self.use_date_enc],
             pretrained=True,
             ckpt_path=self.pretrained_path,
             num_frames=self.num_dates["s2"],
@@ -242,11 +242,9 @@ class PrithviBaseline(BaseModule):
         tuple: Prithvi's outputs.
 
         """
-        batch = self.resize_and_rescale(batch)
-
         s2_input = batch["s2"].transpose(1, 2)  # (B, D, C, H, W) -> (B, C, D, H, W)
 
-        if self.add_date_enc:
+        if self.use_date_enc:
             features_prithvi = self.encoder(
                 x=s2_input,
                 temporal_coords=self.format_dates(batch["s2_dates"]),

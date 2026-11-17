@@ -274,6 +274,9 @@ class BaseModule(LightningModule, ABC):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Shared step for training/validation."""
+        # resize and rescale for all models here
+        batch = self.resize_and_rescale(batch)
+
         match self.trainer.ssl_phase:
             case "pretrain":
                 return self.pretrain_step(batch, stage)
@@ -322,3 +325,17 @@ class BaseModule(LightningModule, ABC):
             self.ema_model.parameters(),
         ):
             param_ema.data.mul_(momentum).add_((1.0 - momentum) * param.detach().data)
+
+    def resize_and_rescale(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
+        """Resize and/or rescale input rasters based on dataset config."""
+        for name_mod, mod in self.dataset.inputs.items():
+            batch[name_mod] = F.interpolate(
+                batch[name_mod].flatten(0, 1),
+                size=(mod.image_size,) * 2,
+                mode=self.interpolate,
+            ).unflatten(0, (-1, mod.num_dates))
+            if mod.rescale_elev:
+                batch[name_mod][:, :, 1:] = 30 * (
+                    batch[name_mod][:, :, :1] - batch[name_mod][:, :, 1:]
+                )
+        return batch

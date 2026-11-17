@@ -37,7 +37,6 @@ from ssl_models.dino.losses import (
 )
 from ssl_models.dino.masking import ibot_masks, view_keep
 from ssl_models.dino.schedules import cosine, linear_warmup, lr_factor
-from ssl_models.layers.utils import resize_and_rescale
 from ssl_models.train.base import BaseModule
 
 NO_WD_PARAMS = ("cls_token", "register_tokens", "mask_token")
@@ -222,7 +221,6 @@ class DINOModule(BaseModule):
         backbone_t = self.teacher["backbone"]
         mods = list(dataset.inputs)
 
-        batch = resize_and_rescale(batch, dataset, self.interpolate)
         B = batch[mods[0]].shape[0]  # noqa: N806
         device = batch[mods[0]].device
         views = self.augment(batch, backbone_s.view_size[name_dataset])

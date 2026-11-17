@@ -76,9 +76,8 @@ def dino_loss(
         def cross_entropy(student: Tensor) -> Tensor:
             log_probs = F.log_softmax(student.float() / student_temp, dim=-1)
             # [n_student, n_teacher] mean cross-entropy over the batch
-            return (
-                -torch.einsum("sbk,tbk->st", log_probs, teacher_probs)
-                / (student.shape[1])
+            return -torch.einsum("sbk,tbk->st", log_probs, teacher_probs) / (
+                student.shape[1]
             )
 
         ce_global = cross_entropy(student_global)
