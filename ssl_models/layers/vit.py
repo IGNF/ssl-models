@@ -313,7 +313,7 @@ class Transformer(nn.Module):
     linear drop path schedule across all of them.
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         dim: int,
         depth: int,
@@ -364,7 +364,7 @@ class Transformer(nn.Module):
 
 
 def init_weights(module: nn.Module) -> None:
-    """Truncated normal init for linear layers, zero biases."""
+    """Init with truncated normal for linear layers, zero biases."""
     if isinstance(module, nn.Linear):
         nn.init.trunc_normal_(module.weight, std=0.02)
         if module.bias is not None:

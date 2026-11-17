@@ -340,4 +340,3 @@ class LitBase(LightningModule, ABC):
         params = list(self.model.parameters())
         torch._foreach_mul_(params_ema, momentum)  # noqa: SLF001
         torch._foreach_add_(params_ema, params, alpha=1.0 - momentum)  # noqa: SLF001
-

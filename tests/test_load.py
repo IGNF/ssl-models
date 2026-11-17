@@ -6,8 +6,8 @@ from ssl_models.conf.augment import DinoAugmentConfig
 from ssl_models.conf.loss import DINOv3LossConfig
 from ssl_models.conf.model import DINOv3Config, MiMConfig
 from ssl_models.train.lit_dino import LitDINOv3
-from ssl_models.train.load import build_module
 from ssl_models.train.lit_mim import LitMiM
+from ssl_models.train.load import build_module
 
 
 @pytest.mark.parametrize(

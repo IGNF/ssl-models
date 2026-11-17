@@ -43,7 +43,6 @@ FUSION_CONFIGS = [
 
 def make_batch(dataset, batch_size=2, image_size=None):
     """Random batch following the dataset config (dates as int16)."""
-    dataset = dataset
     batch = {}
     for name_mod, mod in dataset.inputs.items():
         C = mod.bands if isinstance(mod.bands, int) else sum(map(len, mod.bands))

@@ -27,28 +27,30 @@ def build_module(
     match model:
         case MiMConfig():
             module_class = LitMiM
-            kwargs = {}
+            kwargs = {"dataset": dataset, "mask": model.mask, "loss": model.loss}
         case DINOv3Config():
             module_class = LitDINOv3
-            kwargs = {"augment": augment}
+            kwargs = {
+                "dataset": dataset,
+                "mask": model.mask,
+                "loss": model.loss,
+                "augment": augment,
+            }
         case BaselineConfig():
             module_class = LitBaseline
-            kwargs = {}
+            kwargs = {"dataset": dataset}
         case _:
             msg = f"Unknown model config {type(model).__name__}."
             raise TypeError(msg)
 
     if ckpt_path is None:
-        return module_class(dataset=dataset, **kwargs, **vars(model))
+        kwargs = {**vars(model), **kwargs}
+        return module_class(**kwargs)
 
-    for key in ("mask", "loss"):  # ignored by save_hyperparameters
-        if hasattr(model, key):
-            kwargs[key] = getattr(model, key)
     return module_class.load_from_checkpoint(
         ckpt_path,
         map_location=lambda storage, _: storage,
         strict=False,
-        dataset=dataset,
         **kwargs,
     )
 

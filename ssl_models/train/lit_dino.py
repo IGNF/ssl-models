@@ -451,5 +451,3 @@ class LitDINOv3(LitBase):
         ):
             for name in ("dino_head", "ibot_head"):
                 self.model[name].prototypes.grad = None
-
-
