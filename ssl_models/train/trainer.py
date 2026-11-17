@@ -43,8 +43,8 @@ class SSLTrainer(pl.Trainer):
 
         self.logged_images_per_epoch = run.logged_images_per_epoch
         self.log_per_class_metrics = run.log_per_class_metrics
-        self.per_class_metrics = list(run.per_class_metrics)
-        self.per_class_stages = list(run.per_class_stages)
+        self.per_class_metrics = run.per_class_metrics
+        self.per_class_stages = run.per_class_stages
         self.log_confusion_matrix = run.log_confusion_matrix
         self._check_per_class_options()
 
