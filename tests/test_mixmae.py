@@ -45,7 +45,6 @@ def test_mixmae(
         "swin_version": 1,
         "v2_attn": True,
         "type_head": "attentive",
-        "interpolate": "nearest",
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
     }
@@ -53,10 +52,9 @@ def test_mixmae(
 
 
 @pytest.mark.parametrize(
-    "model_size, interpolate, num_levels, swin_version, v2_attn, type_head",
+    "model_size, num_levels, swin_version, v2_attn, type_head",
     itertools.product(
         ("tiny",),
-        ("nearest", "bilinear"),
         (3, 4),
         (1, 2),
         (True, False),
@@ -68,7 +66,6 @@ def test_mixmae_arch(
     mask,
     model_map,
     model_size,
-    interpolate,
     num_levels,
     swin_version,
     v2_attn,
@@ -83,7 +80,6 @@ def test_mixmae_arch(
         "swin_version": swin_version,
         "v2_attn": v2_attn,
         "type_head": type_head,
-        "interpolate": interpolate,
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
     }
@@ -101,7 +97,6 @@ def test_mod_mixmae_should_fail(dataset_treesat, mask):
         "swin_version": 1,
         "v2_attn": True,
         "type_head": "attentive",
-        "interpolate": "nearest",
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
     }
@@ -119,7 +114,6 @@ def test_group_mixmae_should_fail(dataset_treesat, mask):
         "swin_version": 1,
         "v2_attn": True,
         "type_head": "attentive",
-        "interpolate": "nearest",
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
     }

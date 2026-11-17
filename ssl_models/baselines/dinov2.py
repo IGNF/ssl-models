@@ -35,7 +35,6 @@ class Dinov2Baseline(BaseModule):
         pretrained_path: str | None = None,
         weight_source: Literal["imagenat", "sat"] = "imagenat",
         type_head: Literal["linear", "attentive"] = "attentive",
-        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fusion_mode: Literal["shared", "monotemp"] = "shared",
         use_date_enc: bool = True,
         fac_date_enc: float = 1.0,
@@ -59,8 +58,6 @@ class Dinov2Baseline(BaseModule):
             Either "imagenat" (default) or "sat".
         type_head: str
             Segmentation head to use. Either "linear" or "attentive".
-        interpolate: str
-            Interpolation used in the image resizing before patchification.
         fusion_mode: str
             Fusion strategy. Either "shared" or "monotemp".
         use_date_enc: bool
@@ -77,7 +74,6 @@ class Dinov2Baseline(BaseModule):
         """
         self.dataset = dataset
         self.type_head = type_head
-        self.interpolate = interpolate
         self.fusion_mode = fusion_mode
         self.weight_source = weight_source
         self.pretrained_path = pretrained_path
@@ -127,7 +123,6 @@ class Dinov2Baseline(BaseModule):
             self.patch_size,
             self.embed_dim,
             self.type_head,
-            self.interpolate,
             self.use_date_enc,
             self.fac_date_enc,
             self.date_dim,

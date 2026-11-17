@@ -33,7 +33,6 @@ class SatMAEBaseline(BaseModule):
         freeze: bool = False,
         pretrained_path: str | None = None,
         type_head: Literal["linear", "attentive"] = "attentive",
-        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fusion_mode: Literal["mod"] = "mod",
         use_date_enc: bool = True,
         fac_date_enc: float = 1.0,
@@ -55,8 +54,6 @@ class SatMAEBaseline(BaseModule):
             Path to the location of the pretrained weights.
         type_head: str
             Segmentation head to use. Either "linear" or "attentive".
-        interpolate: str
-            Interpolation used in the image resizing before patchification.
         fusion_mode: str
             Fusion strategy. Necessarily "mod".
         use_date_enc: bool
@@ -74,7 +71,6 @@ class SatMAEBaseline(BaseModule):
         self.backbone_size = backbone_size
         self.freeze = freeze
         self.type_head = type_head
-        self.interpolate = interpolate
         self.fusion_mode = fusion_mode
 
         self.pretrained_path = pretrained_path
@@ -109,7 +105,6 @@ class SatMAEBaseline(BaseModule):
             self.patch_size,
             self.encoder_dim,
             self.type_head,
-            self.interpolate,
             self.use_date_enc,
             self.fac_date_enc,
             self.date_dim,

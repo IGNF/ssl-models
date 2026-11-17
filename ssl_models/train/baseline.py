@@ -37,8 +37,7 @@ class BaselineModule(BaseModule):
         use_date_enc: bool = True,
         **kwargs,  # noqa: ANN003
     ) -> None:
-        super().__init__(dataset=dataset)
-        self.interpolate = interpolate
+        super().__init__(dataset=dataset, interpolate=interpolate)
 
         model_args = {
             "dataset": dataset,
@@ -47,7 +46,6 @@ class BaselineModule(BaseModule):
             "freeze": freeze,
             "pretrained_path": pretrained_path,
             "type_head": type_head,
-            "interpolate": interpolate,
             "use_date_enc": use_date_enc,
             "keep_norm": keep_norm,
         }
@@ -96,8 +94,7 @@ class BaselineModule(BaseModule):
                 param.requires_grad = False
         else:
             self.ema_model = None
-
-        self.tb_logger = None
+        self.
         self.save_hyperparameters(ignore=["dataset"])
 
     def configure_optimizers(self) -> dict:

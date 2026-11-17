@@ -37,7 +37,6 @@ class MixMAE(BaseMIM):
         swin_version: Literal[1, 2],
         v2_attn: bool,
         type_head: Literal["linear", "attentive"] = "linear",
-        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
         decoder_depth: int = 2,
@@ -60,7 +59,6 @@ class MixMAE(BaseMIM):
             embed_dim=embed_dim,
             decoder_dim=decoder_dim,
             type_head=type_head,
-            interpolate=interpolate,
             fac_abs_enc=fac_abs_enc,
             fac_date_enc=fac_date_enc,
         )

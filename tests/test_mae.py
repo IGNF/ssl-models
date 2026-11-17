@@ -31,7 +31,6 @@ def test_mae(dataset_treesat, mask, model_map, model_size, fusion_mode):
         "inter_depth": 0,
         "num_levels": 1,
         "type_head": "attentive",
-        "interpolate": "nearest",
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
     }
@@ -39,11 +38,10 @@ def test_mae(dataset_treesat, mask, model_map, model_size, fusion_mode):
 
 
 @pytest.mark.parametrize(
-    "model_size, type_head, interpolate, fac_abs_enc, fac_date_enc",
+    "model_size, type_head, fac_abs_enc, fac_date_enc",
     itertools.product(
         ("tiny",),
         ("attentive", "linear"),
-        ("nearest", "bilinear"),
         (1.0, 0.0),
         (1.0, 0.0),
     ),
@@ -54,7 +52,6 @@ def test_mae_arch(
     model_map,
     model_size,
     type_head,
-    interpolate,
     fac_abs_enc,
     fac_date_enc,
 ):
@@ -66,7 +63,6 @@ def test_mae_arch(
         "inter_depth": 0,
         "num_levels": 1,
         "type_head": type_head,
-        "interpolate": interpolate,
         "fac_abs_enc": fac_abs_enc,
         "fac_date_enc": fac_date_enc,
     }

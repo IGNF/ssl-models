@@ -35,14 +35,12 @@ class BaseMIM(nn.Module, ABC):
         embed_dim: int,
         decoder_dim: int,
         type_head: Literal["linear", "attentive"] = "attentive",
-        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
     ) -> None:
         super().__init__()
         self.stride = 2 ** (num_levels - 1)
-        self.interpolate = interpolate
         self.shuffle_mods = fusion_mode == "msgfm"  # shuffling of modalities
 
         self.dataset = dataset

@@ -34,7 +34,6 @@ class MAE(BaseMIM):
         decoder_dim_head: int,
         decoder_mlp_ratio: float,
         type_head: Literal["linear", "attentive"] = "attentive",
-        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
         **kwargs,  # noqa: ANN003, ARG002
@@ -47,7 +46,6 @@ class MAE(BaseMIM):
             embed_dim=embed_dim,
             decoder_dim=decoder_dim,
             type_head=type_head,
-            interpolate=interpolate,
             fac_abs_enc=fac_abs_enc,
             fac_date_enc=fac_date_enc,
         )

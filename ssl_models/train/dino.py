@@ -81,9 +81,8 @@ class DINOModule(BaseModule):
         freeze_last_layer_pct: float = 0.01,
         clip_grad: float | None = 3.0,
     ) -> None:
-        super().__init__(dataset=dataset)
+        super().__init__(dataset=dataset, interpolate=interpolate)
         self.ema_model = None  # no finetuning EMA, the teacher is separate
-        self.interpolate = interpolate
 
         model_map = {
             "tiny": dinov3_tiny,

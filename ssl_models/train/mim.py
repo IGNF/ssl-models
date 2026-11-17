@@ -52,8 +52,7 @@ class MiMModule(BaseModule):
         v2_attn: bool = True,
         swin_abs_enc: bool = False,
     ) -> None:
-        super().__init__(dataset=dataset)
-        self.interpolate = interpolate
+        super().__init__(dataset=dataset, interpolate=interpolate)
 
         loss = loss or MiMLossConfig()
         match loss.name:
@@ -160,7 +159,6 @@ class MiMModule(BaseModule):
                 "swin_version": swin_version,
                 "v2_attn": v2_attn,
                 "type_head": type_head,
-                "interpolate": interpolate,
                 "fac_abs_enc": fac_abs_enc,
                 "fac_date_enc": fac_date_enc,
             }

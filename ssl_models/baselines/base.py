@@ -25,7 +25,6 @@ class BaseModule(Module, ABC):
         patch_size: int,
         embed_dim: int,
         type_head: Literal["linear", "attentive"] = "attentive",
-        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         use_date_enc: bool = True,
         fac_date_enc: float = 1.0,
         date_dim: int = 8,
@@ -35,7 +34,6 @@ class BaseModule(Module, ABC):
         super().__init__(**kwargs)
 
         self.dataset = dataset
-        self.interpolate = interpolate
         self.type_head = type_head
         self.patch_size = patch_size
         self.fusion_mode = fusion_mode

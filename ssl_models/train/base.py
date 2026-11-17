@@ -26,9 +26,14 @@ RGB_BANDS = 3
 class BaseModule(LightningModule, ABC):
     """Lightning base module."""
 
-    def __init__(self, dataset: DatasetConfig) -> None:
+    def __init__(
+        self,
+        dataset: DatasetConfig,
+        interpolate: Literal["nearest", "bilinear", "bicubic"],
+    ) -> None:
         super().__init__()
         self.dataset = dataset
+        self.interpolate = interpolate
 
         self.metrics = nn.ModuleDict()
         self.loss_pred = {}

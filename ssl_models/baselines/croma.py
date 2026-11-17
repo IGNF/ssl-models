@@ -26,7 +26,6 @@ class CROMABaseline(BaseModule):
         freeze: bool = False,
         pretrained_path: str | None = None,
         type_head: Literal["linear", "attentive"] = "attentive",
-        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fusion_mode: Literal["late-croma", "inter-croma"] = "inter-croma",
         use_date_enc: bool = True,
         fac_date_enc: float = 1.0,
@@ -48,8 +47,6 @@ class CROMABaseline(BaseModule):
             Path to the location of the pretrained weights.
         type_head: str
             Segmentation head to use. Either "linear" or "attentive".
-        interpolate: str
-            Interpolation used in the image resizing before patchification.
         fusion_mode: str
             Fusion strategy. Either "late-croma" or "inter-croma".
         use_date_enc: bool
@@ -68,7 +65,6 @@ class CROMABaseline(BaseModule):
         self.backbone_size = backbone_size
         self.freeze = freeze
         self.type_head = type_head
-        self.interpolate = interpolate
         self.fusion_mode = fusion_mode
 
         self.pretrained_path = pretrained_path
@@ -100,7 +96,6 @@ class CROMABaseline(BaseModule):
             self.patch_size,
             self.encoder_dim,
             self.type_head,
-            self.interpolate,
             self.use_date_enc,
             self.fac_date_enc,
             self.date_dim,
