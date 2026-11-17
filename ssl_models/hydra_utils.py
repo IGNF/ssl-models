@@ -14,12 +14,12 @@ def pre_call_seed(cfg: OmegaConf) -> None:
         seed_everything(cfg.run.seed, workers=True)
 
 
-def load_config(
+def find_checkpoint(
     cfg: OmegaConf,
     load_name: str,
     load_phase: str,
 ) -> tuple[str, str]:
-    """Load model config."""
+    """Find the last checkpoint of a run and its experiment uuid."""
     load_root = Path(cfg.run.exp_dir) / load_name
     ckpt_path = sorted(
         str(ckpt_path)
@@ -35,13 +35,13 @@ def pre_call_resolve(cfg: OmegaConf) -> None:
     """Resolve hydra config."""
     cfg.run.exp_uuid = uuid.uuid4()  # set uuid
     if cfg.run.load_name:
-        cfg.run.load_ckpt_path, cfg.run.load_uuid = load_config(
+        cfg.run.load_ckpt_path, cfg.run.load_uuid = find_checkpoint(
             cfg,
             cfg.run.load_name,
             cfg.run.load_phase,
         )
     if cfg.run.fit_name:
-        cfg.run.fit_ckpt_path, cfg.run.fit_uuid = load_config(
+        cfg.run.fit_ckpt_path, cfg.run.fit_uuid = find_checkpoint(
             cfg,
             cfg.run.fit_name,
             cfg.run.fit_phase,

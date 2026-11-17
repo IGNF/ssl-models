@@ -19,7 +19,7 @@ from ssl_models.baselines.utils import (
     get_imagenat_dinov2_state_dict,
     get_sat_dinov2_state_dict,
 )
-from ssl_models.conf.datasets import DatasetsConfig
+from ssl_models.conf.dataset.utils import DatasetConfig
 
 RGB_BANDS = 3
 
@@ -29,7 +29,7 @@ class Dinov2Baseline(BaseModule):
 
     def __init__(
         self,
-        datasets: DatasetsConfig,
+        dataset: DatasetConfig,
         backbone_size: Literal["small", "base", "large", "huge"],
         freeze: bool = False,
         pretrained_path: str | None = None,
@@ -47,7 +47,7 @@ class Dinov2Baseline(BaseModule):
 
         Parameters
         ----------
-        datasets: DatasetsConfig
+        dataset: DatasetConfig
             The dataset config used in the probing/finetuning phase.
         backbone_size: str
             Backbone size to use. To choose in "small", "base", "large", "huge".
@@ -75,7 +75,7 @@ class Dinov2Baseline(BaseModule):
             Arguments to pass to `BaseModel` constructor.
 
         """
-        self.dataset = datasets.dataset
+        self.dataset = dataset
         self.type_head = type_head
         self.interpolate = interpolate
         self.fusion_mode = fusion_mode
@@ -122,7 +122,7 @@ class Dinov2Baseline(BaseModule):
             raise ValueError(msg)
 
         super().__init__(
-            datasets,
+            dataset,
             self.fusion_mode,
             self.patch_size,
             self.embed_dim,
@@ -375,7 +375,6 @@ class Dinov2Baseline(BaseModule):
     def forward(
         self,
         batch: dict[str, Tensor],
-        name_dataset: str,  # noqa: ARG002
         ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
     ) -> tuple[
         dict[str, Tensor] | None,
@@ -390,8 +389,6 @@ class Dinov2Baseline(BaseModule):
         ----------
         batch: dict
             Dictionary containing the data.
-        name_dataset: str
-            Dataset name (unused, kept for compatibility with MIM modules).
         ssl_phase: str
             SSL phase (pretrain, probe, finetune). Only probing and finetuning
             are needed for baselines.

@@ -2,17 +2,18 @@
 
 from dataclasses import dataclass, field
 
+from hydra_zen import store
+
 from ssl_models.conf.dataset.utils import (
     DatasetConfig,
     InputRasterConfig,
     PatchSizeConfig,
     TargetRasterConfig,
-    register_dataset,
 )
 from ssl_models.dataset.flair import FLAIRDataset
 
 
-@register_dataset("flair")
+@store(group="dataset", name="flair")
 @dataclass
 class FLAIRConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "FLAIR-HUB"

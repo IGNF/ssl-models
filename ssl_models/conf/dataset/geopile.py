@@ -2,17 +2,18 @@
 
 from dataclasses import dataclass, field
 
+from hydra_zen import store
+
 from ssl_models.conf.dataset.utils import (
     DatasetConfig,
     InputRasterConfig,
     PatchSizeConfig,
     TargetConfig,
-    register_dataset,
 )
 from ssl_models.dataset.geopile import GeoPileDataset
 
 
-@register_dataset("geopile")
+@store(group="dataset", name="geopile")
 @dataclass
 class GeoPileConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "GeoPileV0"

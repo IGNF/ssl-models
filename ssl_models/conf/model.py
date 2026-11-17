@@ -1,6 +1,6 @@
 """Model conf."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from hydra_zen import store
 
@@ -16,6 +16,7 @@ class ModelConfig:
     use_date_enc: bool = True
 
 
+@store(group="model", name="mim_model")
 @dataclass
 class MiMConfig(ModelConfig):  # noqa: D101
     inter_depth: int = 3  # nb of blocks with all mods
@@ -29,10 +30,11 @@ class MiMConfig(ModelConfig):  # noqa: D101
     condition: bool = False
     max_condition: int | None = None
 
-    mask = MiMMaskConfig()
-    loss = MiMLossConfig()
+    mask: MiMMaskConfig = field(default_factory=MiMMaskConfig)
+    loss: MiMLossConfig = field(default_factory=MiMLossConfig)
 
 
+@store(group="model", name="dino_model")
 @dataclass
 class DINOv3Config(ModelConfig):
     # backbone
@@ -61,10 +63,11 @@ class DINOv3Config(ModelConfig):
     freeze_last_layer_pct: float = 0.01
     clip_grad: float | None = 3.0
 
-    mask = DINOv3MaskConfig()
-    loss = DINOv3LossConfig()
+    mask: DINOv3MaskConfig = field(default_factory=DINOv3MaskConfig)
+    loss: DINOv3LossConfig = field(default_factory=DINOv3LossConfig)
 
 
+@store(group="model", name="baseline_model")
 @dataclass
 class BaselineConfig(ModelConfig):  # noqa: D101
     model: str = "dinov2"
@@ -75,9 +78,3 @@ class BaselineConfig(ModelConfig):  # noqa: D101
     keep_norm: bool = True
     use_ema: bool = True
     version: str = None
-
-
-model_store = store(group="model")
-model_store(MiMConfig, name="mim_model")
-model_store(DINOv3Config, name="dino_model")
-model_store(BaselineConfig, name="baseline_model")

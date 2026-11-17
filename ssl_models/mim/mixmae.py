@@ -14,7 +14,7 @@ from timm.models.swin_transformer import PatchMerging
 from timm.models.vision_transformer import Block
 from torch import Tensor, nn
 
-from ssl_models.conf.datasets import DatasetsConfig
+from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.conf.mask import MiMMaskConfig
 from ssl_models.layers.swin import MixMAELayer
 from ssl_models.mim.mim import BaseMIM
@@ -25,7 +25,7 @@ class MixMAE(BaseMIM):
 
     def __init__(  # noqa: PLR0913
         self,
-        datasets: DatasetsConfig,
+        dataset: DatasetConfig,
         mask: MiMMaskConfig,
         fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         model: Literal["mixmae"],
@@ -53,7 +53,7 @@ class MixMAE(BaseMIM):
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
-            datasets=datasets,
+            dataset=dataset,
             fusion_mode=fusion_mode,
             model=model,
             num_levels=num_levels,
@@ -67,13 +67,7 @@ class MixMAE(BaseMIM):
         match fusion_mode:
             case "msgfm" | "shared" | "monotemp":
                 name_models = (
-                    [
-                        name_mod
-                        for dataset in datasets.datasets.values()
-                        for name_mod in dataset.inputs()
-                    ]
-                    if fusion_mode == "monotemp"
-                    else ["shared"]
+                    list(dataset.inputs) if fusion_mode == "monotemp" else ["shared"]
                 )
             case "mod" | "group":
                 msg = f"Fusion mode {fusion_mode} not supported yet with MixMAE."
@@ -93,9 +87,7 @@ class MixMAE(BaseMIM):
 
         # encoder layers
         max_patch_grid = max(
-            mod.image_size // mod.patch_size.mixmae
-            for dataset in datasets.datasets.values()
-            for mod in dataset.inputs.values()
+            mod.image_size // mod.patch_size.mixmae for mod in dataset.inputs.values()
         )
         num_windows = [
             max(1, max_patch_grid // (window_size[idx_layer] * 2**idx_layer))

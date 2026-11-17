@@ -6,8 +6,8 @@ import torch
 import torch.nn.functional as F
 
 from ssl_models.conf.augment import DinoAugmentConfig
-from ssl_models.conf.loss import DinoLossConfig
-from ssl_models.conf.mask import DinoMaskConfig
+from ssl_models.conf.loss import DINOv3LossConfig
+from ssl_models.conf.mask import DINOv3MaskConfig
 from ssl_models.dino import backbone as backbone_module
 from ssl_models.dino.augment import MultiCropAugment
 from ssl_models.dino.backbone import (
@@ -19,8 +19,8 @@ from ssl_models.dino.backbone import (
     dinov3_tiny,
     local_view_size,
 )
-from ssl_models.dino.heads import DINOHead
-from ssl_models.dino.losses import (
+from ssl_models.dino.head import DINOHead
+from ssl_models.dino.loss import (
     dino_loss,
     ibot_loss,
     koleo_loss,
@@ -28,10 +28,9 @@ from ssl_models.dino.losses import (
     teacher_stats,
 )
 from ssl_models.dino.masking import ibot_masks, view_keep
-from ssl_models.dino.schedules import cosine, linear_warmup, lr_factor
+from ssl_models.dino.schedule import cosine, linear_warmup, lr_factor
 from ssl_models.train.dino import DINOModule
 
-NAME = "treesatai_ts"
 FUSION_CONFIGS = [
     ("shared", 0),
     ("monotemp", 0),
@@ -42,9 +41,9 @@ FUSION_CONFIGS = [
 ]
 
 
-def make_batch(datasets, batch_size=2, image_size=None):
+def make_batch(dataset, batch_size=2, image_size=None):
     """Random batch following the dataset config (dates as int16)."""
-    dataset = datasets.datasets[NAME]
+    dataset = dataset
     batch = {}
     for name_mod, mod in dataset.inputs.items():
         C = mod.bands if isinstance(mod.bands, int) else sum(map(len, mod.bands))
@@ -68,9 +67,9 @@ def view_inputs(batch, view):
     return inputs
 
 
-def small_backbone(datasets, fusion_mode, inter_depth, **kwargs):
+def small_backbone(dataset, fusion_mode, inter_depth, **kwargs):
     return DINOv3Backbone(
-        datasets=datasets,
+        dataset=dataset,
         fusion_mode=fusion_mode,
         inter_depth=inter_depth,
         embed_dim=64,
@@ -102,19 +101,19 @@ def test_backbone_sizes(monkeypatch, size_fn):
 
 @pytest.mark.parametrize("fusion_mode, inter_depth", FUSION_CONFIGS)
 @pytest.mark.parametrize("view", ("global", "local"))
-def test_backbone(datasets_treesat, fusion_mode, inter_depth, view):
+def test_backbone(dataset_treesat, fusion_mode, inter_depth, view):
     torch.manual_seed(0)
-    backbone = small_backbone(datasets_treesat, fusion_mode, inter_depth)
-    batch = make_batch(datasets_treesat)
-    views = MultiCropAugment(n_local=1)(batch, backbone.view_size[NAME])
+    backbone = small_backbone(dataset_treesat, fusion_mode, inter_depth)
+    batch = make_batch(dataset_treesat)
+    views = MultiCropAugment(n_local=1)(batch, backbone.view_size)
     inputs = view_inputs(batch, views[view][0])
 
-    shapes = backbone.token_shapes(NAME, view)
+    shapes = backbone.token_shapes(view)
     mask = ibot_masks(shapes, 2, 1.0, (0.3, 0.5), 4, 1.0, "cpu")
     keep = view_keep(
         {"aerial": 1, "s2": 16, "s1_asc": 4, "s1_des": 4}, 2, 0.3, 0.3, "cpu"
     )
-    out = backbone(inputs, NAME, view, ibot_mask=mask, keep=keep)
+    out = backbone(inputs, view, ibot_mask=mask, keep=keep)
 
     num_tokens = sum(s * h * w for s, h, w in shapes.values())
     assert out["cls"].shape == (2, 64)
@@ -130,11 +129,11 @@ def test_backbone(datasets_treesat, fusion_mode, inter_depth, view):
 
 
 @pytest.mark.parametrize("fusion_mode, inter_depth", FUSION_CONFIGS)
-def test_backbone_dropped_tokens_ignored(datasets_treesat, fusion_mode, inter_depth):
+def test_backbone_dropped_tokens_ignored(dataset_treesat, fusion_mode, inter_depth):
     """Dropped (modality, date) have no influence on the CLS embedding."""
     torch.manual_seed(0)
-    backbone = small_backbone(datasets_treesat, fusion_mode, inter_depth).eval()
-    batch = make_batch(datasets_treesat, batch_size=1)
+    backbone = small_backbone(dataset_treesat, fusion_mode, inter_depth).eval()
+    batch = make_batch(dataset_treesat, batch_size=1)
     keep = {
         "aerial": torch.ones(1, 1, dtype=torch.bool),
         "s2": torch.ones(1, 16, dtype=torch.bool),
@@ -142,29 +141,29 @@ def test_backbone_dropped_tokens_ignored(datasets_treesat, fusion_mode, inter_de
         "s1_des": torch.ones(1, 4, dtype=torch.bool),
     }
     keep["s2"][0, :8] = False
-    out = backbone(batch, NAME, "global", keep=keep)
+    out = backbone(batch, "global", keep=keep)
 
     batch_mod = {k: v.clone() for k, v in batch.items()}
     batch_mod["s1_asc"] = torch.rand_like(batch["s1_asc"])
     batch_mod["s2"][:, :8] = torch.rand_like(batch["s2"][:, :8])
-    out_mod = backbone(batch_mod, NAME, "global", keep=keep)
+    out_mod = backbone(batch_mod, "global", keep=keep)
     assert torch.allclose(out["cls"], out_mod["cls"], atol=1e-5)
 
 
-def test_backbone_invalid(datasets_treesat):
+def test_backbone_invalid(dataset_treesat):
     with pytest.raises(ValueError):
-        small_backbone(datasets_treesat, "msgfm", 0)
+        small_backbone(dataset_treesat, "msgfm", 0)
     with pytest.raises(NotImplementedError):
-        small_backbone(datasets_treesat, "shared", 2)
+        small_backbone(dataset_treesat, "shared", 2)
     with pytest.raises(ValueError):
-        small_backbone(datasets_treesat, "group", 4)
+        small_backbone(dataset_treesat, "group", 4)
 
 
-def test_backbone_wrong_grid(datasets_treesat):
-    backbone = small_backbone(datasets_treesat, "group", 0)
-    batch = make_batch(datasets_treesat)
+def test_backbone_wrong_grid(dataset_treesat):
+    backbone = small_backbone(dataset_treesat, "group", 0)
+    batch = make_batch(dataset_treesat)
     with pytest.raises(ValueError):
-        backbone(batch, NAME, "local")
+        backbone(batch, "local")
 
 
 # ------------------------------------------------------------ augmentation
@@ -346,11 +345,11 @@ def test_schedules():
 
 
 # ------------------------------------------------------------------ module
-def tiny_module(datasets, fusion_mode="group", inter_depth=3, **kwargs):
+def tiny_module(dataset, fusion_mode="group", inter_depth=3, **kwargs):
     args = {
-        "datasets": datasets,
-        "mask": DinoMaskConfig(),
-        "loss": DinoLossConfig(
+        "dataset": dataset,
+        "mask": DINOv3MaskConfig(),
+        "loss": DINOv3LossConfig(
             dino_n_prototypes=128,
             ibot_n_prototypes=128,
             head_hidden_dim=64,
@@ -369,15 +368,15 @@ def tiny_module(datasets, fusion_mode="group", inter_depth=3, **kwargs):
     "fusion_mode, inter_depth",
     [("shared", 0), ("monotemp", 0), ("mod", 3), ("group", 0), ("group", 3)],
 )
-def test_dino_module_losses(datasets_treesat, fusion_mode, inter_depth):
+def test_dino_module_losses(dataset_treesat, fusion_mode, inter_depth):
     torch.manual_seed(0)
-    module = tiny_module(datasets_treesat, fusion_mode, inter_depth)
+    module = tiny_module(dataset_treesat, fusion_mode, inter_depth)
     module.train()
     assert not module.teacher.training
     assert all(not p.requires_grad for p in module.teacher.parameters())
 
-    batch = make_batch(datasets_treesat, batch_size=4, image_size=32)
-    out = module.forward_dataset(batch, NAME, teacher_temp=0.04)
+    batch = make_batch(dataset_treesat, batch_size=4, image_size=32)
+    out = module.forward_batch(batch, teacher_temp=0.04)
     assert torch.isfinite(out["loss"])
     for name, value in out["components"].items():
         assert torch.isfinite(value), name
@@ -390,8 +389,8 @@ def test_dino_module_losses(datasets_treesat, fusion_mode, inter_depth):
     assert all(p.grad is None for p in module.teacher.parameters())
 
 
-def test_dino_module_teacher_update(datasets_treesat):
-    module = tiny_module(datasets_treesat, "shared", 0)
+def test_dino_module_teacher_update(dataset_treesat):
+    module = tiny_module(dataset_treesat, "shared", 0)
     with torch.no_grad():
         for param in module.student.parameters():
             param.add_(1.0)
@@ -402,8 +401,8 @@ def test_dino_module_teacher_update(datasets_treesat):
         assert torch.allclose(p_new, 0.9 * p_t + 0.1 * p_s)
 
 
-def test_dino_module_param_groups(datasets_treesat):
-    module = tiny_module(datasets_treesat, "group", 3)
+def test_dino_module_param_groups(dataset_treesat):
+    module = tiny_module(dataset_treesat, "group", 3)
     names_no_wd = [
         name
         for name, p in module.student.named_parameters()
@@ -417,10 +416,10 @@ def test_dino_module_param_groups(datasets_treesat):
     "ffn, norm",
     itertools.product(("mlp", "swiglu"), ("layernorm", "rmsnorm")),
 )
-def test_dino_module_arch(datasets_treesat, ffn, norm):
-    module = tiny_module(datasets_treesat, "mod", 0, ffn=ffn, norm=norm, n_registers=0)
-    batch = make_batch(datasets_treesat, batch_size=2, image_size=32)
-    out = module.forward_dataset(batch, NAME, teacher_temp=0.04)
+def test_dino_module_arch(dataset_treesat, ffn, norm):
+    module = tiny_module(dataset_treesat, "mod", 0, ffn=ffn, norm=norm, n_registers=0)
+    batch = make_batch(dataset_treesat, batch_size=2, image_size=32)
+    out = module.forward_batch(batch, teacher_temp=0.04)
     assert torch.isfinite(out["loss"])
 
 

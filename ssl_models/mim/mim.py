@@ -1,6 +1,5 @@
 """Generic MIM base module, inherited in specialized MIM modules."""
 
-import copy
 from abc import ABC, abstractmethod
 from functools import partial, reduce
 from math import gcd
@@ -12,7 +11,6 @@ from einops import rearrange
 from torch import Tensor, nn
 
 from ssl_models.conf.dataset.utils import DatasetConfig, RasterConfig
-from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.layers.embed import Patchify, Pixelify
 from ssl_models.layers.head import ClassificationHead, PixelifyHead
 from ssl_models.layers.utils import (
@@ -28,9 +26,9 @@ from ssl_models.layers.utils import (
 class BaseMIM(nn.Module, ABC):
     """Masked Auto Encoder (MAE)."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0912, PLR0915, C901
         self,
-        datasets: DatasetsConfig,
+        dataset: DatasetConfig,
         fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         model: Literal["mae", "mixmae"],
         num_levels: Literal[1, 3, 4],
@@ -43,54 +41,17 @@ class BaseMIM(nn.Module, ABC):
         date_dim: int = 8,
     ) -> None:
         super().__init__()
-        self.datasets = datasets
         self.stride = 2 ** (num_levels - 1)
         self.interpolate = interpolate
         self.shuffle_mods = fusion_mode == "msgfm"  # shuffling of modalities
 
-        dict_dataset = {name_dataset: {} for name_dataset in datasets.datasets}
-        self.len_bands = copy.deepcopy(dict_dataset)
-        self.mod_embed = copy.deepcopy(dict_dataset)
-        self.grid_size = copy.deepcopy(dict_dataset)
-        self.out_grid_size = copy.deepcopy(dict_dataset)
-        self.enc_date_encoding = copy.deepcopy(dict_dataset)
-        self.dec_date_encoding = copy.deepcopy(dict_dataset)
-        self.group = copy.deepcopy(dict_dataset)
-        self.ungroup = copy.deepcopy(dict_dataset)
-
+        self.dataset = dataset
         self.patch_embed, self.embed_to_rec = nn.ModuleDict(), nn.ModuleDict()
-        self.pos_encoding = nn.ModuleDict()
-
-        self.mask_token = nn.ModuleDict()
         self.heads = nn.ModuleDict()
+        self.mod_embed, self.grid_size, self.out_grid_size = {}, {}, {}
 
-        for name_dataset, dataset in datasets.datasets.items():
-            self._init_mim_dataset(
-                name_dataset,
-                dataset,
-                fusion_mode,
-                model,
-                embed_dim,
-                decoder_dim,
-                type_head,
-                fac_abs_enc,
-                fac_date_enc,
-                date_dim,
-            )
+        dataset = self.dataset
 
-    def _init_mim_dataset(  # noqa: PLR0912, C901
-        self,
-        name_dataset: str,
-        dataset: DatasetConfig,
-        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
-        model: Literal["mae", "mixmae"],
-        embed_dim: int,
-        decoder_dim: int,
-        type_head: Literal["linear", "attentive"] = "attentive",
-        fac_abs_enc: float = 1.0,
-        fac_date_enc: float = 1.0,
-        date_dim: int = 8,
-    ) -> None:
         # patchify and pixelify
         num_bands = {
             name_mod: (
@@ -98,14 +59,12 @@ class BaseMIM(nn.Module, ABC):
             )
             for name_mod, mod in dataset.inputs.items()
         }
-        self.len_bands[name_dataset] = {
-            name_mod: len(num_bands[name_mod]) for name_mod in num_bands
-        }
+        self.len_bands = {name_mod: len(num_bands[name_mod]) for name_mod in num_bands}
 
         for name_mod, mod in dataset.inputs.items():
             name_embed = mod.name_embed if mod.name_embed else name_mod
             patch_size = mod.patch_size.mae if model == "mae" else mod.patch_size.mixmae
-            self.mod_embed[name_dataset][name_mod] = name_embed
+            self.mod_embed[name_mod] = name_embed
 
             if name_embed in self.patch_embed or name_embed in self.embed_to_rec:
                 if (
@@ -133,10 +92,8 @@ class BaseMIM(nn.Module, ABC):
                     patch_size * self.stride,
                 )
 
-            self.grid_size[name_dataset][name_mod] = mod.image_size // patch_size
-            self.out_grid_size[name_dataset][name_mod] = mod.image_size // (
-                patch_size * self.stride
-            )
+            self.grid_size[name_mod] = mod.image_size // patch_size
+            self.out_grid_size[name_mod] = mod.image_size // (patch_size * self.stride)
 
         # Fix the position encodings to sine & cosine functions
         pos_encoding = nn.Module()
@@ -145,7 +102,7 @@ class BaseMIM(nn.Module, ABC):
         else:
             grid_pos_enc = reduce(
                 lambda a, b: a * b // gcd(a, b),
-                self.grid_size[name_dataset].values(),
+                self.grid_size.values(),
             )  # smallest common multiple
         pos_encoding.register_buffer(
             name="enc",
@@ -172,64 +129,61 @@ class BaseMIM(nn.Module, ABC):
             .requires_grad_(requires_grad=False),
             persistent=False,
         )
-        self.pos_encoding[name_dataset] = pos_encoding
+        self.pos_encoding = pos_encoding
 
         # functions to construct date encodings
-        self.enc_date_encoding[name_dataset] = {
+        self.enc_date_encoding = {
             name_mod: partial(
                 encode_dates,
                 dim=embed_dim,
                 date_dim=date_dim,
                 fac_date_enc=fac_date_enc,
-                grid_size=self.grid_size[name_dataset][name_mod],
-                len_bands=self.len_bands[name_dataset][name_mod],
+                grid_size=self.grid_size[name_mod],
+                len_bands=self.len_bands[name_mod],
             )
             for name_mod in dataset.inputs
         }
-        self.dec_date_encoding[name_dataset] = {
+        self.dec_date_encoding = {
             name_mod: partial(
                 encode_dates,
                 dim=decoder_dim,
                 date_dim=date_dim,
                 fac_date_enc=fac_date_enc,
-                grid_size=self.out_grid_size[name_dataset][name_mod],
-                len_bands=self.len_bands[name_dataset][name_mod],
+                grid_size=self.out_grid_size[name_mod],
+                len_bands=self.len_bands[name_mod],
             )
             for name_mod in dataset.inputs
         }
 
         # flattening/unflattening of date dimensions
-        self.group[name_dataset] = partial(
+        self.group = partial(
             group_mods,
             fusion_mode=fusion_mode,
             groups=dataset.groups,
         )
-        self.ungroup[name_dataset] = partial(
+        self.ungroup = partial(
             ungroup_mods,
             fusion_mode=fusion_mode,
             groups=dataset.groups,
             num_dates={
-                name_mod: mod.num_dates * self.len_bands[name_dataset][name_mod]
+                name_mod: mod.num_dates * self.len_bands[name_mod]
                 for name_mod, mod in dataset.inputs.items()
             },
-            grid_size=self.grid_size[name_dataset],
+            grid_size=self.grid_size,
         )
 
         # mask tokens
-        self.mask_token[name_dataset] = nn.ParameterDict(
+        self.mask_token = nn.ParameterDict(
             {
                 name_mod: nn.Parameter(
                     torch.randn(1, len_bands, 1, 1, decoder_dim),
                 )
-                for name_mod, len_bands in self.len_bands[name_dataset].items()
+                for name_mod, len_bands in self.len_bands.items()
             },
         )
 
         # heads
         for name_target, target in dataset.targets.items():
-            if name_target in self.heads:
-                msg = "Target is defined multiple times"
-                raise ValueError(msg)
             if isinstance(target, RasterConfig):
                 if dataset.ref_input is None:
                     msg = f"Ref input must be provided for raster target {name_target}"
@@ -237,7 +191,7 @@ class BaseMIM(nn.Module, ABC):
                 target_image_size = round(
                     dataset.crop_meters / target.resolution_meters,
                 )
-                ref_grid_size = self.out_grid_size[name_dataset][dataset.ref_input]
+                ref_grid_size = self.out_grid_size[dataset.ref_input]
                 if target_image_size % ref_grid_size:
                     msg = (
                         f"Target image size {target_image_size} "
@@ -260,7 +214,6 @@ class BaseMIM(nn.Module, ABC):
     def embed(
         self,
         batch: dict[str, Tensor],
-        name_dataset: str,
     ) -> tuple[
         dict[str, Tensor],
         dict[str, Tensor],
@@ -269,16 +222,16 @@ class BaseMIM(nn.Module, ABC):
     ]:
         """Embed patches and fetch dates."""
         x_enc, mask_token, dates = {}, {}, {}
-        for name_mod in self.datasets.datasets[name_dataset].inputs:
-            name_embed = self.mod_embed[name_dataset][name_mod]
+        for name_mod in self.dataset.inputs:
+            name_embed = self.mod_embed[name_mod]
             x_enc[name_mod] = self.patch_embed[name_embed](
                 batch[name_mod],
             )
             B = x_enc[name_mod].shape[0]  # noqa: N806
             D = x_enc[name_mod].shape[1]  # noqa: N806
-            G = self.len_bands[name_dataset][name_mod]  # noqa: N806
+            G = self.len_bands[name_mod]  # noqa: N806
             L_out = x_enc[name_mod].shape[2] // self.stride**2  # noqa: N806
-            mask_token[name_mod] = self.mask_token[name_dataset][name_mod].to(
+            mask_token[name_mod] = self.mask_token[name_mod].to(
                 x_enc[name_mod].dtype,
             )
             mask_token[name_mod] = (
@@ -287,8 +240,8 @@ class BaseMIM(nn.Module, ABC):
             dates[name_mod] = batch[f"{name_mod}_dates"]
 
         return (
-            self.group[name_dataset](x_enc),
-            self.group[name_dataset](mask_token),
+            self.group(x_enc),
+            self.group(mask_token),
             dates,
             batch["ref_date"],
         )
@@ -298,52 +251,49 @@ class BaseMIM(nn.Module, ABC):
         x_enc: dict[str, Tensor],
         dates: dict[str, Tensor],
         ref_date: Tensor,
-        name_dataset: str,
     ) -> dict[str, Tensor]:
         """Add positional and date encodings before encoder."""
-        x_enc = self.ungroup[name_dataset](x_enc)
+        x_enc = self.ungroup(x_enc)
 
         for name_mod in x_enc:
             pos_encoding = reshape_encoding(
-                self.pos_encoding[name_dataset].enc,
-                self.grid_size[name_dataset][name_mod],
+                self.pos_encoding.enc,
+                self.grid_size[name_mod],
             )
-            date_encoding = self.enc_date_encoding[name_dataset][name_mod](
+            date_encoding = self.enc_date_encoding[name_mod](
                 dates=dates[name_mod],
                 ref_date=ref_date,
             )
             x_enc[name_mod] = x_enc[name_mod] + pos_encoding + date_encoding
 
-        return self.group[name_dataset](x_enc)
+        return self.group(x_enc)
 
     def dec_add_encodings(
         self,
         x_dec: dict[str, Tensor],
         dates: dict[str, Tensor],
         ref_date: Tensor,
-        name_dataset: str,
     ) -> dict[str, Tensor]:
         """Add positional and date encodings before decoder."""
-        x_dec = self.ungroup[name_dataset](x_dec)
+        x_dec = self.ungroup(x_dec)
 
         for name_mod in x_dec:
             pos_encoding = reshape_encoding(
-                self.pos_encoding[name_dataset].dec,
-                self.out_grid_size[name_dataset][name_mod],
+                self.pos_encoding.dec,
+                self.out_grid_size[name_mod],
             )
-            date_encoding = self.dec_date_encoding[name_dataset][name_mod](
+            date_encoding = self.dec_date_encoding[name_mod](
                 dates=dates[name_mod],
                 ref_date=ref_date,
             )
             x_dec[name_mod] = x_dec[name_mod] + pos_encoding + date_encoding
 
-        return self.group[name_dataset](x_dec)
+        return self.group(x_dec)
 
     def mask(
         self,
         x: dict[str, Tensor],
         mask: dict[str, Tensor],
-        name_dataset: str,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
     ) -> tuple[
         dict[str, Tensor],
@@ -353,7 +303,7 @@ class BaseMIM(nn.Module, ABC):
     ]:
         """Mask."""
         if ssl_phase == "pretrain":
-            mask_rec = self.mask_struct(x, name_dataset)
+            mask_rec = self.mask_struct(x)
 
             x_enc, mask_token, mask_attn = {}, {}, {}
             for name_group in x:
@@ -393,15 +343,14 @@ class BaseMIM(nn.Module, ABC):
     def shuffle_enc_to_dec(
         self,
         x: dict[str, Tensor],
-        name_dataset: str,
     ) -> dict[str, Tensor]:
         """Shuffle modalities and dates."""
         if self.shuffle_mods:
-            x_dec = self.ungroup[name_dataset](x)
+            x_dec = self.ungroup(x)
 
             x_dec = shuffle_enc_to_dec(x_dec)
 
-            x_dec = self.group[name_dataset](x_dec)
+            x_dec = self.group(x_dec)
         else:
             x_dec = x
         return x_dec
@@ -410,15 +359,14 @@ class BaseMIM(nn.Module, ABC):
         self,
         x_dec: dict[str, Tensor],
         mask_rec: dict[str, Tensor],
-        name_dataset: str,
     ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
         """Reconstruct pixels from embeddings."""
-        x_dec = self.ungroup[name_dataset](x_dec)
-        mask_rec = self.ungroup[name_dataset](mask_rec)
+        x_dec = self.ungroup(x_dec)
+        mask_rec = self.ungroup(mask_rec)
 
         pixels_rec = {}
         for name_mod in x_dec:
-            name_embed = self.mod_embed[name_dataset][name_mod]
+            name_embed = self.mod_embed[name_mod]
             pixels_rec[name_mod], mask_rec[name_mod] = self.embed_to_rec[name_embed](
                 x_dec[name_mod],
                 mask_rec[name_mod],
@@ -428,18 +376,17 @@ class BaseMIM(nn.Module, ABC):
     def compute_logits(
         self,
         x_enc: dict[str, Tensor],
-        name_dataset: str,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
     ) -> dict[str, Tensor]:
         """Compute logits."""
-        x_enc = self.ungroup[name_dataset](x_enc)
+        x_enc = self.ungroup(x_enc)
 
-        ref_input = self.datasets.datasets[name_dataset].ref_input
+        ref_input = self.dataset.ref_input
         if ref_input is not None:
             x_ref = {}
             for name_mod in x_enc:
                 D = x_enc[name_mod].shape[1]  # noqa: N806
-                H = self.out_grid_size[name_dataset][name_mod]  # noqa: N806
+                H = self.out_grid_size[name_mod]  # noqa: N806
                 x_ref[name_mod] = rearrange(
                     x_enc[name_mod],
                     "b d (h w) c -> (b d) c h w",
@@ -447,7 +394,7 @@ class BaseMIM(nn.Module, ABC):
                 )
                 x_ref[name_mod] = F.interpolate(
                     x_ref[name_mod],
-                    (self.out_grid_size[name_dataset][ref_input],) * 2,
+                    (self.out_grid_size[ref_input],) * 2,
                     mode="bilinear",
                 )
                 x_ref[name_mod] = rearrange(
@@ -465,7 +412,7 @@ class BaseMIM(nn.Module, ABC):
             dim=1,
         )
         logits = {}
-        for name_target, target in self.datasets.datasets[name_dataset].targets.items():
+        for name_target, target in self.dataset.targets.items():
             match target.type_target:
                 case "segment" | "change_detect":
                     logits[name_target] = self.heads[name_target](
@@ -545,7 +492,6 @@ class BaseMIM(nn.Module, ABC):
     def forward(
         self,
         batch: dict[str, Tensor],
-        name_dataset: str,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
     ) -> tuple[
         dict[str, Tensor] | None,
@@ -555,29 +501,28 @@ class BaseMIM(nn.Module, ABC):
         dict[str, Tensor] | None,
     ]:
         """Shared forward pass for all MIM modules."""
-        x_enc, mask_token, dates, ref_date = self.embed(batch, name_dataset)
-        x_enc = self.enc_add_encodings(x_enc, dates, ref_date, name_dataset)
+        x_enc, mask_token, dates, ref_date = self.embed(batch)
+        x_enc = self.enc_add_encodings(x_enc, dates, ref_date)
 
         x_enc, mask_token, mask_attn, mask_rec = self.mask(
             x_enc,
             mask_token,
-            name_dataset,
             ssl_phase,
         )
 
         x_enc = self.encode(x_enc, mask_attn)
 
         if ssl_phase == "pretrain":
-            x_dec = self.shuffle_enc_to_dec(x_enc, name_dataset)
+            x_dec = self.shuffle_enc_to_dec(x_enc)
             x_dec = self.encoder_to_decoder(x_dec)
             x_dec = self.unmask(x_dec, mask_token, mask_rec)
-            x_dec = self.dec_add_encodings(x_dec, dates, ref_date, name_dataset)
+            x_dec = self.dec_add_encodings(x_dec, dates, ref_date)
 
             x_dec = self.decode(x_dec)
 
-            pixels_rec, mask_rec = self.rec_pixels(x_dec, mask_rec, name_dataset)
+            pixels_rec, mask_rec = self.rec_pixels(x_dec, mask_rec)
             return batch, pixels_rec, mask_rec, None, None
 
         # else, probe or finetune
-        logits = self.compute_logits(x_enc, name_dataset, ssl_phase)
+        logits = self.compute_logits(x_enc, ssl_phase)
         return batch, None, None, x_enc, logits

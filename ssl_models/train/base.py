@@ -12,7 +12,6 @@ from torch import Tensor, nn
 from torchmetrics import MeanMetric
 
 from ssl_models.conf.dataset.utils import DatasetConfig
-from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.layers.overlay import (
     create_overlay,
     onehot_cd_from_logits,
@@ -27,26 +26,14 @@ RGB_BANDS = 3
 class BaseModule(LightningModule, ABC):
     """Lightning base module."""
 
-    def __init__(self, datasets: DatasetsConfig) -> None:
+    def __init__(self, dataset: DatasetConfig) -> None:
         super().__init__()
-        self.datasets = datasets
+        self.dataset = dataset
 
         self.metrics = nn.ModuleDict()
         self.loss_pred = {}
 
-        for name_dataset, dataset in datasets.datasets.items():
-            self._init_dataset(name_dataset, dataset)
-
-    def _init_dataset(
-        self,
-        name_dataset: str,
-        dataset: DatasetConfig,
-    ) -> None:
-        for name_target, target in dataset.targets.items():
-            if name_target in self.loss_pred:
-                msg = "Target is defined multiple times"
-                raise ValueError(msg)
-
+        for name_target, target in self.dataset.targets.items():
             match target.type_target:
                 case "classif" | "segment":
                     self.loss_pred[name_target] = F.cross_entropy
@@ -73,7 +60,7 @@ class BaseModule(LightningModule, ABC):
 
         for name_loss in ("loss_rec", "loss_pred"):
             for stage in ("train", "val", "test"):
-                self.metrics[f"{name_loss}_{name_dataset}_{stage}"] = MeanMetric(
+                self.metrics[f"{name_loss}_{stage}"] = MeanMetric(
                     dist_sync_on_step=False,
                 )
 
@@ -81,8 +68,6 @@ class BaseModule(LightningModule, ABC):
         self,
         batch: dict[str, Tensor],
         logits: dict[str, Tensor],
-        name_dataset: str,
-        dataset: DatasetConfig,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
     ) -> tuple[
@@ -92,9 +77,9 @@ class BaseModule(LightningModule, ABC):
     ]:
         """Visu of predicted rasters."""
         log_inputs, log_preds, log_targets = {}, {}, {}
-        for name_target, target in dataset.targets.items():
+        for name_target, target in self.dataset.targets.items():
             if target.type_target in ("segment", "change_detect"):
-                overlay_img = batch[dataset.log_inputs[0]][
+                overlay_img = batch[self.dataset.log_inputs[0]][
                     0,
                     0,
                     :RGB_BANDS,
@@ -104,15 +89,13 @@ class BaseModule(LightningModule, ABC):
                     target.num_classes,
                     target.missing_val,
                 )
-                log_inputs[
-                    f"{ssl_phase}_{name_dataset}_{name_target}_{stage}/_input"
-                ] = overlay_img
-                log_targets[
-                    f"{ssl_phase}_{name_dataset}_{name_target}_{stage}/_target"
-                ] = create_overlay(
-                    overlay_img,
-                    onehot_target,
-                    target.num_classes,
+                log_inputs[f"{ssl_phase}_{name_target}_{stage}/_input"] = overlay_img
+                log_targets[f"{ssl_phase}_{name_target}_{stage}/_target"] = (
+                    create_overlay(
+                        overlay_img,
+                        onehot_target,
+                        target.num_classes,
+                    )
                 )
             match target.type_target:
                 case "segment":
@@ -120,26 +103,26 @@ class BaseModule(LightningModule, ABC):
                         logits[name_target][0, 0],
                         target.num_classes,
                     )
-                    log_preds[
-                        f"{ssl_phase}_{name_dataset}_{name_target}_{stage}/_pred"
-                    ] = create_overlay(
-                        overlay_img,
-                        onehot_pred,
-                        target.num_classes,
+                    log_preds[f"{ssl_phase}_{name_target}_{stage}/_pred"] = (
+                        create_overlay(
+                            overlay_img,
+                            onehot_pred,
+                            target.num_classes,
+                        )
                     )
                 case "change_detect":
-                    overlay_img = batch[dataset.log_inputs[1]][
+                    overlay_img = batch[self.dataset.log_inputs[1]][
                         0,
                         0,
                         :RGB_BANDS,
                     ]
                     onehot_pred = onehot_cd_from_logits(logits)
-                    log_preds[
-                        f"{ssl_phase}_{name_dataset}_{name_target}_{stage}/_pred"
-                    ] = create_overlay(
-                        overlay_img,
-                        onehot_pred,
-                        target.num_classes,
+                    log_preds[f"{ssl_phase}_{name_target}_{stage}/_pred"] = (
+                        create_overlay(
+                            overlay_img,
+                            onehot_pred,
+                            target.num_classes,
+                        )
                     )
         return log_inputs, log_preds, log_targets
 
@@ -147,14 +130,11 @@ class BaseModule(LightningModule, ABC):
         self,
         batch: dict[str, Tensor],
         logits: dict[str, Tensor],
-        name_dataset: str,
-        dataset: DatasetConfig,
         stage: Literal["train", "val", "test"],
     ) -> Tensor:
         """Compute prediction loss."""
         loss_pred = 0
-        weight = 0
-        for name_target, target in dataset.targets.items():
+        for name_target, target in self.dataset.targets.items():
             logits_target = logits[name_target]
             targets = batch[name_target]
 
@@ -176,8 +156,6 @@ class BaseModule(LightningModule, ABC):
                 inds = (targets != target.missing_val).all(dim=1)
             else:
                 inds = targets != target.missing_val
-
-            weight += batch[name_target].shape[0] * inds.float().mean()
 
             inds = inds.nonzero().squeeze(dim=1)
             if len(inds) == 0:
@@ -204,12 +182,12 @@ class BaseModule(LightningModule, ABC):
         if not isinstance(loss_pred, Tensor):
             loss_pred = 0 * list(logits.values()).pop().mean()
 
-        self.metrics[f"loss_pred_{name_dataset}_{stage}"].update(loss_pred)
-        return loss_pred, weight
+        self.metrics[f"loss_pred_{stage}"].update(loss_pred)
+        return loss_pred
 
     def probe_or_finetune_step(
         self,
-        batch: dict[str, dict[str, Tensor]],
+        batch: dict[str, Tensor],
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Probing/finetuning step."""
@@ -222,55 +200,24 @@ class BaseModule(LightningModule, ABC):
         else:
             model = self.model
 
-        losses_pred, weights = {}, {}
-        logs_inputs, logs_preds, logs_targets = {}, {}, {}
-        for name_dataset, dataset in self.datasets.datasets.items():
-            if batch[name_dataset] is None:
-                continue
-
-            batch[name_dataset], _, _, _, logits = model(
-                batch[name_dataset],
-                name_dataset,
-                ssl_phase=self.trainer.ssl_phase,
-            )
-
-            loss_pred, weight = self.compute_loss_pred(
-                batch[name_dataset],
-                logits,
-                name_dataset,
-                dataset,
-                stage=stage,
-            )
-            losses_pred[name_dataset] = loss_pred
-            weights[name_dataset] = weight
-
-            log_inputs, log_preds, log_targets = self.compute_logs_pred(
-                batch[name_dataset],
-                logits,
-                name_dataset,
-                dataset,
-                ssl_phase=self.trainer.ssl_phase,
-                stage=stage,
-            )
-            logs_inputs.update(log_inputs)
-            logs_preds.update(log_preds)
-            logs_targets.update(log_targets)
-
-        loss_pred = sum(
-            losses_pred[name_dataset] * weights[name_dataset]
-            for name_dataset in losses_pred
-        ) / sum(weights.values())
+        batch, _, _, _, logits = model(batch, ssl_phase=self.trainer.ssl_phase)
+        loss_pred = self.compute_loss_pred(batch, logits, stage=stage)
+        log_inputs, log_preds, log_targets = self.compute_logs_pred(
+            batch,
+            logits,
+            ssl_phase=self.trainer.ssl_phase,
+            stage=stage,
+        )
         return {
             "loss": loss_pred,
-            "losses": losses_pred,
-            "log_inputs": logs_inputs,
-            "log_preds": logs_preds,
-            "log_targets": logs_targets,
+            "log_inputs": log_inputs,
+            "log_preds": log_preds,
+            "log_targets": log_targets,
         }
 
     def shared_step(
         self,
-        batch: dict[str, dict],
+        batch: dict[str, Tensor],
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Shared step for training/validation."""
@@ -291,27 +238,27 @@ class BaseModule(LightningModule, ABC):
 
     def training_step(
         self,
-        batch: dict[str, dict],
+        batch: dict[str, Tensor],
         batch_idx: int,  # noqa: ARG002
     ) -> dict[str, torch.Tensor]:
         return self.shared_step(batch, stage="train")
 
     def validation_step(
         self,
-        batch: dict[str, dict],
+        batch: dict[str, Tensor],
         batch_idx: int,  # noqa: ARG002
     ) -> dict[str, torch.Tensor]:
         return self.shared_step(batch, stage="val")
 
     def test_step(
         self,
-        batch: dict[str, dict],
+        batch: dict[str, Tensor],
         batch_idx: int,  # noqa: ARG002
     ) -> dict[str, torch.Tensor]:
         return self.shared_step(batch, stage="test")
 
     def on_train_epoch_start(self) -> None:
-        self.trainer.train_dataloader.set_epoch(self.trainer.current_epoch)
+        self.trainer.datamodule.set_epoch(self.trainer.current_epoch)
 
     def on_train_epoch_end(self) -> None:
         if self.ema_model is not None:

@@ -10,7 +10,6 @@ from einops import rearrange
 from torch import Tensor
 
 from ssl_models import RNG
-from ssl_models.conf.dataset.utils import DatasetConfig
 
 
 def shuffle_enc_to_dec(x: dict[str, Tensor]) -> dict[str, Tensor]:

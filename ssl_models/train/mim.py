@@ -11,7 +11,6 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
 from ssl_models.conf.dataset.utils import DatasetConfig
-from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.conf.loss import MiMLossConfig
 from ssl_models.conf.mask import MiMMaskConfig
 from ssl_models.mim.mae import mae_large, mae_medium, mae_small, mae_tiny
@@ -34,7 +33,7 @@ class MiMModule(BaseModule):
     def __init__(  # noqa: PLR0913, PLR0915, C901, PLR0912
         self,
         # shared args
-        datasets: DatasetsConfig,
+        dataset: DatasetConfig,
         mask: MiMMaskConfig,
         fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         inter_depth: int,
@@ -53,8 +52,8 @@ class MiMModule(BaseModule):
         v2_attn: bool = True,
         swin_abs_enc: bool = False,
     ) -> None:
-        super().__init__(datasets)
-        self.datasets = datasets
+        super().__init__(dataset=dataset)
+        self.interpolate = interpolate
 
         loss = loss or MiMLossConfig()
         match loss.name:
@@ -85,42 +84,30 @@ class MiMModule(BaseModule):
 
         self.mu = {}
         self.cov_inv_sqrt = {}
-        self.condition_mods = {}
-        for dataset in datasets.datasets.values():
-            for name_mod, mod in dataset.inputs.items():
-                dim = mod.patch_size.mae**2 * (
-                    mod.bands
-                    if isinstance(mod.bands, int)
-                    else sum(map(len, mod.bands))
-                )
-                if (
-                    name_mod in self.condition_mods
-                    and self.condition_mods[name_mod] != dim
-                ):
-                    msg = "Inconsistent modality dimensionalities in multi-dataset"
-                    raise ValueError(msg)
-                self.condition_mods[name_mod] = dim
+        self.condition_mods = {
+            name_mod: mod.patch_size.mae**2
+            * (mod.bands if isinstance(mod.bands, int) else sum(map(len, mod.bands)))
+            for name_mod, mod in self.dataset.inputs.items()
+        }
         for name_mod, dim in self.condition_mods.items():
             self.metrics[f"condition_{name_mod}"] = ConditionMetric(
                 dim=dim,
             )
 
-        self.norm_bands = {}
-        for name_dataset, dataset in datasets.datasets.items():
-            self.norm_bands[name_dataset] = {
-                name_mod: tuple(
-                    (
-                        mod.norm_bands
-                        if mod.norm_bands is not None
-                        else (
-                            [mod.bands]
-                            if isinstance(mod.bands, int)
-                            else list(map(len, mod.bands))
-                        )
-                    ),
-                )
-                for name_mod, mod in dataset.inputs.items()
-            }
+        self.norm_bands = {
+            name_mod: tuple(
+                (
+                    mod.norm_bands
+                    if mod.norm_bands is not None
+                    else (
+                        [mod.bands]
+                        if isinstance(mod.bands, int)
+                        else list(map(len, mod.bands))
+                    )
+                ),
+            )
+            for name_mod, mod in self.dataset.inputs.items()
+        }
 
         match model:
             case "mae":
@@ -164,7 +151,7 @@ class MiMModule(BaseModule):
 
         if model_size in model_map:
             model_args = {
-                "datasets": datasets,
+                "dataset": dataset,
                 "mask": mask,
                 "fusion_mode": fusion_mode,
                 "inter_depth": inter_depth,
@@ -189,7 +176,7 @@ class MiMModule(BaseModule):
         else:
             self.ema_model = None
 
-        self.save_hyperparameters(ignore=["datasets", "mask", "loss"])
+        self.save_hyperparameters(ignore=["dataset", "mask", "loss"])
 
     def configure_optimizers(self) -> dict:
         """Configure optimizer."""
@@ -203,8 +190,7 @@ class MiMModule(BaseModule):
         )
         lr = (
             # use sqrt scaling rule with Adam
-            self.trainer.base_lr
-            * total_batch_size**0.5
+            self.trainer.base_lr * total_batch_size**0.5
         )
 
         optimizer = torch.optim.AdamW(
@@ -237,15 +223,13 @@ class MiMModule(BaseModule):
         batch: dict[str, Tensor],
         pixels_rec: dict[str, Tensor],
         mask_rec: dict[str, Tensor],
-        name_dataset: str,
-        dataset: DatasetConfig,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         stage: Literal["train", "val", "test"],
     ) -> tuple[dict[str, Tensor], dict[str, Tensor], dict[str, Tensor]]:
         """Visu of reconstructed images."""
         log_inputs, log_preds, log_targets = {}, {}, {}
         for name_mod in pixels_rec:
-            if name_mod not in dataset.log_inputs:
+            if name_mod not in self.dataset.log_inputs:
                 continue
 
             inputs = torch.where(
@@ -264,16 +248,12 @@ class MiMModule(BaseModule):
                 batch[name_mod],
             )
             targets = batch[name_mod]
-            log_inputs[f"{ssl_phase}_{stage}/_{name_dataset}_{name_mod}_input"] = (
-                inputs[0, 0]
-            )
-            log_preds[f"{ssl_phase}_{stage}/_{name_dataset}_{name_mod}_rec"] = preds[
+            log_inputs[f"{ssl_phase}_{stage}/_{name_mod}_input"] = inputs[0, 0]
+            log_preds[f"{ssl_phase}_{stage}/_{name_mod}_rec"] = preds[
                 0,
                 0,
             ]
-            log_targets[f"{ssl_phase}_{stage}/_{name_dataset}_{name_mod}_target"] = (
-                targets[0, 0]
-            )
+            log_targets[f"{ssl_phase}_{stage}/_{name_mod}_target"] = targets[0, 0]
 
         return log_inputs, log_preds, log_targets
 
@@ -282,7 +262,6 @@ class MiMModule(BaseModule):
         batch: dict[str, Tensor],
         pixels_rec: dict[str, Tensor],
         mask_rec: dict[str, Tensor],
-        name_dataset: str,
         stage: Literal["train", "val", "test"],
     ) -> Tensor:
         """Compute reconstruction loss."""
@@ -291,8 +270,8 @@ class MiMModule(BaseModule):
         for name_mod in pixels_rec:
             B, D = batch[name_mod].shape[:2]  # noqa: N806
             H, W = (  # noqa: N806
-                self.model.out_grid_size[name_dataset][name_mod],
-                self.model.out_grid_size[name_dataset][name_mod],
+                self.model.out_grid_size[name_mod],
+                self.model.out_grid_size[name_mod],
             )
             P = batch[name_mod].shape[3] // H  # noqa: N806
 
@@ -331,7 +310,7 @@ class MiMModule(BaseModule):
                 target_groups = list(
                     torch.split(
                         target,
-                        self.norm_bands[name_dataset][name_mod],
+                        self.norm_bands[name_mod],
                         dim=-1,
                     ),
                 )
@@ -362,60 +341,32 @@ class MiMModule(BaseModule):
 
         weight = sum(weights)
         loss_rec = torch.stack(losses_rec).sum() / weight
-        self.metrics[f"loss_rec_{name_dataset}_{stage}"].update(loss_rec)
-        return loss_rec, weight
+        self.metrics[f"loss_rec_{stage}"].update(loss_rec)
+        return loss_rec
 
     def pretrain_step(
         self,
-        batch: dict[str, dict[str, Tensor]],
+        batch: dict[str, Tensor],
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Pretraining step."""
-        losses_rec, weights = {}, {}
-        logs_inputs, logs_preds, logs_targets = {}, {}, {}
-        for name_dataset, dataset in self.datasets.datasets.items():
-            if batch[name_dataset] is None:
-                continue
-
-            batch[name_dataset], pixels_rec, mask_rec, _, _ = self.model(
-                batch[name_dataset],
-                name_dataset,
-                ssl_phase=self.trainer.ssl_phase,
-            )
-
-            loss_rec, weight = self.compute_loss_rec(
-                batch[name_dataset],
-                pixels_rec,
-                mask_rec,
-                name_dataset,
-                stage=stage,
-            )
-            losses_rec[name_dataset] = loss_rec
-            weights[name_dataset] = weight
-
-            log_inputs, log_preds, log_targets = self.compute_logs_rec(
-                batch[name_dataset],
-                pixels_rec,
-                mask_rec,
-                name_dataset,
-                dataset,
-                ssl_phase=self.trainer.ssl_phase,
-                stage=stage,
-            )
-            logs_inputs.update(log_inputs)
-            logs_preds.update(log_preds)
-            logs_targets.update(log_targets)
-
-        loss_rec = sum(
-            losses_rec[name_dataset] * weights[name_dataset]
-            for name_dataset in losses_rec
-        ) / sum(weights.values())
+        batch, pixels_rec, mask_rec, _, _ = self.model(
+            batch,
+            ssl_phase=self.trainer.ssl_phase,
+        )
+        loss_rec = self.compute_loss_rec(batch, pixels_rec, mask_rec, stage=stage)
+        log_inputs, log_preds, log_targets = self.compute_logs_rec(
+            batch,
+            pixels_rec,
+            mask_rec,
+            ssl_phase=self.trainer.ssl_phase,
+            stage=stage,
+        )
         return {
             "loss": loss_rec,
-            "losses": losses_rec,
-            "log_inputs": logs_inputs,
-            "log_preds": logs_preds,
-            "log_targets": logs_targets,
+            "log_inputs": log_inputs,
+            "log_preds": log_preds,
+            "log_targets": log_targets,
         }
 
     def on_fit_start(self) -> None:
@@ -424,8 +375,7 @@ class MiMModule(BaseModule):
         if not self.condition:
             return
 
-        for name_dataset, dataset in self.datasets.datasets.items():
-            self.condition_dataset(name_dataset, dataset)
+        self.condition_dataset()
 
         for name_mod in self.condition_mods:
             mu, gram = self.metrics[f"condition_{name_mod}"].compute()
@@ -447,17 +397,18 @@ class MiMModule(BaseModule):
             self.mu[name_mod] = mu
             self.cov_inv_sqrt[name_mod] = cov_inv_sqrt
 
-    def condition_dataset(self, name_dataset: str, dataset: DatasetConfig) -> None:
+    def condition_dataset(self) -> None:
+        """Accumulate pixel statistics of the train dataset for conditioning."""
         sampler = DistributedSampler(
-            self.trainer.datamodule.train_dataset[name_dataset],
+            self.trainer.datamodule.train_dataset,
             num_replicas=self.trainer.world_size,
             rank=self.trainer.global_rank,
             shuffle=False,  # or True if you want shuffle
         )
 
         data_loader = DataLoader(
-            self.trainer.datamodule.train_dataset[name_dataset],
-            batch_size=self.trainer.datamodule.batch_size[name_dataset],
+            self.trainer.datamodule.train_dataset,
+            batch_size=self.trainer.datamodule.batch_size,
             num_workers=self.trainer.datamodule.num_workers,
             sampler=sampler,
             drop_last=False,
@@ -465,13 +416,11 @@ class MiMModule(BaseModule):
 
         with torch.no_grad():
             for batch in data_loader:
-                batch = self.trainer.strategy.batch_to_device(
-                    batch, self.device
-                )  # noqa: PLW2901
+                batch = self.trainer.strategy.batch_to_device(batch, self.device)  # noqa: PLW2901
                 batch = self.resize_and_rescale(batch)  # noqa: PLW2901
 
-                for name_mod in dataset.inputs:
-                    H = self.model.out_grid_size[name_dataset][name_mod]  # noqa: N806
+                for name_mod in self.dataset.inputs:
+                    H = self.model.out_grid_size[name_mod]  # noqa: N806
                     P = batch[name_mod].shape[3] // H  # noqa: N806
 
                     target = rearrange(

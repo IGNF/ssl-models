@@ -11,7 +11,7 @@ from ssl_models.baselines.dofa import DOFABaseline
 from ssl_models.baselines.prithvi import PrithviBaseline
 from ssl_models.baselines.satmae import SatMAEBaseline
 from ssl_models.baselines.terramind import TerramindBaseline
-from ssl_models.conf.datasets import DatasetsConfig
+from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.train.base import BaseModule
 
 torch.set_float32_matmul_precision(precision="medium")
@@ -23,7 +23,7 @@ class BaselineModule(BaseModule):
     def __init__(
         self,
         # shared args
-        datasets: DatasetsConfig,
+        dataset: DatasetConfig,
         model: Literal["dinov2", "dofa", "croma", "prithvi", "satmae", "terramind"],
         fusion_mode: Literal["shared", "monotemp", "mod", "late-croma", "inter-croma"],
         model_size: Literal["small", "base", "large"],
@@ -37,10 +37,11 @@ class BaselineModule(BaseModule):
         use_date_enc: bool = True,
         **kwargs,  # noqa: ANN003
     ) -> None:
-        super().__init__(datasets)
+        super().__init__(dataset=dataset)
+        self.interpolate = interpolate
 
         model_args = {
-            "datasets": datasets,
+            "dataset": dataset,
             "fusion_mode": fusion_mode,
             "backbone_size": model_size,
             "freeze": freeze,
@@ -96,9 +97,8 @@ class BaselineModule(BaseModule):
         else:
             self.ema_model = None
 
-        self.dataset = datasets.dataset
         self.tb_logger = None
-        self.save_hyperparameters(ignore=["datasets"])
+        self.save_hyperparameters(ignore=["dataset"])
 
     def configure_optimizers(self) -> dict:
         """Configure optimizer."""
@@ -113,8 +113,7 @@ class BaselineModule(BaseModule):
 
         lr = (
             # use sqrt scaling rule with Adam
-            self.trainer.base_lr
-            * total_batch_size**0.5
+            self.trainer.base_lr * total_batch_size**0.5
         )
         match self.trainer.lw_decay:
             case None:

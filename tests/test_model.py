@@ -17,7 +17,7 @@ from ssl_models.train.mim import MiMModule
     ),
 )
 def test_ssl_mae(
-    datasets_treesat,
+    dataset_treesat,
     mask,
     fusion_mode,
     inter_depth,
@@ -26,7 +26,7 @@ def test_ssl_mae(
     stage,
 ):
     ssl_module = MiMModule(
-        datasets=datasets_treesat,
+        dataset=dataset_treesat,
         mask=mask,
         fusion_mode=fusion_mode,
         inter_depth=inter_depth,
@@ -48,7 +48,7 @@ def test_ssl_mae(
     ),
 )
 def test_ssl_inter_mae(
-    datasets_treesat,
+    dataset_treesat,
     mask,
     fusion_mode,
     inter_depth,
@@ -57,7 +57,7 @@ def test_ssl_inter_mae(
     stage,
 ):
     ssl_module = MiMModule(
-        datasets=datasets_treesat,
+        dataset=dataset_treesat,
         mask=mask,
         fusion_mode=fusion_mode,
         inter_depth=inter_depth,
@@ -81,7 +81,7 @@ def test_ssl_inter_mae(
     ),
 )
 def test_ssl_head_loss(
-    datasets_treesat,
+    dataset_treesat,
     mask,
     fusion_mode,
     inter_depth,
@@ -92,7 +92,7 @@ def test_ssl_head_loss(
     stage,
 ):
     ssl_module = MiMModule(
-        datasets=datasets_treesat,
+        dataset=dataset_treesat,
         mask=mask,
         fusion_mode=fusion_mode,
         inter_depth=inter_depth,
@@ -119,7 +119,7 @@ def test_ssl_head_loss(
     ),
 )
 def test_ssl_mixmae(
-    datasets_treesat,
+    dataset_treesat,
     mask,
     fusion_mode,
     inter_depth,
@@ -131,7 +131,7 @@ def test_ssl_mixmae(
     stage,
 ):
     ssl_module = MiMModule(
-        datasets=datasets_treesat,
+        dataset=dataset_treesat,
         mask=mask,
         fusion_mode=fusion_mode,
         inter_depth=inter_depth,
@@ -146,9 +146,9 @@ def test_ssl_mixmae(
 
 
 @pytest.mark.xfail
-def test_model_mod_mixmae_should_fail(datasets_treesat, mask):
+def test_model_mod_mixmae_should_fail(dataset_treesat, mask):
     _ = MiMModule(
-        datasets=datasets_treesat,
+        dataset=dataset_treesat,
         mask=mask,
         fusion_mode="mod",
         inter_depth=0,
@@ -158,9 +158,9 @@ def test_model_mod_mixmae_should_fail(datasets_treesat, mask):
 
 
 @pytest.mark.xfail
-def test_model_group_mixmae_should_fail(datasets_treesat, mask):
+def test_model_group_mixmae_should_fail(dataset_treesat, mask):
     _ = MiMModule(
-        datasets=datasets_treesat,
+        dataset=dataset_treesat,
         mask=mask,
         fusion_mode="group",
         inter_depth=0,
@@ -170,9 +170,9 @@ def test_model_group_mixmae_should_fail(datasets_treesat, mask):
 
 
 @pytest.mark.xfail
-def test_levels_should_fail(datasets_treesat, mask):
+def test_levels_should_fail(dataset_treesat, mask):
     _ = MiMModule(
-        datasets=datasets_treesat,
+        dataset=dataset_treesat,
         mask=mask,
         fusion_mode="shared",
         inter_depth=0,
@@ -183,9 +183,9 @@ def test_levels_should_fail(datasets_treesat, mask):
 
 
 @pytest.mark.xfail
-def test_model_should_fail(datasets_treesat, mask):
+def test_model_should_fail(dataset_treesat, mask):
     _ = MiMModule(
-        datasets=datasets_treesat,
+        dataset=dataset_treesat,
         mask=mask,
         fusion_mode="shared",
         inter_depth=0,

@@ -16,9 +16,9 @@ from torch import Tensor, nn
 from torch.optim import Optimizer
 
 from ssl_models.conf.augment import DinoAugmentConfig
-from ssl_models.conf.datasets import DatasetsConfig
-from ssl_models.conf.loss import DinoLossConfig
-from ssl_models.conf.mask import DinoMaskConfig
+from ssl_models.conf.dataset.utils import DatasetConfig
+from ssl_models.conf.loss import DINOv3LossConfig
+from ssl_models.conf.mask import DINOv3MaskConfig
 from ssl_models.dino.augment import MultiCropAugment
 from ssl_models.dino.backbone import (
     dinov3_base,
@@ -27,8 +27,8 @@ from ssl_models.dino.backbone import (
     dinov3_small,
     dinov3_tiny,
 )
-from ssl_models.dino.heads import DINOHead
-from ssl_models.dino.losses import (
+from ssl_models.dino.head import DINOHead
+from ssl_models.dino.loss import (
     dino_loss,
     ibot_loss,
     koleo_loss,
@@ -36,7 +36,7 @@ from ssl_models.dino.losses import (
     teacher_stats,
 )
 from ssl_models.dino.masking import ibot_masks, view_keep
-from ssl_models.dino.schedules import cosine, linear_warmup, lr_factor
+from ssl_models.dino.schedule import cosine, linear_warmup, lr_factor
 from ssl_models.train.base import BaseModule
 
 NO_WD_PARAMS = ("cls_token", "register_tokens", "mask_token")
@@ -47,17 +47,16 @@ class DINOModule(BaseModule):
 
     def __init__(  # noqa: PLR0913
         self,
-        datasets: DatasetsConfig,
-        mask: DinoMaskConfig,
-        loss: DinoLossConfig,
+        dataset: DatasetConfig,
+        mask: DINOv3MaskConfig,
+        loss: DINOv3LossConfig,
         augment: DinoAugmentConfig,
         # backbone
         fusion_mode: Literal["shared", "monotemp", "mod", "group"] = "group",
+        type_head: Literal["linear", "attentive"] = "attentive",  # noqa: ARG002, no probing yet
         inter_depth: int = 3,
         model_size: Literal["tiny", "small", "base", "large", "huge_plus"] = "small",
         norm: Literal["layernorm", "rmsnorm"] = "layernorm",
-        ffn: Literal["mlp", "swiglu"] | None = None,
-        mlp_ratio: float | None = None,
         n_registers: int = 4,
         layerscale_init: float | None = 1e-5,
         drop_path: float = 0.3,
@@ -82,8 +81,7 @@ class DINOModule(BaseModule):
         freeze_last_layer_pct: float = 0.01,
         clip_grad: float | None = 3.0,
     ) -> None:
-        super().__init__(datasets)
-        self.datasets = datasets
+        super().__init__(dataset=dataset)
         self.ema_model = None  # no finetuning EMA, the teacher is separate
         self.interpolate = interpolate
 
@@ -99,7 +97,7 @@ class DINOModule(BaseModule):
             raise ValueError(msg)
 
         model_args = {
-            "datasets": datasets,
+            "dataset": dataset,
             "fusion_mode": fusion_mode,
             "inter_depth": inter_depth,
             "norm": norm,
@@ -114,11 +112,6 @@ class DINOModule(BaseModule):
             "local_ratio": augment.local_size_ratio,
             "fac_date_enc": 1.0 if use_date_enc else 0.0,
         }
-        # None: keep the default of the model size
-        if ffn is not None:
-            model_args["ffn"] = ffn
-        if mlp_ratio is not None:
-            model_args["mlp_ratio"] = mlp_ratio
         backbone = model_map[model_size](**model_args)
 
         head = partial(
@@ -178,7 +171,7 @@ class DINOModule(BaseModule):
         self.total_steps = None
         self._last_ema_step = 0
 
-        self.save_hyperparameters(ignore=["datasets", "mask", "loss", "augment"])
+        self.save_hyperparameters(ignore=["dataset", "mask", "loss", "augment"])
 
     def train(self, mode: bool = True) -> "DINOModule":
         """Keep the teacher in eval mode (no drop path, no RoPE augmentation)."""
@@ -209,21 +202,20 @@ class DINOModule(BaseModule):
             self.wd_start, self.wd_end, self.global_step, self.get_total_steps()
         )
 
-    def forward_dataset(  # noqa: PLR0915
+    def forward_batch(  # noqa: PLR0915
         self,
         batch: dict[str, Tensor],
-        name_dataset: str,
         teacher_temp: float,
     ) -> dict:
-        """Compute DINO / iBOT / KoLeo losses for one dataset batch."""
-        dataset = self.datasets.datasets[name_dataset]
+        """Compute DINO / iBOT / KoLeo losses for a batch."""
+        dataset = self.dataset
         backbone_s = self.student["backbone"]
         backbone_t = self.teacher["backbone"]
         mods = list(dataset.inputs)
 
         B = batch[mods[0]].shape[0]  # noqa: N806
         device = batch[mods[0]].device
-        views = self.augment(batch, backbone_s.view_size[name_dataset])
+        views = self.augment(batch, backbone_s.view_size)
         n_global, n_local = len(views["global"]), len(views["local"])
 
         meta = {f"{m}_dates": batch[f"{m}_dates"] for m in mods}
@@ -240,7 +232,7 @@ class DINOModule(BaseModule):
         num_dates = {m: dataset.inputs[m].num_dates for m in mods}
         globals_ = stack(views["global"])
         ibot_mask = ibot_masks(
-            backbone_s.token_shapes(name_dataset, "global"),
+            backbone_s.token_shapes("global"),
             n_global * B,
             self.ibot_mask_prob,
             self.ibot_mask_ratio,
@@ -258,7 +250,7 @@ class DINOModule(BaseModule):
 
         # teacher: unmasked global views
         with torch.no_grad():
-            out_t = backbone_t(globals_, name_dataset, "global")
+            out_t = backbone_t(globals_, "global")
             teacher_dino = sinkhorn_knopp(
                 self.teacher["dino_head"](out_t["cls"]),
                 teacher_temp,
@@ -267,7 +259,6 @@ class DINOModule(BaseModule):
         # student: masked global views, local views
         out_s = backbone_s(
             globals_,
-            name_dataset,
             "global",
             ibot_mask=ibot_mask,
             keep=keep_global,
@@ -277,7 +268,6 @@ class DINOModule(BaseModule):
         if n_local:
             out_l = backbone_s(
                 stack(views["local"]),
-                name_dataset,
                 "local",
                 keep=view_keep(
                     num_dates,
@@ -342,50 +332,33 @@ class DINOModule(BaseModule):
 
     def pretrain_step(
         self,
-        batch: dict[str, dict[str, Tensor]],
+        batch: dict[str, Tensor],
         stage: Literal["train", "val", "test"],
     ) -> dict:
-        """Pretraining step over all datasets."""
+        """Pretraining step."""
         ssl_phase = self.trainer.ssl_phase
         teacher_temp = self.teacher_temp()
 
-        losses, weights = {}, {}
-        logs_inputs, logs_preds, logs_targets = {}, {}, {}
-        for name_dataset, dataset in self.datasets.datasets.items():
-            if batch[name_dataset] is None:
-                continue
-            out = self.forward_dataset(batch[name_dataset], name_dataset, teacher_temp)
-            losses[name_dataset] = out["loss"]
-            weights[name_dataset] = out["batch_size"]
-            self.metrics[f"loss_rec_{name_dataset}_{stage}"].update(
-                out["loss"].detach(),
+        out = self.forward_batch(batch, teacher_temp)
+        self.metrics[f"loss_rec_{stage}"].update(out["loss"].detach())
+        for name, value in out["components"].items():
+            self.log(
+                f"{ssl_phase}_dino/{name}_{stage}",
+                value,
+                on_step=stage == "train",
+                on_epoch=True,
+                sync_dist=True,
+                batch_size=out["batch_size"],
             )
-            for name, value in out["components"].items():
-                self.log(
-                    f"{ssl_phase}_dino/{name}_{name_dataset}_{stage}",
-                    value,
-                    on_step=stage == "train",
-                    on_epoch=True,
-                    sync_dist=True,
-                    batch_size=out["batch_size"],
-                )
 
-            for name_mod in dataset.log_inputs:
-                prefix = f"{ssl_phase}_{stage}/_{name_dataset}_{name_mod}"
-                logs_targets[f"{prefix}_original"] = out["batch"][name_mod][0, 0]
-                logs_inputs[f"{prefix}_global"] = out["views"]["global"][0][name_mod][
-                    0,
-                    0,
-                ]
-                if out["views"]["local"]:
-                    logs_preds[f"{prefix}_local"] = out["views"]["local"][0][name_mod][
-                        0,
-                        0,
-                    ]
+        logs_inputs, logs_preds, logs_targets = {}, {}, {}
+        for name_mod in self.dataset.log_inputs:
+            prefix = f"{ssl_phase}_{stage}/_{name_mod}"
+            logs_targets[f"{prefix}_original"] = out["batch"][name_mod][0, 0]
+            logs_inputs[f"{prefix}_global"] = out["views"]["global"][0][name_mod][0, 0]
+            if out["views"]["local"]:
+                logs_preds[f"{prefix}_local"] = out["views"]["local"][0][name_mod][0, 0]
 
-        loss = sum(losses[name] * weights[name] for name in losses) / sum(
-            weights.values(),
-        )
         if stage == "train":
             self.log(f"{ssl_phase}_dino/teacher_temp", teacher_temp, on_step=True)
             self.log(f"{ssl_phase}_dino/momentum", self.momentum(), on_step=True)
@@ -393,8 +366,7 @@ class DINOModule(BaseModule):
                 f"{ssl_phase}_dino/weight_decay", self.weight_decay(), on_step=True
             )
         return {
-            "loss": loss,
-            "losses": losses,
+            "loss": out["loss"],
             "log_inputs": logs_inputs,
             "log_preds": logs_preds,
             "log_targets": logs_targets,
@@ -402,7 +374,7 @@ class DINOModule(BaseModule):
 
     def shared_step(
         self,
-        batch: dict[str, dict],
+        batch: dict[str, Tensor],
         stage: Literal["train", "val", "test"],
     ) -> dict:
         if self.trainer.ssl_phase != "pretrain":

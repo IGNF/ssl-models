@@ -4,6 +4,7 @@ import pytest
 
 from ssl_models import LOGGER
 from ssl_models.train.data import SSLDataModule
+from tests import TEST_DATA_DIR
 
 
 @pytest.mark.parametrize(
@@ -17,7 +18,7 @@ from ssl_models.train.data import SSLDataModule
     ),
 )
 def test_data(
-    datasets_treesat,
+    dataset_treesat,
     opt_finetune,
     stage,
     ssl_phase,
@@ -26,7 +27,8 @@ def test_data(
     random_crop,
 ):
     data_module = SSLDataModule(
-        datasets=datasets_treesat,
+        dataset=dataset_treesat,
+        root_dir=TEST_DATA_DIR,
         ssl_phase=ssl_phase,
         opt=opt_finetune,
         num_workers=1,
@@ -43,5 +45,4 @@ def test_data(
             if int(idx) > num_cycles:
                 LOGGER.info("exit")
                 break
-            for name_dataset in batch:
-                LOGGER.info(f"id: {idx}, batch: {batch[name_dataset].keys()}")
+            LOGGER.info(f"id: {idx}, batch: {batch.keys()}")

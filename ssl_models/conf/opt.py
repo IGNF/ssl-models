@@ -13,6 +13,7 @@ class OptConfig:  # noqa: D101
     accumulate_grad_batches: int = 1
 
 
+@store(group="opt_pretrain", name="default_pretrain")
 @dataclass
 class OptPretrainConfig(OptConfig):  # noqa: D101
     base_lr: float = 3e-5
@@ -20,10 +21,7 @@ class OptPretrainConfig(OptConfig):  # noqa: D101
     batch_size: int = 32
 
 
-pretrain_store = store(group="opt_pretrain")
-pretrain_store(OptPretrainConfig, name="default_pretrain")
-
-
+@store(group="opt_probe", name="default_probe")
 @dataclass
 class OptProbeConfig(OptConfig):  # noqa: D101
     base_lr: float = 1e-5
@@ -31,10 +29,7 @@ class OptProbeConfig(OptConfig):  # noqa: D101
     batch_size: int = 32
 
 
-probe_store = store(group="opt_probe")
-probe_store(OptProbeConfig, name="default_probe")
-
-
+@store(group="opt_finetune", name="default_finetune")
 @dataclass
 class OptFinetuneConfig(OptConfig):
     """Finetuning optimizer config.
@@ -52,7 +47,3 @@ class OptFinetuneConfig(OptConfig):
     final_factor: float = 2
     monitor: str | None = None
     patience: int | None = 5
-
-
-finetune_store = store(group="opt_finetune")
-finetune_store(OptFinetuneConfig, name="default_finetune")

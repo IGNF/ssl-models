@@ -22,9 +22,9 @@ def model_map():
         ("msgfm", "shared", "monotemp", "mod", "group"),
     ),
 )
-def test_mae(datasets_treesat, mask, model_map, model_size, fusion_mode):
+def test_mae(dataset_treesat, mask, model_map, model_size, fusion_mode):
     model_args = {
-        "datasets": datasets_treesat,
+        "dataset": dataset_treesat,
         "mask": mask,
         "fusion_mode": fusion_mode,
         "model": "mae",
@@ -49,7 +49,7 @@ def test_mae(datasets_treesat, mask, model_map, model_size, fusion_mode):
     ),
 )
 def test_mae_arch(
-    datasets_treesat,
+    dataset_treesat,
     mask,
     model_map,
     model_size,
@@ -59,7 +59,7 @@ def test_mae_arch(
     fac_date_enc,
 ):
     model_args = {
-        "datasets": datasets_treesat,
+        "dataset": dataset_treesat,
         "mask": mask,
         "fusion_mode": "mod",
         "model": "mae",

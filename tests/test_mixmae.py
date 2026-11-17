@@ -30,14 +30,14 @@ def model_map():
     ),
 )
 def test_mixmae(
-    datasets_treesat,
+    dataset_treesat,
     mask,
     model_map,
     model_size,
     fusion_mode,
 ):
     model_args = {
-        "datasets": datasets_treesat,
+        "dataset": dataset_treesat,
         "mask": mask,
         "fusion_mode": fusion_mode,
         "model": "mixmae",
@@ -64,7 +64,7 @@ def test_mixmae(
     ),
 )
 def test_mixmae_arch(
-    datasets_treesat,
+    dataset_treesat,
     mask,
     model_map,
     model_size,
@@ -75,7 +75,7 @@ def test_mixmae_arch(
     type_head,
 ):
     model_args = {
-        "datasets": datasets_treesat,
+        "dataset": dataset_treesat,
         "mask": mask,
         "fusion_mode": "shared",
         "model": "mixmae",
@@ -91,9 +91,9 @@ def test_mixmae_arch(
 
 
 @pytest.mark.xfail
-def test_mod_mixmae_should_fail(datasets_treesat, mask):
+def test_mod_mixmae_should_fail(dataset_treesat, mask):
     model_args = {
-        "datasets": datasets_treesat,
+        "dataset": dataset_treesat,
         "mask": mask,
         "fusion_mode": "mod",
         "model": "mixmae",
@@ -109,9 +109,9 @@ def test_mod_mixmae_should_fail(datasets_treesat, mask):
 
 
 @pytest.mark.xfail
-def test_group_mixmae_should_fail(datasets_treesat, mask):
+def test_group_mixmae_should_fail(dataset_treesat, mask):
     model_args = {
-        "datasets": datasets_treesat,
+        "dataset": dataset_treesat,
         "mask": mask,
         "fusion_mode": "group",
         "model": "mixmae",

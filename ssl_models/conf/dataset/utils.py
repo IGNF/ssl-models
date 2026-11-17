@@ -1,6 +1,5 @@
 """Base classes for modality and single dataset."""
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from math import gcd
 
@@ -158,21 +157,3 @@ class DatasetConfig:
         }
 
         self.groups = self._set_groups()
-
-
-DATASETS: dict[str, type[DatasetConfig]] = {}
-
-ConfigDecorator = Callable[[type[DatasetConfig]], type[DatasetConfig]]
-
-
-def register_dataset(name: str) -> ConfigDecorator:
-    """Register a dataset config under the name used in `name_datasets`."""
-
-    def decorator(config_class: type[DatasetConfig]) -> type[DatasetConfig]:
-        if name in DATASETS:
-            msg = f"Dataset {name} is already registered."
-            raise ValueError(msg)
-        DATASETS[name] = config_class
-        return config_class
-
-    return decorator

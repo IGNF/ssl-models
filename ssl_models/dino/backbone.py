@@ -24,7 +24,6 @@ import torch
 from torch import Tensor, nn
 
 from ssl_models.conf.dataset.utils import DatasetConfig, InputConfig
-from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.layers.embed import Patchify
 from ssl_models.layers.utils import encode_dates, group_mods, ungroup_mods
 from ssl_models.layers.vit import (
@@ -61,7 +60,7 @@ class DINOv3Backbone(nn.Module):
 
     def __init__(  # noqa: PLR0913
         self,
-        datasets: DatasetsConfig,
+        dataset: DatasetConfig,
         fusion_mode: Literal["shared", "monotemp", "mod", "group"],
         inter_depth: int,
         embed_dim: int,
@@ -96,7 +95,7 @@ class DINOv3Backbone(nn.Module):
             msg = f"Invalid inter depth {inter_depth} for depth {depth}."
             raise ValueError(msg)
 
-        self.datasets = datasets
+        self.dataset = dataset
         self.fusion_mode = fusion_mode
         self.embed_dim = embed_dim
         self.n_prefix = 1 + n_registers
@@ -106,24 +105,11 @@ class DINOv3Backbone(nn.Module):
         self.fac_date_enc = fac_date_enc
         self.date_dim = date_dim
 
-        dict_dataset = {name_dataset: {} for name_dataset in datasets.datasets}
-        self.mod_embed = {name: {} for name in dict_dataset}
-        self.len_bands = {name: {} for name in dict_dataset}
-        self.num_dates = {name: {} for name in dict_dataset}
-        self.view_size = {name: {} for name in dict_dataset}
-        self.grid_size = {name: {} for name in dict_dataset}
-        self.date_encoding = {name: {} for name in dict_dataset}
-        self.group = {}
-        self.ungroup = {name: {} for name in dict_dataset}
+        self.mod_embed, self.len_bands, self.num_dates = {}, {}, {}
+        self.view_size, self.grid_size = {}, {}
+        self.date_encoding, self.ungroup = {}, {}
         self.patch_embed = nn.ModuleDict()
-
-        name_models = []
-        for name_dataset, dataset in datasets.datasets.items():
-            name_models += [
-                name
-                for name in self._init_dataset(name_dataset, dataset)
-                if name not in name_models
-            ]
+        name_models = self._init_dataset(self.dataset)
 
         # encoders, with a uniform drop path rate over all blocks (as in DINOv3)
         transformer = partial(
@@ -168,14 +154,14 @@ class DINOv3Backbone(nn.Module):
             rescale_coords=rope_rescale,
         )
 
-    def _init_dataset(self, name_dataset: str, dataset: DatasetConfig) -> list[str]:
-        """Set up per-dataset structures, return the encoder names it needs."""
+    def _init_dataset(self, dataset: DatasetConfig) -> list[str]:
+        """Set up dataset-dependent structures, return the encoder names."""
         for name_mod, mod in dataset.inputs.items():
             num_bands = (
                 [mod.bands] if isinstance(mod.bands, int) else list(map(len, mod.bands))
             )
-            self.len_bands[name_dataset][name_mod] = len(num_bands)
-            self.num_dates[name_dataset][name_mod] = mod.num_dates * len(num_bands)
+            self.len_bands[name_mod] = len(num_bands)
+            self.num_dates[name_mod] = mod.num_dates * len(num_bands)
 
             patch_size = dino_patch_size(mod)
             if mod.image_size % patch_size:
@@ -186,7 +172,7 @@ class DINOv3Backbone(nn.Module):
                 raise ValueError(msg)
 
             name_embed = mod.name_embed if mod.name_embed else name_mod
-            self.mod_embed[name_dataset][name_mod] = name_embed
+            self.mod_embed[name_mod] = name_embed
             if name_embed in self.patch_embed:
                 embed = self.patch_embed[name_embed]
                 if embed.num_bands != num_bands or embed.patch_size != patch_size:
@@ -200,13 +186,13 @@ class DINOv3Backbone(nn.Module):
                     norm=self.patch_norm,
                 )
 
-        self.group[name_dataset] = partial(
+        self.group = partial(
             group_mods,
             fusion_mode=self.fusion_mode,
             groups=dataset.groups,
         )
         for view in VIEW_TYPES:
-            self.view_size[name_dataset][view] = {
+            self.view_size[view] = {
                 name_mod: (
                     mod.image_size
                     if view == "global"
@@ -219,26 +205,25 @@ class DINOv3Backbone(nn.Module):
                 )
                 for name_mod, mod in dataset.inputs.items()
             }
-            self.grid_size[name_dataset][view] = {
-                name_mod: self.view_size[name_dataset][view][name_mod]
-                // dino_patch_size(mod)
+            self.grid_size[view] = {
+                name_mod: self.view_size[view][name_mod] // dino_patch_size(mod)
                 for name_mod, mod in dataset.inputs.items()
             }
-            self.ungroup[name_dataset][view] = partial(
+            self.ungroup[view] = partial(
                 ungroup_mods,
                 fusion_mode=self.fusion_mode,
                 groups=dataset.groups,
-                num_dates=self.num_dates[name_dataset],
-                grid_size=self.grid_size[name_dataset][view],
+                num_dates=self.num_dates,
+                grid_size=self.grid_size[view],
             )
-            self.date_encoding[name_dataset][view] = {
+            self.date_encoding[view] = {
                 name_mod: partial(
                     encode_dates,
                     dim=self.embed_dim,
                     date_dim=self.date_dim,
                     fac_date_enc=self.fac_date_enc,
-                    grid_size=self.grid_size[name_dataset][view][name_mod],
-                    len_bands=self.len_bands[name_dataset][name_mod],
+                    grid_size=self.grid_size[view][name_mod],
+                    len_bands=self.len_bands[name_mod],
                 )
                 for name_mod in dataset.inputs
             }
@@ -255,15 +240,14 @@ class DINOv3Backbone(nn.Module):
 
     def token_shapes(
         self,
-        name_dataset: str,
         view: Literal["global", "local"],
     ) -> dict[str, tuple[int, int, int]]:
         """Token shapes {modality: (S, h, w)} of a view."""
         return {
             name_mod: (num_dates, grid, grid)
             for (name_mod, num_dates), grid in zip(
-                self.num_dates[name_dataset].items(),
-                self.grid_size[name_dataset][view].values(),
+                self.num_dates.items(),
+                self.grid_size[view].values(),
             )
         }
 
@@ -279,7 +263,6 @@ class DINOv3Backbone(nn.Module):
     def forward(  # noqa: PLR0912, PLR0915, C901
         self,
         inputs: dict[str, Tensor],
-        name_dataset: str,
         view: Literal["global", "local"],
         ibot_mask: dict[str, Tensor] | None = None,
         keep: dict[str, Tensor] | None = None,
@@ -289,7 +272,6 @@ class DINOv3Backbone(nn.Module):
         Args:
             inputs: modalities [N, T, C, H, W] at the view size,
                 "{modality}_dates" [N, T, 3] and "ref_date" [N, 1, 3].
-            name_dataset: dataset name.
             view: "global" or "local", which sets the expected grid sizes.
             ibot_mask: {modality: [N, S, L]} bool, True = replaced by mask token.
             keep: {modality: [N, T]} bool, False = (modality, date) dropped.
@@ -301,12 +283,12 @@ class DINOv3Backbone(nn.Module):
             "keep_flat": [N, P] bool, True = patch token not dropped.
 
         """
-        dataset = self.datasets.datasets[name_dataset]
-        grid_size = self.grid_size[name_dataset][view]
+        dataset = self.dataset
+        grid_size = self.grid_size[view]
 
         x, keep_tok, coords = {}, {}, {}
         for name_mod, mod in dataset.inputs.items():
-            name_embed = self.mod_embed[name_dataset][name_mod]
+            name_embed = self.mod_embed[name_mod]
             tokens = self.patch_embed[name_embed](inputs[name_mod])  # [N, S, L, D]
             N, S, L, _ = tokens.shape  # noqa: N806
             grid = grid_size[name_mod]
@@ -323,7 +305,7 @@ class DINOv3Backbone(nn.Module):
                     self.mask_token.to(tokens.dtype),
                     tokens,
                 )
-            date_encoding = self.date_encoding[name_dataset][view][name_mod](
+            date_encoding = self.date_encoding[view][name_mod](
                 dates=inputs[f"{name_mod}_dates"],
                 ref_date=inputs["ref_date"],
             )
@@ -336,7 +318,7 @@ class DINOv3Backbone(nn.Module):
                     N, mod.num_dates, dtype=torch.bool, device=tokens.device
                 )
             )
-            G = self.len_bands[name_dataset][name_mod]  # noqa: N806
+            G = self.len_bands[name_mod]  # noqa: N806
             keep_tok[name_mod] = (
                 keep_mod[:, None, :, None]
                 .expand(N, G, mod.num_dates, L)
@@ -347,7 +329,7 @@ class DINOv3Backbone(nn.Module):
                 None,
             ].expand(1, S, -1, -1)
 
-        group = self.group[name_dataset]
+        group = self.group
         x = group(x)
         keep_seq = {
             name: k[..., 0]
@@ -426,7 +408,7 @@ class DINOv3Backbone(nn.Module):
         valid = torch.cat(valid, dim=1).to(cls.dtype)[..., None]
         cls = (cls * valid).sum(dim=1) / valid.sum(dim=1).clamp(min=1)
 
-        patch = self.ungroup[name_dataset][view](patch)
+        patch = self.ungroup[view](patch)
         return {
             "cls": cls,
             "patch": patch,

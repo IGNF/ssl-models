@@ -1,6 +1,5 @@
 """MAE module. Adapted from clay foundation model: https://github.com/Clay-foundation/model."""
 
-import copy
 from typing import Literal
 
 import torch
@@ -9,7 +8,6 @@ from torch import Tensor, nn
 from vit_pytorch.vit import Transformer
 
 from ssl_models.conf.dataset.utils import DatasetConfig
-from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.conf.mask import MiMMaskConfig
 from ssl_models.mim.mim import BaseMIM
 
@@ -19,7 +17,7 @@ class MAE(BaseMIM):
 
     def __init__(  # noqa: PLR0913
         self,
-        datasets: DatasetsConfig,
+        dataset: DatasetConfig,
         mask: MiMMaskConfig,
         fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         inter_depth: int,
@@ -42,7 +40,7 @@ class MAE(BaseMIM):
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
-            datasets=datasets,
+            dataset=dataset,
             fusion_mode=fusion_mode,
             model=model,
             num_levels=num_levels,
@@ -54,17 +52,10 @@ class MAE(BaseMIM):
             fac_date_enc=fac_date_enc,
         )
 
-        dict_dataset = {name_dataset: {} for name_dataset in datasets.datasets}
-        self.len_bands = copy.deepcopy(dict_dataset)
-        self.mask_ratio = copy.deepcopy(dict_dataset)
-        self.mask_mod = copy.deepcopy(dict_dataset)
-        self.mask_bands = copy.deepcopy(dict_dataset)
-        self.mask_dates = copy.deepcopy(dict_dataset)
-        self.mask_loc = copy.deepcopy(dict_dataset)
+        self.mask_ratio, self.mask_mod = {}, {}
+        self.mask_bands, self.mask_dates, self.mask_loc = {}, {}, {}
         self.name_models = []
-
-        for name_dataset, dataset in datasets.datasets.items():
-            self._init_mae_dataset(name_dataset, dataset, mask, fusion_mode)
+        self._init_mask(mask, fusion_mode)
 
         self.encoder = nn.ModuleDict(
             {
@@ -111,22 +102,16 @@ class MAE(BaseMIM):
         else:
             self.encoder_inter = None
 
-    def _init_mae_dataset(
+    def _init_mask(
         self,
-        name_dataset: str,
-        dataset: DatasetConfig,
         mask: MiMMaskConfig,
         fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
     ) -> None:
-        self.len_bands[name_dataset] = {
-            name_mod: 1 if isinstance(mod.bands, int) else len(mod.bands)
-            for name_mod, mod in dataset.inputs.items()
-        }
-
+        dataset = self.dataset
         num_dates_mod, num_dates_group = {}, {}
         for name_mod, name_group in dataset.groups:
             mod = dataset.inputs[name_mod]
-            num_dates = mod.num_dates * self.len_bands[name_dataset][name_mod]
+            num_dates = mod.num_dates * self.len_bands[name_mod]
             if name_mod not in num_dates_mod:
                 num_dates_mod[name_mod] = 0
             if name_group not in num_dates_group:
@@ -173,9 +158,7 @@ class MAE(BaseMIM):
                         self.mask_mod[name_mod] = None
 
                     self.mask_bands[name_mod] = (
-                        mask.mask_bands
-                        if self.len_bands[name_dataset][name_mod] > 1
-                        else None
+                        mask.mask_bands if self.len_bands[name_mod] > 1 else None
                     )
                     self.mask_dates[name_mod] = (
                         mask.mask_dates if mod.num_dates > 1 else None
@@ -185,7 +168,7 @@ class MAE(BaseMIM):
                 msg = f"Invalid fusion mode {fusion_mode}."
                 raise ValueError(msg)
 
-    def mask_struct(self, x: dict[str, Tensor], name_dataset: str) -> dict[str, Tensor]:
+    def mask_struct(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         """Structural masking of modalities, band groups, dates."""
         mask_group, mask_mod = {}, {}
         for name_group in x:
@@ -193,14 +176,14 @@ class MAE(BaseMIM):
             mask_group[name_group] = torch.ones((B, L, 1), dtype=torch.bool)
             mask_mod[name_group] = torch.ones((B, L, 1), dtype=torch.bool)
 
-        mask_mod = self.ungroup[name_dataset](mask_mod)
+        mask_mod = self.ungroup(mask_mod)
 
         while any(
             mask_group[name_group].all(dim=(1, 2)).any(dim=0)
             for name_group in mask_group
         ):
             mask = {}
-            for name_mod, len_bands in self.len_bands[name_dataset].items():
+            for name_mod, len_bands in self.len_bands.items():
                 B, D, L, _ = mask_mod[name_mod].shape  # noqa: N806
                 G = len_bands  # noqa: N806
                 mask[name_mod] = torch.zeros(
@@ -221,7 +204,7 @@ class MAE(BaseMIM):
                     mask[name_mod] += torch.rand((B, 1, 1, L)) < self.mask_loc[name_mod]
                 mask[name_mod] = mask[name_mod].reshape((B, D, L, 1))
 
-            mask = self.group[name_dataset](mask)
+            mask = self.group(mask)
 
             for name_group in mask_group:
                 mask_group[name_group] = torch.where(

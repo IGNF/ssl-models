@@ -2,17 +2,18 @@
 
 from dataclasses import dataclass, field
 
+from hydra_zen import store
+
 from ssl_models.conf.dataset.utils import (
     DatasetConfig,
     InputRasterConfig,
     PatchSizeConfig,
     TargetRasterConfig,
-    register_dataset,
 )
 from ssl_models.dataset.s2_naip import S2NAIPDataset
 
 
-@register_dataset("s2_naip")
+@store(group="dataset", name="s2_naip")
 @dataclass
 class S2NAIPConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "s2-naip-urban"

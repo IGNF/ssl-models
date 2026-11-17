@@ -17,7 +17,7 @@ from torch import Tensor, nn
 from ssl_models import LOGGER
 from ssl_models.baselines.base import BaseModule
 from ssl_models.baselines.utils import interpolate_pos_encoding
-from ssl_models.conf.datasets import DatasetsConfig
+from ssl_models.conf.dataset.utils import DatasetConfig
 
 BASE_IMAGE_SIZE = 224
 ORIG_BANDS = (0, 1, 2)  # S2 bands included in original model
@@ -28,7 +28,7 @@ class SatMAEBaseline(BaseModule):
 
     def __init__(
         self,
-        datasets: DatasetsConfig,
+        dataset: DatasetConfig,
         backbone_size: str = "base",
         freeze: bool = False,
         pretrained_path: str | None = None,
@@ -45,7 +45,7 @@ class SatMAEBaseline(BaseModule):
 
         Parameters
         ----------
-        datasets: DatasetsConfig
+        dataset: DatasetConfig
             The dataset config used in the probing/finetuning phase.
         backbone_size: str
             Backbone size to use. To choose in "base", "large".
@@ -94,17 +94,17 @@ class SatMAEBaseline(BaseModule):
                 raise ValueError(msg)
 
         self.std = 0.01
-        bands = datasets.dataset.inputs["s2"].bands
+        bands = dataset.inputs["s2"].bands
         self.bands = (
             list(range(bands))
             if isinstance(bands, int)
             else [idx for band in bands for idx in band]
         )
         self.num_channels = len(self.bands)
-        self.image_size = datasets.dataset.inputs["s2"].image_size
+        self.image_size = dataset.inputs["s2"].image_size
 
         super().__init__(
-            datasets,
+            dataset,
             self.fusion_mode,
             self.patch_size,
             self.encoder_dim,
@@ -213,7 +213,6 @@ class SatMAEBaseline(BaseModule):
     def forward(
         self,
         batch: dict[str, Tensor],
-        name_dataset: str,  # noqa: ARG002
         ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
     ) -> tuple[
         dict[str, Tensor] | None,
@@ -228,8 +227,6 @@ class SatMAEBaseline(BaseModule):
         ----------
         batch: dict
             Dictionary containing the data.
-        name_dataset: str
-            Dataset name (unused, kept for compatibility with MIM modules).
         ssl_phase: str
             SSL phase (pretrain, probe, finetune). Only probing and finetuning
             are needed for baselines.

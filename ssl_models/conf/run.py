@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from hydra_zen import MISSING, store
 
 
+@store(group="run", name="default_run")
 @dataclass
 class RunConfig:  # noqa: D101
     exp_dir: str = MISSING
@@ -26,13 +27,3 @@ class RunConfig:  # noqa: D101
     clearml_project_name: str = "ssl"
     clearml_tags: list[str] = field(default_factory=lambda: ["multimodal", "hydra"])
     clearml_offline_mode: bool = False
-
-
-run_store = store(group="run")
-run_store(
-    RunConfig,
-    exp_uuid=None,
-    load_uuid=None,
-    load_ckpt_path=None,
-    name="default_run",
-)

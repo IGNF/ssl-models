@@ -1,49 +1,16 @@
-"""Utils to convert between configs and dicts."""
+"""Utils to load configs."""
 
-from dataclasses import asdict
+from pathlib import Path
+from typing import Any
 
-from dacite.core import from_dict
-
-from ssl_models.conf.dataset.utils import DATASETS
-from ssl_models.conf.datasets import DatasetsConfig
-from ssl_models.conf.mask import MiMMaskConfig
-
-DATASETS_GLOBAL_ARGS = ("root_dir", "name_datasets", "sample_datasets")
+from hydra_zen import instantiate
+from omegaconf import OmegaConf
 
 
-def datasets_from_dict(datasets_dict: dict) -> DatasetsConfig:
-    """Convert dict to datasets config."""
-    kwargs = {
-        name_arg: datasets_dict[name_arg]
-        for name_arg in DATASETS_GLOBAL_ARGS
-        if name_arg in datasets_dict
-    }
-    for name_dataset, type_dataset in DATASETS.items():
-        if name_dataset in datasets_dict:
-            kwargs[name_dataset] = from_dict(
-                data_class=type_dataset,
-                data=datasets_dict[name_dataset],
-            )
+def load_config(cfg_path: str | Path) -> dict[str, Any]:
+    """Load the configs of a run from its `.hydra/config_resolved.yaml`.
 
-    return DatasetsConfig(**kwargs)
-
-
-def datasets_to_dict(datasets: DatasetsConfig) -> dict:
-    """Convert datasets config to dict."""
-    datasets_dict = {
-        name_arg: getattr(datasets, name_arg) for name_arg in DATASETS_GLOBAL_ARGS
-    }
-    for name_dataset in DATASETS:
-        if name_dataset in datasets.__dict__:
-            datasets_dict[name_dataset] = asdict(getattr(datasets, name_dataset))
-    return datasets_dict
-
-
-def mask_from_dict(mask_dict: dict) -> MiMMaskConfig:
-    """Convert dict to mask config."""
-    return from_dict(data_class=MiMMaskConfig, data=mask_dict)
-
-
-def mask_to_dict(mask: MiMMaskConfig) -> dict:
-    """Convert mask config to dict."""
-    return asdict(mask)
+    Returns a dict of instantiated configs (`run`, `dataset`, `model`, ...).
+    """
+    cfg = OmegaConf.load(cfg_path)
+    return {key: instantiate(value) for key, value in cfg.items() if key != "_target_"}

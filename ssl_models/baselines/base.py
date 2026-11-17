@@ -10,8 +10,7 @@ from einops import rearrange
 from torch import Tensor
 from torch.nn import Module, ModuleDict
 
-from ssl_models.conf.dataset.utils import RasterConfig
-from ssl_models.conf.datasets import DatasetsConfig
+from ssl_models.conf.dataset.utils import DatasetConfig, RasterConfig
 from ssl_models.layers.head import ClassificationHead, PixelifyHead
 from ssl_models.layers.utils import encode_dates, group_mods, ungroup_mods
 
@@ -21,7 +20,7 @@ class BaseModule(Module, ABC):
 
     def __init__(
         self,
-        datasets: DatasetsConfig,
+        dataset: DatasetConfig,
         fusion_mode: Literal["shared", "monotemp", "mod", "late-croma", "inter-croma"],
         patch_size: int,
         embed_dim: int,
@@ -35,7 +34,7 @@ class BaseModule(Module, ABC):
     ) -> None:
         super().__init__(**kwargs)
 
-        self.dataset = datasets.dataset
+        self.dataset = dataset
         self.interpolate = interpolate
         self.type_head = type_head
         self.patch_size = patch_size
@@ -47,7 +46,7 @@ class BaseModule(Module, ABC):
             name_mod: (
                 [mod.bands] if isinstance(mod.bands, int) else list(map(len, mod.bands))
             )
-            for name_mod, mod in datasets.dataset.inputs.items()
+            for name_mod, mod in dataset.inputs.items()
         }
 
         self.len_bands = {

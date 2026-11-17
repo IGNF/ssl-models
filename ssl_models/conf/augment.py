@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from hydra_zen import store
 
 
+@store(group="augment", name="dino_augment")
 @dataclass
 class DinoAugmentConfig:
     """DINO multi-crop augmentation, see `ssl_models.dino.augment.MultiCropAugment`.
@@ -27,7 +28,3 @@ class DinoAugmentConfig:
     blur_min_size: int = 32
     view_drop_mod: float | None = 0.25
     view_drop_dates: float | None = 0.25
-
-
-augment_store = store(group="augment")
-augment_store(DinoAugmentConfig, name="dino_augment")

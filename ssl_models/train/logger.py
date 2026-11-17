@@ -11,8 +11,6 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from torch import Tensor
 
-from ssl_models.conf.dataset.utils import DatasetConfig
-
 RGB_BANDS = 3
 
 
@@ -189,45 +187,24 @@ class MetricsLogger(Callback):
         pl_module: LightningModule,
         stage: Literal["train", "val", "test"],
     ) -> None:
-        for name_dataset, dataset in pl_module.datasets.datasets.items():
-            self._on_epoch_end_dataset(
-                trainer,
-                pl_module,
-                name_dataset,
-                dataset,
-                stage=stage,
-            )
-
-    def _on_epoch_end_dataset(
-        self,
-        trainer: Trainer,
-        pl_module: LightningModule,
-        name_dataset: str,
-        dataset: DatasetConfig,
-        stage: Literal["train", "val", "test"],
-    ) -> None:
         """Log epoch metrics for training/val/test."""
         match trainer.ssl_phase:
             case "pretrain":
                 self.log_metric(
                     pl_module=pl_module,
-                    name=f"{trainer.ssl_phase}_loss_rec/{name_dataset}_{stage}",
-                    value=pl_module.metrics[
-                        f"loss_rec_{name_dataset}_{stage}"
-                    ].compute(),
+                    name=f"{trainer.ssl_phase}_loss_rec/{stage}",
+                    value=pl_module.metrics[f"loss_rec_{stage}"].compute(),
                 )
-                pl_module.metrics[f"loss_rec_{name_dataset}_{stage}"].reset()
+                pl_module.metrics[f"loss_rec_{stage}"].reset()
             case "probe" | "finetune":
                 self.log_metric(
                     pl_module=pl_module,
-                    name=f"{trainer.ssl_phase}_loss_pred/{name_dataset}_{stage}",
-                    value=pl_module.metrics[
-                        f"loss_pred_{name_dataset}_{stage}"
-                    ].compute(),
+                    name=f"{trainer.ssl_phase}_loss_pred/{stage}",
+                    value=pl_module.metrics[f"loss_pred_{stage}"].compute(),
                 )
-                pl_module.metrics[f"loss_pred_{name_dataset}_{stage}"].reset()
+                pl_module.metrics[f"loss_pred_{stage}"].reset()
 
-                for name_target in dataset.targets:
+                for name_target in pl_module.dataset.targets:
                     metrics = pl_module.metrics[f"{name_target}_{stage}"].compute()
                     for name_metric, value in metrics.items():
                         if name_metric == "confusion_matrix":
@@ -288,16 +265,15 @@ class MetricsLogger(Callback):
             case "probe" | "finetune":
                 name = "loss_pred"
 
-        for name_dataset, loss in outputs["losses"].items():
-            pl_module.log(
-                name=f"{trainer.ssl_phase}_{name}/{name_dataset}_step_train",
-                value=loss * trainer.accumulate_grad_batches,
-                on_step=True,
-                on_epoch=False,
-                prog_bar=True,
-                logger=True,
-                sync_dist=True,
-            )
+        pl_module.log(
+            name=f"{trainer.ssl_phase}_{name}/step_train",
+            value=outputs["loss"] * trainer.accumulate_grad_batches,
+            on_step=True,
+            on_epoch=False,
+            prog_bar=True,
+            logger=True,
+            sync_dist=True,
+        )
 
     @rank_zero_only
     def log_confmat(

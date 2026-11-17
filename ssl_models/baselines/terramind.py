@@ -8,7 +8,7 @@ from torch import Tensor
 from torch.nn import Module
 
 from ssl_models.baselines.base import BaseModule
-from ssl_models.conf.datasets import DatasetsConfig
+from ssl_models.conf.dataset.utils import DatasetConfig
 
 
 class TerramindBaseline(BaseModule):
@@ -16,7 +16,7 @@ class TerramindBaseline(BaseModule):
 
     def __init__(
         self,
-        datasets: DatasetsConfig,
+        dataset: DatasetConfig,
         backbone_size: str = "large",
         version: str = "v1",
         freeze: bool = False,
@@ -34,7 +34,7 @@ class TerramindBaseline(BaseModule):
 
         Parameters
         ----------
-        datasets: DatasetsConfig
+        dataset: DatasetConfig
             The dataset config used in the probing/finetuning phase.
         backbone_size: str
             Backbone size to use. To choose in "base", "large".
@@ -62,7 +62,7 @@ class TerramindBaseline(BaseModule):
             Arguments to pass to `BaseModel` constructor.
 
         """
-        self.dataset = datasets.dataset
+        self.dataset = dataset
         self.backbone_size = backbone_size
         self.version = version
         self.freeze = freeze
@@ -93,7 +93,7 @@ class TerramindBaseline(BaseModule):
                 raise ValueError(msg)
 
         super().__init__(
-            datasets,
+            dataset,
             self.fusion_mode,
             self.patch_size,
             self.encoder_dim,
@@ -231,7 +231,6 @@ class TerramindBaseline(BaseModule):
     def forward(
         self,
         batch: dict[str, Tensor],
-        name_dataset: str,  # noqa: ARG002
         ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
     ) -> tuple[
         dict[str, Tensor] | None,
@@ -246,8 +245,6 @@ class TerramindBaseline(BaseModule):
         ----------
         batch: dict
             Dictionary containing the data.
-        name_dataset: str
-            Dataset name (unused, kept for compatibility with MIM modules).
         ssl_phase: str
             SSL phase (pretrain, probe, finetune). Only probing and finetuning
             are used for baselines.

@@ -16,7 +16,7 @@ from torchgeo.models import DOFABase16_Weights, DOFALarge16_Weights
 
 from ssl_models.baselines.base import BaseModule
 from ssl_models.baselines.utils import filter_dict, interpolate_pos_encoding
-from ssl_models.conf.datasets import DatasetsConfig
+from ssl_models.conf.dataset.utils import DatasetConfig
 
 
 class DOFABaseline(BaseModule, ABC):
@@ -24,7 +24,7 @@ class DOFABaseline(BaseModule, ABC):
 
     def __init__(
         self,
-        datasets: DatasetsConfig,
+        dataset: DatasetConfig,
         backbone_size: Literal["base", "large"],
         freeze: bool = False,
         pretrained_path: str | None = None,
@@ -41,7 +41,7 @@ class DOFABaseline(BaseModule, ABC):
 
         Parameters
         ----------
-        datasets: DatasetsConfig
+        dataset: DatasetConfig
             The dataset config used in the probing/finetuning phase.
         backbone_size: str
             Backbone size to use. To choose in "base", "large".
@@ -67,7 +67,7 @@ class DOFABaseline(BaseModule, ABC):
             Arguments to pass to `BaseModel` constructor.
 
         """
-        self.dataset = datasets.dataset
+        self.dataset = dataset
         self.interpolate = interpolate
         self.backbone_size = backbone_size
         self.freeze = freeze
@@ -131,7 +131,7 @@ class DOFABaseline(BaseModule, ABC):
         }
 
         super().__init__(
-            datasets,
+            dataset,
             self.fusion_mode,
             self.patch_size,
             self.embed_dim,
@@ -348,7 +348,6 @@ class DOFABaseline(BaseModule, ABC):
     def forward(
         self,
         batch: dict[str, Tensor],
-        name_dataset: str,  # noqa: ARG002
         ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
     ) -> tuple[
         dict[str, Tensor] | None,
@@ -363,8 +362,6 @@ class DOFABaseline(BaseModule, ABC):
         ----------
         batch: dict
             Dictionary containing the data.
-        name_dataset: str
-            Dataset name (unused, kept for compatibility with MIM modules).
         ssl_phase: str
             SSL phase (pretrain, probe, finetune). Only probing and finetuning
             are needed for baselines.

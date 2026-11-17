@@ -2,17 +2,18 @@
 
 from dataclasses import dataclass, field
 
+from hydra_zen import store
+
 from ssl_models.conf.dataset.utils import (
     DatasetConfig,
     InputRasterConfig,
     PatchSizeConfig,
     TargetConfig,
-    register_dataset,
 )
 from ssl_models.dataset.treesatai_ts import TreeSatAITSDataset
 
 
-@register_dataset("treesatai_ts")
+@store(group="dataset", name="treesatai_ts")
 @dataclass
 class TreeSatAITSConfig(DatasetConfig):  # noqa: D101
     rel_dir: str = "TreeSatAI-TS"
