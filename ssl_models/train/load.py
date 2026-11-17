@@ -56,7 +56,8 @@ def build_module(
 def load_module(ckpt_path: str | Path) -> LitBase:
     """Reload a trained module from a checkpoint, using its run's resolved config.
 
-    For MiM and baseline modules, the bare torch model is `load_module(path).model`.
+    The bare torch model is `load_module(path).model` (and its EMA `.ema_model`,
+    the teacher for DINOv3, where the backbone is `.model["backbone"]`).
     """
     ckpt_path = Path(ckpt_path)
     cfg = load_config(ckpt_path.parent.parent / ".hydra" / "config_resolved.yaml")

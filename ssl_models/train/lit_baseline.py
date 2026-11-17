@@ -1,6 +1,5 @@
 """Baseline Lightning Module."""
 
-import copy
 from typing import Literal
 
 import torch
@@ -88,12 +87,7 @@ class LitBaseline(LitBase):
                 model_args = {**model_args, "version": kwargs.get("version", "v2")}
                 self.model = TerramindBaseline(**model_args)
 
-        if use_ema:
-            self.ema_model = copy.deepcopy(self.model).to("cpu")
-            for param in self.ema_model.parameters():
-                param.requires_grad = False
-        else:
-            self.ema_model = None
+        self.init_ema(use_ema=use_ema, ema_interval="epoch")
 
         self.save_hyperparameters(ignore=["dataset"])
 

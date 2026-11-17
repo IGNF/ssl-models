@@ -1,6 +1,5 @@
 """Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
 
-import copy
 from typing import Literal
 
 import numpy as np
@@ -167,12 +166,7 @@ class LitMiM(LitBase):
             msg = f"Invalid model size {model_size}. Expected one of {model_map.keys()}"
             raise ValueError(msg)
 
-        if use_ema:
-            self.ema_model = copy.deepcopy(self.model).to("cpu")
-            for param in self.ema_model.parameters():
-                param.requires_grad = False
-        else:
-            self.ema_model = None
+        self.init_ema(use_ema=use_ema, ema_interval="epoch")
 
         self.save_hyperparameters(ignore=["dataset", "mask", "loss"])
 

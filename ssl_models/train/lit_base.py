@@ -1,5 +1,6 @@
 """Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
 
+import copy
 from abc import ABC
 from functools import partial
 from typing import Literal
@@ -35,6 +36,12 @@ class LitBase(LightningModule, ABC):
         self.dataset = dataset
         self.interpolate = interpolate
 
+        # EMA of `self.model`, set with `init_ema` by subclasses that use it
+        self.ema_model = None
+        self.ema_interval: Literal["epoch", "step"] = "epoch"
+        self.momentum: float | None = None
+        self._last_ema_step = 0
+
         self.metrics = nn.ModuleDict()
         self.loss_pred = {}
 
@@ -68,6 +75,20 @@ class LitBase(LightningModule, ABC):
                 self.metrics[f"{name_loss}_{stage}"] = MeanMetric(
                     dist_sync_on_step=False,
                 )
+
+    def resize_and_rescale(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
+        """Resize and/or rescale input rasters based on dataset config."""
+        for name_mod, mod in self.dataset.inputs.items():
+            batch[name_mod] = F.interpolate(
+                batch[name_mod].flatten(0, 1),
+                size=(mod.image_size,) * 2,
+                mode=self.interpolate,
+            ).unflatten(0, (-1, mod.num_dates))
+            if mod.rescale_elev:
+                batch[name_mod][:, :, 1:] = 30 * (
+                    batch[name_mod][:, :, :1] - batch[name_mod][:, :, 1:]
+                )
+        return batch
 
     def compute_logs_pred(
         self,
@@ -265,29 +286,58 @@ class LitBase(LightningModule, ABC):
     def on_train_epoch_start(self) -> None:
         self.trainer.datamodule.set_epoch(self.trainer.current_epoch)
 
-    def on_train_epoch_end(self) -> None:
+    def init_ema(self, use_ema: bool, ema_interval: Literal["epoch", "step"]) -> None:
+        """Create the EMA model as a frozen copy of `self.model`."""
+        if use_ema:
+            self.ema_model = copy.deepcopy(self.model)
+            for param in self.ema_model.parameters():
+                param.requires_grad = False
+            self.ema_model.eval()
+            self.ema_interval = ema_interval
+
+    def on_train_start(self) -> None:
+        """Set the epoch-wise EMA momentum from the number of epochs of this phase.
+
+        Not done in `init_ema`: the trainer is not attached yet at init, and the
+        number of epochs differs between phases (pretrain / probe / finetune).
+        Step-wise modules (DINOv3) set `self.momentum` at each step instead.
+        """
+        if self.ema_interval == "epoch":
+            self.momentum = 1 - 1 / (self.trainer.max_epochs * 0.2)
+
+    def train(self, mode: bool = True) -> "LitBase":
+        """Keep the EMA model in eval mode (no dropout / drop path)."""
+        super().train(mode)
         if self.ema_model is not None:
+            self.ema_model.eval()
+        return self
+
+    def on_train_batch_end(
+        self,
+        outputs: dict,  # noqa: ARG002
+        batch: dict,  # noqa: ARG002
+        batch_idx: int,  # noqa: ARG002
+    ) -> None:
+        """EMA update after each optimizer step, if `ema_interval == "step"`."""
+        if (
+            self.ema_model is not None
+            and self.ema_interval == "step"
+            and self.global_step != self._last_ema_step  # skip accumulation steps
+        ):
+            self._last_ema_step = self.global_step
             self.update_ema()
 
-    def update_ema(self) -> None:
-        """Update EMA model."""
-        momentum = 1 - 1 / (self.trainer.max_epochs * 0.2)
-        for param, param_ema in zip(
-            self.model.parameters(),
-            self.ema_model.parameters(),
-        ):
-            param_ema.data.mul_(momentum).add_((1.0 - momentum) * param.detach().data)
+    def on_train_epoch_end(self) -> None:
+        """EMA update after each epoch, if `ema_interval == "epoch"`."""
+        if self.ema_model is not None and self.ema_interval == "epoch":
+            self.update_ema()
 
-    def resize_and_rescale(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
-        """Resize and/or rescale input rasters based on dataset config."""
-        for name_mod, mod in self.dataset.inputs.items():
-            batch[name_mod] = F.interpolate(
-                batch[name_mod].flatten(0, 1),
-                size=(mod.image_size,) * 2,
-                mode=self.interpolate,
-            ).unflatten(0, (-1, mod.num_dates))
-            if mod.rescale_elev:
-                batch[name_mod][:, :, 1:] = 30 * (
-                    batch[name_mod][:, :, :1] - batch[name_mod][:, :, 1:]
-                )
-        return batch
+    @torch.no_grad()
+    def update_ema(self) -> None:
+        """EMA update of `self.ema_model` from `self.model`, with `self.momentum`."""
+        momentum = self.momentum
+        params_ema = list(self.ema_model.parameters())
+        params = list(self.model.parameters())
+        torch._foreach_mul_(params_ema, momentum)  # noqa: SLF001
+        torch._foreach_add_(params_ema, params, alpha=1.0 - momentum)  # noqa: SLF001
+

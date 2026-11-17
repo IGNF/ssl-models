@@ -7,7 +7,6 @@ set here; the optimizer config only provides epochs, batch size and gradient
 accumulation.
 """
 
-import copy
 from functools import partial
 from typing import Literal
 
@@ -82,7 +81,6 @@ class LitDINOv3(LitBase):
         clip_grad: float | None = 3.0,
     ) -> None:
         super().__init__(dataset=dataset, interpolate=interpolate)
-        self.ema_model = None  # no finetuning EMA, the teacher is separate
 
         model_map = {
             "tiny": dinov3_tiny,
@@ -120,17 +118,15 @@ class LitDINOv3(LitBase):
             bottleneck_dim=loss.head_bottleneck_dim,
             n_layers=loss.head_n_layers,
         )
-        self.student = nn.ModuleDict(
+        # self.model is student, self.ema_model is teacher
+        self.model = nn.ModuleDict(
             {
                 "backbone": backbone,
                 "dino_head": head(n_prototypes=loss.dino_n_prototypes),
                 "ibot_head": head(n_prototypes=loss.ibot_n_prototypes),
             },
         )
-        self.teacher = copy.deepcopy(self.student)
-        for param in self.teacher.parameters():
-            param.requires_grad = False
-        self.teacher.eval()
+        self.init_ema(use_ema=True, ema_interval="step")
 
         self.augment = MultiCropAugment(
             n_global=2,
@@ -168,15 +164,8 @@ class LitDINOv3(LitBase):
         self.clip_grad = clip_grad
 
         self.total_steps = None
-        self._last_ema_step = 0
 
         self.save_hyperparameters(ignore=["dataset", "mask", "loss", "augment"])
-
-    def train(self, mode: bool = True) -> "LitDINOv3":
-        """Keep the teacher in eval mode (no drop path, no RoPE augmentation)."""
-        super().train(mode)
-        self.teacher.eval()
-        return self
 
     def get_total_steps(self) -> int:
         if self.total_steps is None:
@@ -191,11 +180,6 @@ class LitDINOv3(LitBase):
             round(self.teacher_temp_warmup_pct * self.get_total_steps()),
         )
 
-    def momentum(self) -> float:
-        return cosine(
-            self.momentum_start, 1.0, self.global_step, self.get_total_steps()
-        )
-
     def weight_decay(self) -> float:
         return cosine(
             self.wd_start, self.wd_end, self.global_step, self.get_total_steps()
@@ -208,8 +192,8 @@ class LitDINOv3(LitBase):
     ) -> dict:
         """Compute DINO / iBOT / KoLeo losses for a batch."""
         dataset = self.dataset
-        backbone_s = self.student["backbone"]
-        backbone_t = self.teacher["backbone"]
+        backbone_s = self.model["backbone"]
+        backbone_t = self.ema_model["backbone"]
         mods = list(dataset.inputs)
 
         B = batch[mods[0]].shape[0]  # noqa: N806
@@ -251,7 +235,7 @@ class LitDINOv3(LitBase):
         with torch.no_grad():
             out_t = backbone_t(globals_, "global")
             teacher_dino = sinkhorn_knopp(
-                self.teacher["dino_head"](out_t["cls"]),
+                self.ema_model["dino_head"](out_t["cls"]),
                 teacher_temp,
             )
 
@@ -262,7 +246,7 @@ class LitDINOv3(LitBase):
             ibot_mask=ibot_mask,
             keep=keep_global,
         )
-        student_global = self.student["dino_head"](out_s["cls"])
+        student_global = self.model["dino_head"](out_s["cls"])
         student_local = None
         if n_local:
             out_l = backbone_s(
@@ -276,7 +260,7 @@ class LitDINOv3(LitBase):
                     device,
                 ),
             )
-            student_local = self.student["dino_head"](out_l["cls"]).unflatten(
+            student_local = self.model["dino_head"](out_l["cls"]).unflatten(
                 0,
                 (n_local, B),
             )
@@ -294,11 +278,11 @@ class LitDINOv3(LitBase):
         num_masked = masked.sum(dim=1)
         with torch.no_grad():
             teacher_ibot = sinkhorn_knopp(
-                self.teacher["ibot_head"](out_t["patch_flat"][masked]),
+                self.ema_model["ibot_head"](out_t["patch_flat"][masked]),
                 teacher_temp,
             )
         loss_ibot = ibot_loss(
-            self.student["ibot_head"](out_s["patch_flat"][masked]),
+            self.model["ibot_head"](out_s["patch_flat"][masked]),
             teacher_ibot,
             num_masked,
             self.student_temp,
@@ -360,7 +344,7 @@ class LitDINOv3(LitBase):
 
         if stage == "train":
             self.log(f"{ssl_phase}_dino/teacher_temp", teacher_temp, on_step=True)
-            self.log(f"{ssl_phase}_dino/momentum", self.momentum(), on_step=True)
+            self.log(f"{ssl_phase}_dino/momentum", self.momentum, on_step=True)
             self.log(
                 f"{ssl_phase}_dino/weight_decay", self.weight_decay(), on_step=True
             )
@@ -393,7 +377,7 @@ class LitDINOv3(LitBase):
         lr = self.base_lr * (total_batch_size / 1024) ** 0.5
 
         groups = {}
-        for name, param in self.student.named_parameters():
+        for name, param in self.model.named_parameters():
             if not param.requires_grad:
                 continue
             no_wd = param.ndim <= 1 or any(key in name for key in NO_WD_PARAMS)
@@ -450,11 +434,15 @@ class LitDINOv3(LitBase):
             )
 
     def on_train_batch_start(self, batch: dict, batch_idx: int) -> None:  # noqa: ARG002
-        """Apply weight decay schedule."""
+        """Apply weight decay and teacher momentum schedules."""
         weight_decay = self.weight_decay()
         for optimizer in self.trainer.optimizers:
             for group in optimizer.param_groups:
                 group["weight_decay"] = weight_decay * group.get("wd_mult", 1.0)
+        # cosine schedule from `momentum_start` to 1, used by `update_ema`
+        self.momentum = cosine(
+            self.momentum_start, 1.0, self.global_step, self.get_total_steps()
+        )
 
     def on_after_backward(self) -> None:
         """Freeze the prototypes at the beginning of training."""
@@ -462,23 +450,6 @@ class LitDINOv3(LitBase):
             self.freeze_last_layer_pct * self.get_total_steps()
         ):
             for name in ("dino_head", "ibot_head"):
-                self.student[name].prototypes.grad = None
+                self.model[name].prototypes.grad = None
 
-    def on_train_batch_end(
-        self,
-        outputs: dict,  # noqa: ARG002
-        batch: dict,  # noqa: ARG002
-        batch_idx: int,  # noqa: ARG002
-    ) -> None:
-        """EMA update of the teacher after each optimizer step."""
-        if self.global_step != self._last_ema_step:
-            self._last_ema_step = self.global_step
-            self.update_teacher(self.momentum())
 
-    @torch.no_grad()
-    def update_teacher(self, momentum: float) -> None:
-        """EMA update of teacher parameters."""
-        params_t = list(self.teacher.parameters())
-        params_s = list(self.student.parameters())
-        torch._foreach_mul_(params_t, momentum)  # noqa: SLF001
-        torch._foreach_add_(params_t, params_s, alpha=1.0 - momentum)  # noqa: SLF001

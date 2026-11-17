@@ -387,8 +387,8 @@ def test_dino_module_losses(dataset_treesat, fusion_mode, inter_depth):
     torch.manual_seed(0)
     module = tiny_module(dataset_treesat, fusion_mode, inter_depth)
     module.train()
-    assert not module.teacher.training
-    assert all(not p.requires_grad for p in module.teacher.parameters())
+    assert not module.ema_model.training
+    assert all(not p.requires_grad for p in module.ema_model.parameters())
 
     batch = make_batch(dataset_treesat, batch_size=4, image_size=32)
     out = module.forward_batch(batch, teacher_temp=0.04)
@@ -397,22 +397,23 @@ def test_dino_module_losses(dataset_treesat, fusion_mode, inter_depth):
         assert torch.isfinite(value), name
     out["loss"].backward()
 
-    student = module.student
+    student = module.model
     assert student["dino_head"].prototypes.grad is not None
     assert student["ibot_head"].prototypes.grad is not None
     assert student["backbone"].mask_token.grad is not None
-    assert all(p.grad is None for p in module.teacher.parameters())
+    assert all(p.grad is None for p in module.ema_model.parameters())
 
 
-def test_dino_module_teacher_update(dataset_treesat):
+def test_dino_module_ema_update(dataset_treesat):
     module = tiny_module(dataset_treesat, "shared", 0)
     with torch.no_grad():
-        for param in module.student.parameters():
+        for param in module.model.parameters():
             param.add_(1.0)
-    student = [p.clone() for p in module.student.parameters()]
-    teacher = [p.clone() for p in module.teacher.parameters()]
-    module.update_teacher(0.9)
-    for p_s, p_t, p_new in zip(student, teacher, module.teacher.parameters()):
+    student = [p.clone() for p in module.model.parameters()]
+    teacher = [p.clone() for p in module.ema_model.parameters()]
+    module.momentum = 0.9
+    module.update_ema()
+    for p_s, p_t, p_new in zip(student, teacher, module.ema_model.parameters()):
         assert torch.allclose(p_new, 0.9 * p_t + 0.1 * p_s)
 
 
@@ -420,7 +421,7 @@ def test_dino_module_param_groups(dataset_treesat):
     module = tiny_module(dataset_treesat, "group", 3)
     names_no_wd = [
         name
-        for name, p in module.student.named_parameters()
+        for name, p in module.model.named_parameters()
         if p.ndim <= 1 or any(k in name for k in ("cls_token", "register_tokens"))
     ]
     assert any("cls_token" in name for name in names_no_wd)
