@@ -50,10 +50,6 @@ class MAE(BaseMIM):
             fac_date_enc=fac_date_enc,
         )
 
-        self.mask_ratio, self.mask_mod = {}, {}
-        self.mask_bands, self.mask_dates, self.mask_loc = {}, {}, {}
-        self.name_models = []
-        self._init_mask(mask, fusion_mode)
 
         self.encoder = nn.ModuleDict(
             {
@@ -100,26 +96,18 @@ class MAE(BaseMIM):
         else:
             self.encoder_inter = None
 
-    def _init_mask(
-        self,
-        mask: MiMMaskConfig,
-        fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
-    ) -> None:
-        dataset = self.dataset
+        # masking parameters, and one encoder/decoder per model name
         num_dates_mod, num_dates_group = {}, {}
         for name_mod, name_group in dataset.groups:
-            mod = dataset.inputs[name_mod]
-            num_dates = mod.num_dates * self.len_bands[name_mod]
-            if name_mod not in num_dates_mod:
-                num_dates_mod[name_mod] = 0
-            if name_group not in num_dates_group:
-                num_dates_group[name_group] = 0
-            num_dates_mod[name_mod] += num_dates
-            num_dates_group[name_group] += num_dates
+            num_dates = dataset.inputs[name_mod].num_dates * self.len_bands[name_mod]
+            num_dates_mod[name_mod] = num_dates_mod.get(name_mod, 0) + num_dates
+            num_dates_group[name_group] = num_dates_group.get(name_group, 0) + num_dates
 
+        self.mask_ratio, self.mask_mod = {}, {}
+        self.mask_bands, self.mask_dates, self.mask_loc = {}, {}, {}
         match fusion_mode:
             case "msgfm" | "shared" | "monotemp":
-                self.name_models += (
+                self.name_models = (
                     list(num_dates_mod.keys())
                     if fusion_mode == "monotemp"
                     else ["shared"]
@@ -131,7 +119,7 @@ class MAE(BaseMIM):
                     self.mask_dates[name_mod] = None
                     self.mask_loc[name_mod] = None
             case "mod" | "group":
-                self.name_models += (
+                self.name_models = (
                     list(num_dates_group.keys())
                     if fusion_mode == "group"
                     else list(num_dates_mod.keys())

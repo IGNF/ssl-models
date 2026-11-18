@@ -109,7 +109,17 @@ class DINOv3(nn.Module):
         self.view_size, self.grid_size = {}, {}
         self.date_encoding, self.ungroup = {}, {}
         self.patch_embed = nn.ModuleDict()
-        name_models = self._init_dataset(self.dataset)
+
+        # one encoder per model name
+        match self.fusion_mode:
+            case "shared":
+                name_models = ["shared"]
+            case "monotemp" | "mod":
+                name_models = list(dataset.inputs)
+            case "group":
+                name_models = list(
+                    dict.fromkeys(name_group for _, name_group in dataset.groups)
+                )
 
         # encoders, with a uniform drop path rate over all blocks (as in DINOv3)
         transformer = partial(
@@ -154,8 +164,8 @@ class DINOv3(nn.Module):
             rescale_coords=rope_rescale,
         )
 
-    def _init_dataset(self, dataset: DatasetConfig) -> list[str]:
-        """Set up dataset-dependent structures, return the encoder names."""
+
+        # dataset-dependent structures
         for name_mod, mod in dataset.inputs.items():
             num_bands = (
                 [mod.bands] if isinstance(mod.bands, int) else list(map(len, mod.bands))
@@ -228,15 +238,7 @@ class DINOv3(nn.Module):
                 for name_mod in dataset.inputs
             }
 
-        match self.fusion_mode:
-            case "shared":
-                return ["shared"]
-            case "monotemp" | "mod":
-                return list(dataset.inputs)
-            case "group":
-                return list(
-                    dict.fromkeys(name_group for _, name_group in dataset.groups)
-                )
+
 
     def token_shapes(
         self,
