@@ -111,10 +111,13 @@ class COSIAHistoDataset(GenericDataset):
         """Return paths and dates of each modality.
 
         Args:
+        ----
             idx: Index of the sample.
 
         Returns:
+        -------
             A dictionary containing paths and dates of each modality.
+
         """
         meta = {
             "aerial_path": self._resolve_raster_path(self.aerial_paths[idx]),
