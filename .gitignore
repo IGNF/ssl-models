@@ -139,3 +139,6 @@ config/conf.yaml
 
 *.sh
 upload.py
+
+# AI agents
+CLAUDE.md

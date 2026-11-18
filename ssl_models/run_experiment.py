@@ -6,7 +6,6 @@ from functools import partial
 from clearml import Task
 
 from ssl_models import LOGGER
-from ssl_models.conf.augment import DinoAugmentConfig
 from ssl_models.conf.data import DataConfig
 from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.conf.model import BaselineConfig, DINOv3Config, MiMConfig
@@ -25,7 +24,6 @@ def run_experiment(
     opt_finetune: OptFinetuneConfig,
     dataset: DatasetConfig,
     data: DataConfig,
-    augment: DinoAugmentConfig,
     model: MiMConfig | DINOv3Config | BaselineConfig,
     trainer: TrainerConfig,
 ) -> None:
@@ -54,7 +52,6 @@ def run_experiment(
             "opt_finetune": vars(opt_finetune),
             "dataset": asdict(dataset),
             "data": vars(data),
-            "augment": vars(augment),
             "model": asdict(model),
             "trainer": vars(trainer),
         }
@@ -67,7 +64,7 @@ def run_experiment(
         )
         task.set_parameters_as_dict(config)
 
-    module = build_module(model, dataset, augment, ckpt_path=run.load_ckpt_path)
+    module = build_module(model, dataset, ckpt_path=run.load_ckpt_path)
 
     if (
         opt_pretrain.epochs > 0

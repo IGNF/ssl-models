@@ -58,9 +58,9 @@ def dino_loss(
     """DINO cross-entropy between student crops and teacher global crops.
 
     Args:
-        student_global: [n_global, B, K] student logits of global crops.
-        student_local: [n_local, B, K] student logits of local crops, or None.
-        teacher_probs: [n_global, B, K] teacher targets of global crops.
+        student_global: [B, n_global, K] student logits of global crops.
+        student_local: [B, n_local, K] student logits of local crops, or None.
+        teacher_probs: [B, n_global, K] teacher targets of global crops.
         student_temp: student temperature.
 
     Returns:
@@ -71,14 +71,14 @@ def dino_loss(
     """
     with torch.autocast(device_type=teacher_probs.device.type, enabled=False):
         teacher_probs = teacher_probs.float()
-        n_global = student_global.shape[0]
+        n_global = student_global.shape[1]
 
         def cross_entropy(student: Tensor) -> Tensor:
             log_probs = F.log_softmax(student.float() / student_temp, dim=-1)
             # [n_student, n_teacher] mean cross-entropy over the batch
             return (
-                -torch.einsum("sbk,tbk->st", log_probs, teacher_probs)
-                / (student.shape[1])
+                -torch.einsum("bsk,btk->st", log_probs, teacher_probs)
+                / student.shape[0]
             )
 
         ce_global = cross_entropy(student_global)
@@ -88,7 +88,7 @@ def dino_loss(
             ce_global[off_diag].mean() if n_global_pairs else ce_global.sum() * 0
         )
 
-        if student_local is not None and student_local.shape[0]:
+        if student_local is not None and student_local.shape[1]:
             ce_local = cross_entropy(student_local)
             n_local_pairs = ce_local.numel()
             loss_local = ce_local.mean()

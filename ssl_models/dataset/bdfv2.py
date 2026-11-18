@@ -19,7 +19,6 @@ class BDFV2Dataset(GenericDataset):
         dataset: DatasetConfig,
         root_dir: Path,
         stage: Literal["train", "val", "test"],
-        use_transform: bool,
         random_dates: bool,
         random_crop: bool,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
@@ -28,7 +27,6 @@ class BDFV2Dataset(GenericDataset):
         super().__init__(
             dataset=dataset,
             stage=stage,
-            use_transform=use_transform,
             random_dates=random_dates,
             random_crop=random_crop,
         )

@@ -15,7 +15,6 @@ Experiment = builds(
         {"opt_finetune": "default_finetune"},
         {"dataset": MISSING},
         {"data": "default_data"},
-        {"augment": "dino_augment"},
         {"model": MISSING},
         {"trainer": "default_trainer"},
     ],
@@ -25,7 +24,6 @@ Experiment = builds(
     opt_finetune=MISSING,
     dataset=MISSING,
     data=MISSING,
-    augment=MISSING,
     model=MISSING,
     trainer=MISSING,
 )

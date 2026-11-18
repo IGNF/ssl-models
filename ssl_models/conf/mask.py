@@ -18,9 +18,14 @@ class MiMMaskConfig:
 
 @dataclass
 class DINOv3MaskConfig:
-    """iBOT masking, see `ssl_models.train.lit_dino.LitDINOv3`."""
+    """iBOT masking and per-view drop of modalities / dates.
+
+    See `ssl_models.train.lit_dino.LitDINOv3`.
+    """
 
     ibot_mask_prob: float = 0.5
     ibot_mask_ratio: list[float] = field(default_factory=lambda: [0.1, 0.5])
     ibot_blob_grid: int = 4
     ibot_mask_shared: float = 1.0
+    view_drop_mod: float | None = 0.25
+    view_drop_dates: float | None = 0.25

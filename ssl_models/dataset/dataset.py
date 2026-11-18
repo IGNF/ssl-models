@@ -29,11 +29,9 @@ class GenericDataset(Dataset, ABC):
         self,
         dataset: DatasetConfig,
         stage: Literal["train", "val", "test"],
-        use_transform: bool,
         random_dates: bool = False,
         random_crop: bool = False,
     ) -> None:
-        self.use_transform = use_transform
         self.dataset = dataset
         self.random_dates = random_dates and stage == "train"
         self.random_crop = random_crop and stage == "train"
@@ -101,7 +99,7 @@ class GenericDataset(Dataset, ABC):
             start_gcd = None
         inputs = self.preprocess_rasters(meta, start_gcd=start_gcd)
         inputs = self.postprocess(inputs, meta, idx)
-        return self.transform_rasters(inputs)
+        return inputs
 
     def __len__(self) -> int:
         """Return length of dataset."""
@@ -272,38 +270,3 @@ class GenericDataset(Dataset, ABC):
             input_mod /= norm_fac
 
         return input_mod, dates_mod
-
-    def transform_rasters(
-        self,
-        inputs: dict[str, np.ndarray],
-    ) -> dict[str, np.ndarray]:
-        """Transform model rasters."""
-        if self.use_transform:
-            if self.rng.choice([True, False]):
-                inputs.update(
-                    {
-                        name_mod: np.flip(inputs[name_mod], axis=2)
-                        for name_mod in self.dataset.rasters
-                    },
-                )
-            if self.rng.choice([True, False]):
-                inputs.update(
-                    {
-                        name_mod: np.flip(inputs[name_mod], axis=3)
-                        for name_mod in self.dataset.rasters
-                    },
-                )
-            if self.rng.choice([True, False]):
-                inputs.update(
-                    {
-                        name_mod: np.swapaxes(inputs[name_mod], 2, 3)
-                        for name_mod in self.dataset.rasters
-                    },
-                )
-            inputs.update(
-                {
-                    name_mod: np.ascontiguousarray(inputs[name_mod])
-                    for name_mod in self.dataset.rasters
-                },
-            )
-        return inputs

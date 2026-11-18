@@ -58,7 +58,7 @@ def local_view_size(
 class DINOv3(nn.Module):
     """Multi-modal RoPE ViT with CLS and register tokens."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         self,
         dataset: DatasetConfig,
         fusion_mode: Literal["shared", "monotemp", "mod", "group"],
@@ -164,7 +164,6 @@ class DINOv3(nn.Module):
             rescale_coords=rope_rescale,
         )
 
-
         # dataset-dependent structures
         for name_mod, mod in dataset.inputs.items():
             num_bands = (
@@ -237,8 +236,6 @@ class DINOv3(nn.Module):
                 )
                 for name_mod in dataset.inputs
             }
-
-
 
     def token_shapes(
         self,

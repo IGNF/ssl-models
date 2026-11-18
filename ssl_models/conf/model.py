@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from hydra_zen import store
 
+from ssl_models.conf.augment import AugmentConfig, DINOv3AugmentConfig
 from ssl_models.conf.loss import DINOv3LossConfig, MiMLossConfig
 from ssl_models.conf.mask import DINOv3MaskConfig, MiMMaskConfig
 
@@ -12,8 +13,22 @@ from ssl_models.conf.mask import DINOv3MaskConfig, MiMMaskConfig
 class ModelConfig:
     fusion_mode: str = "group"
     type_head: str = "attentive"
-    interpolate: str = "bilinear"
     use_date_enc: bool = True
+
+
+@store(group="model", name="baseline_model")
+@dataclass
+class BaselineConfig(ModelConfig):  # noqa: D101
+    model: str = "dinov2"
+    model_size: str = "small"
+    freeze: bool = False
+    weight_source: str = "imagenat"
+    pretrained_path: str = None
+    keep_norm: bool = True
+    use_ema: bool = True
+    version: str = None
+
+    augment: AugmentConfig = field(default_factory=AugmentConfig)
 
 
 @store(group="model", name="mim_model")
@@ -30,6 +45,7 @@ class MiMConfig(ModelConfig):  # noqa: D101
     condition: bool = False
     max_condition: int | None = None
 
+    augment: AugmentConfig = field(default_factory=AugmentConfig)
     mask: MiMMaskConfig = field(default_factory=MiMMaskConfig)
     loss: MiMLossConfig = field(default_factory=MiMLossConfig)
 
@@ -63,18 +79,6 @@ class DINOv3Config(ModelConfig):
     freeze_last_layer_pct: float = 0.01
     clip_grad: float | None = 3.0
 
+    augment: DINOv3AugmentConfig = field(default_factory=DINOv3AugmentConfig)
     mask: DINOv3MaskConfig = field(default_factory=DINOv3MaskConfig)
     loss: DINOv3LossConfig = field(default_factory=DINOv3LossConfig)
-
-
-@store(group="model", name="baseline_model")
-@dataclass
-class BaselineConfig(ModelConfig):  # noqa: D101
-    model: str = "dinov2"
-    model_size: str = "small"
-    freeze: bool = False
-    weight_source: str = "imagenat"
-    pretrained_path: str = None
-    keep_norm: bool = True
-    use_ema: bool = True
-    version: str = None

@@ -21,14 +21,12 @@ class GeoPileDataset(GenericDataset):
         dataset: DatasetConfig,
         root_dir: Path,
         stage: Literal["train", "val", "test"],
-        use_transform: bool,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
             dataset=dataset,
             stage=stage,
-            use_transform=use_transform,
         )
 
         csv_path = root_dir / f"{stage}.csv"

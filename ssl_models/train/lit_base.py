@@ -1,4 +1,4 @@
-"""Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
+"""Base lightning module"""
 
 import copy
 from abc import ABC
@@ -12,6 +12,7 @@ from pytorch_lightning import LightningModule
 from torch import Tensor, nn
 from torchmetrics import MeanMetric
 
+from ssl_models.conf.augment import AugmentConfig, DINOv3AugmentConfig
 from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.layers.overlay import (
     create_overlay,
@@ -19,6 +20,7 @@ from ssl_models.layers.overlay import (
     onehot_pred_from_logits,
     onehot_target_from_batch,
 )
+from ssl_models.train.augment import Augment
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
 
 RGB_BANDS = 3
@@ -27,14 +29,17 @@ RGB_BANDS = 3
 class LitBase(LightningModule, ABC):
     """Lightning base module."""
 
+    # random augmentations (crops, jitter, blur) also at val/test
+    augment_eval: bool = False
+
     def __init__(
-        self,
-        dataset: DatasetConfig,
-        interpolate: Literal["nearest", "bilinear", "bicubic"],
+        self, dataset: DatasetConfig, augment: AugmentConfig | DINOv3AugmentConfig
     ) -> None:
         super().__init__()
         self.dataset = dataset
-        self.interpolate = interpolate
+
+        # GPU augmentation (resize, flips, crops, jitter, blur), shared by all models
+        self.augment = Augment(dataset, **vars(augment))
 
         # EMA of `self.model`, set with `init_ema` by subclasses that use it
         self.ema_model = None
@@ -75,20 +80,6 @@ class LitBase(LightningModule, ABC):
                 self.metrics[f"{name_loss}_{stage}"] = MeanMetric(
                     dist_sync_on_step=False,
                 )
-
-    def resize_and_rescale(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
-        """Resize and/or rescale input rasters based on dataset config."""
-        for name_mod, mod in self.dataset.inputs.items():
-            batch[name_mod] = F.interpolate(
-                batch[name_mod].flatten(0, 1),
-                size=(mod.image_size,) * 2,
-                mode=self.interpolate,
-            ).unflatten(0, (-1, mod.num_dates))
-            if mod.rescale_elev:
-                batch[name_mod][:, :, 1:] = 30 * (
-                    batch[name_mod][:, :, :1] - batch[name_mod][:, :, 1:]
-                )
-        return batch
 
     def compute_logs_pred(
         self,
@@ -247,8 +238,9 @@ class LitBase(LightningModule, ABC):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Shared step for training/validation."""
-        # resize and rescale for all models here
-        batch = self.resize_and_rescale(batch)
+        # augment (resize and rescale included) for all models here: global views
+        # at the keys of the batch, local views (if any) at `{key}_local`
+        batch = self.augment(batch, random=stage == "train" or self.augment_eval)
 
         match self.trainer.ssl_phase:
             case "pretrain":

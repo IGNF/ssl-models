@@ -1,10 +1,12 @@
 """Lightning module for DINOv3-style pretraining (DINO + iBOT + KoLeo).
 
-The student is trained on 2 masked global views and N local views, against an
-EMA teacher that sees the unmasked global views. Optimizer hyperparameters
-(lr, betas, weight decay schedule, gradient clipping) are DINO specific and
-set here; the optimizer config only provides epochs, batch size and gradient
-accumulation.
+The student is trained on masked global views and local views, against an EMA
+teacher that sees the unmasked global views. Views come from the shared
+augmentation (`ssl_models.train.augment.Augment`, with `DINOv3AugmentConfig`),
+at all stages (`augment_eval`) so that the val/test losses are comparable.
+Optimizer hyperparameters (lr, betas, weight decay schedule, gradient clipping)
+are DINO specific and set here; the optimizer config only provides epochs,
+batch size and gradient accumulation.
 """
 
 from functools import partial
@@ -14,11 +16,10 @@ import torch
 from torch import Tensor, nn
 from torch.optim import Optimizer
 
-from ssl_models.conf.augment import DinoAugmentConfig
+from ssl_models.conf.augment import DINOv3AugmentConfig
 from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.conf.loss import DINOv3LossConfig
 from ssl_models.conf.mask import DINOv3MaskConfig
-from ssl_models.dino.augment import MultiCropAugment
 from ssl_models.dino.dino import (
     dinov3_base,
     dinov3_huge_plus,
@@ -44,12 +45,15 @@ NO_WD_PARAMS = ("cls_token", "register_tokens", "mask_token")
 class LitDINOv3(LitBase):
     """Lightning DINOv3-style pretraining module."""
 
+    # random views at all stages, so that the val/test losses are comparable
+    augment_eval = True
+
     def __init__(  # noqa: PLR0913
         self,
         dataset: DatasetConfig,
+        augment: DINOv3AugmentConfig,
         mask: DINOv3MaskConfig,
         loss: DINOv3LossConfig,
-        augment: DinoAugmentConfig,
         # backbone
         fusion_mode: Literal["shared", "monotemp", "mod", "group"] = "group",
         type_head: Literal["linear", "attentive"] = "attentive",  # noqa: ARG002, no probing yet
@@ -65,7 +69,6 @@ class LitDINOv3(LitBase):
         rope_jitter: float | None = None,
         rope_rescale: float | None = 2.0,
         use_date_enc: bool = True,
-        interpolate: Literal["nearest", "bilinear", "bicubic"] = "bilinear",
         # optimization
         base_lr: float = 2e-3,
         b1: float = 0.9,
@@ -80,7 +83,13 @@ class LitDINOv3(LitBase):
         freeze_last_layer_pct: float = 0.01,
         clip_grad: float | None = 3.0,
     ) -> None:
-        super().__init__(dataset=dataset, interpolate=interpolate)
+        super().__init__(dataset=dataset, augment=augment)
+        if self.augment.n_global < 2 and not self.augment.n_local:  # noqa: PLR2004
+            msg = (
+                "DINO needs at least 2 views to compare, "
+                f"got {self.augment.n_global} global and no local view."
+            )
+            raise ValueError(msg)
 
         model_map = {
             "tiny": dinov3_tiny,
@@ -106,7 +115,7 @@ class LitDINOv3(LitBase):
             "rope_shift": rope_shift,
             "rope_jitter": rope_jitter,
             "rope_rescale": rope_rescale,
-            "local_ratio": augment.local_size_ratio,
+            "local_ratio": self.augment.local_size_ratio,
             "fac_date_enc": 1.0 if use_date_enc else 0.0,
         }
         backbone = model_map[model_size](**model_args)
@@ -128,19 +137,8 @@ class LitDINOv3(LitBase):
         )
         self.init_ema(use_ema=True, ema_interval="step")
 
-        self.augment = MultiCropAugment(
-            n_global=2,
-            n_local=augment.n_local_crops,
-            global_scale=tuple(float(v) for v in augment.global_crop_scale),
-            local_scale=tuple(float(v) for v in augment.local_crop_scale),
-            flip=augment.flip,
-            jitter_prob=augment.jitter_prob,
-            brightness=augment.brightness,
-            contrast=augment.contrast,
-            blur_min_size=augment.blur_min_size,
-        )
-        self.view_drop_mod = augment.view_drop_mod
-        self.view_drop_dates = augment.view_drop_dates
+        self.view_drop_mod = mask.view_drop_mod
+        self.view_drop_dates = mask.view_drop_dates
         self.ibot_mask_prob = mask.ibot_mask_prob
         self.ibot_mask_ratio = tuple(float(v) for v in mask.ibot_mask_ratio)
         self.ibot_blob_grid = mask.ibot_blob_grid
@@ -190,30 +188,32 @@ class LitDINOv3(LitBase):
         batch: dict[str, Tensor],
         teacher_temp: float,
     ) -> dict:
-        """Compute DINO / iBOT / KoLeo losses for a batch."""
+        """Compute DINO / iBOT / KoLeo losses for an augmented batch.
+
+        Global views are at the keys of the batch, local views at `{key}_local`,
+        both stacked sample-major along the batch dim ([B * n, ...]).
+        """
         dataset = self.dataset
         backbone_s = self.model["backbone"]
         backbone_t = self.ema_model["backbone"]
         mods = list(dataset.inputs)
 
-        B = batch[mods[0]].shape[0]  # noqa: N806
+        n_global, n_local = self.augment.n_global, self.augment.n_local
+        B = batch[mods[0]].shape[0] // n_global  # noqa: N806
         device = batch[mods[0]].device
-        views = self.augment(batch, backbone_s.view_size)
-        n_global, n_local = len(views["global"]), len(views["local"])
 
-        meta = {f"{m}_dates": batch[f"{m}_dates"] for m in mods}
-        meta["ref_date"] = batch["ref_date"]
-
-        def stack(view_list: list[dict[str, Tensor]]) -> dict[str, Tensor]:
-            n = len(view_list)
-            out = {m: torch.cat([v[m] for v in view_list]) for m in mods}
-            out.update(
-                {k: v.repeat(n, *(1,) * (v.ndim - 1)) for k, v in meta.items()},
-            )
-            return out
+        globals_ = {k: v for k, v in batch.items() if not k.endswith("_local")}
+        locals_ = (
+            {
+                k.removesuffix("_local"): v
+                for k, v in batch.items()
+                if k.endswith("_local")
+            }
+            if n_local
+            else None
+        )
 
         num_dates = {m: dataset.inputs[m].num_dates for m in mods}
-        globals_ = stack(views["global"])
         ibot_mask = ibot_masks(
             backbone_s.token_shapes("global"),
             n_global * B,
@@ -250,7 +250,7 @@ class LitDINOv3(LitBase):
         student_local = None
         if n_local:
             out_l = backbone_s(
-                stack(views["local"]),
+                locals_,
                 "local",
                 keep=view_keep(
                     num_dates,
@@ -262,13 +262,13 @@ class LitDINOv3(LitBase):
             )
             student_local = self.model["dino_head"](out_l["cls"]).unflatten(
                 0,
-                (n_local, B),
+                (B, n_local),
             )
 
         losses_dino = dino_loss(
-            student_global.unflatten(0, (n_global, B)),
+            student_global.unflatten(0, (B, n_global)),
             student_local,
-            teacher_dino.unflatten(0, (n_global, B)),
+            teacher_dino.unflatten(0, (B, n_global)),
             self.student_temp,
         )
 
@@ -288,8 +288,9 @@ class LitDINOv3(LitBase):
             self.student_temp,
         )
 
-        cls_global = out_s["cls"].unflatten(0, (n_global, B))
-        loss_koleo = torch.stack([koleo_loss(c) for c in cls_global]).mean()
+        # KoLeo within each global view, over the batch
+        cls_global = out_s["cls"].unflatten(0, (B, n_global))
+        loss_koleo = torch.stack([koleo_loss(c) for c in cls_global.unbind(1)]).mean()
 
         loss = (
             self.w_dino * losses_dino["total"]
@@ -308,8 +309,7 @@ class LitDINOv3(LitBase):
                 "teacher_kl_uniform": stats["kl_uniform"],
                 "masked_ratio": masked.float().mean(),
             },
-            "batch": batch,
-            "views": views,
+            "views": {"global": globals_, "local": locals_},
             "batch_size": B,
         }
 
@@ -337,10 +337,14 @@ class LitDINOv3(LitBase):
         logs_inputs, logs_preds, logs_targets = {}, {}, {}
         for name_mod in self.dataset.log_inputs:
             prefix = f"{ssl_phase}_{stage}/_{name_mod}"
-            logs_targets[f"{prefix}_original"] = out["batch"][name_mod][0, 0]
-            logs_inputs[f"{prefix}_global"] = out["views"]["global"][0][name_mod][0, 0]
-            if out["views"]["local"]:
-                logs_preds[f"{prefix}_local"] = out["views"]["local"][0][name_mod][0, 0]
+            # first sample (rows 0, 1, ...: its views), first date
+            logs_inputs[f"{prefix}_global"] = out["views"]["global"][name_mod][0, 0]
+            if self.augment.n_global > 1:
+                logs_targets[f"{prefix}_global_2"] = out["views"]["global"][name_mod][
+                    1, 0
+                ]
+            if out["views"]["local"] is not None:
+                logs_preds[f"{prefix}_local"] = out["views"]["local"][name_mod][0, 0]
 
         if stage == "train":
             self.log(f"{ssl_phase}_dino/teacher_temp", teacher_temp, on_step=True)
@@ -363,7 +367,7 @@ class LitDINOv3(LitBase):
         if self.trainer.ssl_phase != "pretrain":
             msg = "DINO module only supports pretraining for now."
             raise NotImplementedError(msg)
-        return self.pretrain_step(batch, stage)
+        return super().shared_step(batch, stage)
 
     def configure_optimizers(self) -> dict:
         """AdamW with no weight decay on biases/norms/tokens, warmup + schedule."""

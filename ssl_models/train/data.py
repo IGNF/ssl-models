@@ -22,7 +22,6 @@ class SSLDataModule(LightningDataModule):
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         opt: OptPretrainConfig | OptProbeConfig | OptFinetuneConfig,
         num_workers: int,
-        use_transform: bool,
         random_dates: bool,
         random_crop: bool,
     ) -> None:
@@ -34,7 +33,7 @@ class SSLDataModule(LightningDataModule):
             "dataset": dataset,
             "root_dir": Path(root_dir) / dataset.rel_dir,
             "ssl_phase": ssl_phase,
-            "use_transform": use_transform,
+            # read-time augmentations (other augmentations are on GPU)
             "random_dates": random_dates,
             "random_crop": random_crop,
         }

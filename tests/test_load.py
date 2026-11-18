@@ -2,7 +2,7 @@ import pytest
 import torch
 from pytorch_lightning import Trainer
 
-from ssl_models.conf.augment import DinoAugmentConfig
+from ssl_models.conf.augment import DINOv3AugmentConfig
 from ssl_models.conf.loss import DINOv3LossConfig
 from ssl_models.conf.model import DINOv3Config, MiMConfig
 from ssl_models.train.lit_dino import LitDINOv3
@@ -17,6 +17,7 @@ from ssl_models.train.load import build_module
         (
             DINOv3Config(
                 model_size="tiny",
+                augment=DINOv3AugmentConfig(n_local=2),
                 loss=DINOv3LossConfig(
                     dino_n_prototypes=128,
                     ibot_n_prototypes=128,
@@ -29,8 +30,7 @@ from ssl_models.train.load import build_module
     ],
 )
 def test_build_and_reload_module(model, module_class, dataset_treesat, tmp_path):
-    augment = DinoAugmentConfig(n_local_crops=2)
-    module = build_module(model, dataset_treesat, augment)
+    module = build_module(model, dataset_treesat)
     assert type(module) is module_class
 
     ckpt_path = tmp_path / "module.ckpt"
@@ -38,7 +38,7 @@ def test_build_and_reload_module(model, module_class, dataset_treesat, tmp_path)
     trainer.strategy.connect(module)
     trainer.save_checkpoint(ckpt_path)
 
-    reloaded = build_module(model, dataset_treesat, augment, ckpt_path=ckpt_path)
+    reloaded = build_module(model, dataset_treesat, ckpt_path=ckpt_path)
     assert type(reloaded) is module_class
     state_dict, reloaded_state_dict = module.state_dict(), reloaded.state_dict()
     assert state_dict.keys() == reloaded_state_dict.keys()

@@ -5,11 +5,10 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from ssl_models.conf.augment import DinoAugmentConfig
+from ssl_models.conf.augment import DINOv3AugmentConfig
 from ssl_models.conf.loss import DINOv3LossConfig
 from ssl_models.conf.mask import DINOv3MaskConfig
 from ssl_models.dino import dino as dino_module
-from ssl_models.dino.augment import MultiCropAugment
 from ssl_models.dino.dino import (
     DINOv3,
     dinov3_base,
@@ -29,6 +28,7 @@ from ssl_models.dino.loss import (
 )
 from ssl_models.dino.masking import ibot_masks, view_keep
 from ssl_models.dino.schedule import cosine, linear_warmup, lr_factor
+from ssl_models.train.augment import Augment
 from ssl_models.train.lit_dino import LitDINOv3
 
 FUSION_CONFIGS = [
@@ -60,10 +60,14 @@ def make_batch(dataset, batch_size=2, image_size=None):
     return batch
 
 
-def view_inputs(batch, view):
-    inputs = dict(view)
-    inputs.update({k: v for k, v in batch.items() if "date" in k})
-    return inputs
+def make_view(batch, backbone, view):
+    """One random view of a type (dates included), as in the DINO module."""
+    config = DINOv3AugmentConfig(n_global=1, n_local=1)
+    augment = Augment(backbone.dataset, **vars(config))
+    out = augment(batch)
+    if view == "global":
+        return {k: v for k, v in out.items() if not k.endswith("_local")}
+    return {k.removesuffix("_local"): v for k, v in out.items() if k.endswith("_local")}
 
 
 def small_backbone(dataset, fusion_mode, inter_depth, **kwargs):
@@ -104,8 +108,7 @@ def test_backbone(dataset_treesat, fusion_mode, inter_depth, view):
     torch.manual_seed(0)
     backbone = small_backbone(dataset_treesat, fusion_mode, inter_depth)
     batch = make_batch(dataset_treesat)
-    views = MultiCropAugment(n_local=1)(batch, backbone.view_size)
-    inputs = view_inputs(batch, views[view][0])
+    inputs = make_view(batch, backbone, view)
 
     shapes = backbone.token_shapes(view)
     mask = ibot_masks(shapes, 2, 1.0, (0.3, 0.5), 4, 1.0, "cpu")
@@ -159,8 +162,7 @@ def test_backbone_arch(dataset_treesat, ffn, norm):
         dataset_treesat, "mod", 0, ffn=ffn, norm=norm, n_registers=0
     )
     batch = make_batch(dataset_treesat)
-    views = MultiCropAugment(n_local=1)(batch, backbone.view_size)
-    out = backbone(view_inputs(batch, views["global"][0]), "global")
+    out = backbone(make_view(batch, backbone, "global"), "global")
     assert torch.isfinite(out["cls"]).all()
 
 
@@ -178,58 +180,6 @@ def test_backbone_wrong_grid(dataset_treesat):
     batch = make_batch(dataset_treesat)
     with pytest.raises(ValueError):
         backbone(batch, "local")
-
-
-# ------------------------------------------------------------ augmentation
-def coordinate_batch(sizes, batch_size=3):
-    """Each modality holds its normalized x / y coordinates as two bands."""
-    batch = {}
-    for name_mod, size in sizes.items():
-        c = (torch.arange(size, dtype=torch.float32) + 0.5) / size * 2 - 1
-        yy, xx = torch.meshgrid(c, c, indexing="ij")
-        batch[name_mod] = torch.stack([xx, yy])[None, None].repeat(
-            batch_size, 2, 1, 1, 1
-        )
-    return batch
-
-
-def test_crops_aligned_across_modalities():
-    """The same box is applied to all modalities, whatever their size."""
-    torch.manual_seed(0)
-    augment = MultiCropAugment(n_local=2, jitter_prob=0.0, blur_probs=(0, 0, 0))
-    in_sizes = {"high": 300, "low": 30}
-    sizes = {"global": {"high": 150, "low": 6}, "local": {"high": 60, "low": 4}}
-    views = augment(coordinate_batch(in_sizes), sizes)
-
-    for view in views["global"] + views["local"]:
-        high = F.adaptive_avg_pool2d(view["high"].flatten(1, 2), view["low"].shape[-1])
-        low = view["low"].flatten(1, 2)
-        # flips / transposition consistent, coordinates match up to resampling
-        assert torch.allclose(high, low, atol=0.1)
-        # dates are augmented consistently
-        assert torch.equal(view["high"][:, 0], view["high"][:, 1])
-
-
-def test_crop_scale():
-    torch.manual_seed(0)
-    augment = MultiCropAugment(flip=False, jitter_prob=0.0, blur_probs=(0, 0, 0))
-    theta = augment.sample_boxes(1000, (0.05, 0.32), "cpu")
-    area = theta[:, 0, 0] * theta[:, 1, 1]
-    assert area.min() >= 0.05 - 1e-6 and area.max() <= 0.32 + 1e-6
-    # boxes stay inside the image
-    assert (theta[:, 0, 2].abs() + theta[:, 0, 0] <= 1 + 1e-6).all()
-    assert (theta[:, 1, 2].abs() + theta[:, 1, 1] <= 1 + 1e-6).all()
-
-
-def test_jitter_blur():
-    torch.manual_seed(0)
-    augment = MultiCropAugment(jitter_prob=1.0)
-    x = torch.rand(4, 2, 3, 64, 64)
-    assert augment.jitter(x).shape == x.shape
-    blurred = augment.blur(x, prob=1.0)
-    assert blurred.shape == x.shape
-    assert blurred.std() < x.std()
-    assert torch.equal(augment.blur(x, prob=0.0), x)
 
 
 # ----------------------------------------------------------------- masking
@@ -298,9 +248,9 @@ def test_sinkhorn():
 
 def test_dino_loss():
     torch.manual_seed(0)
-    teacher = torch.softmax(torch.randn(2, 8, 16), dim=-1)
-    student_global = torch.randn(2, 8, 16)
-    student_local = torch.randn(3, 8, 16)
+    teacher = torch.softmax(torch.randn(8, 2, 16), dim=-1)
+    student_global = torch.randn(8, 2, 16)
+    student_local = torch.randn(8, 3, 16)
     losses = dino_loss(student_global, student_local, teacher, student_temp=1.0)
     n_global_pairs, n_local_pairs = 2, 6
     expected = (n_global_pairs * losses["global"] + n_local_pairs * losses["local"]) / (
@@ -309,9 +259,9 @@ def test_dino_loss():
     assert torch.allclose(losses["total"], expected)
 
     # minimum = entropy of targets, reached when student matches the other view
-    teacher = torch.softmax(torch.randn(1, 8, 16), dim=-1).repeat(2, 1, 1)
+    teacher = torch.softmax(torch.randn(8, 1, 16), dim=-1).repeat(1, 2, 1)
     losses = dino_loss(teacher.log(), None, teacher, student_temp=1.0)
-    entropy = -(teacher[0] * teacher[0].log()).sum(-1).mean()
+    entropy = -(teacher[:, 0] * teacher[:, 0].log()).sum(-1).mean()
     assert torch.allclose(losses["global"], entropy, atol=1e-5)
     assert losses["local"] == 0
 
@@ -371,7 +321,7 @@ def tiny_module(dataset, fusion_mode="group", inter_depth=3, **kwargs):
         ),
         "fusion_mode": fusion_mode,
         "inter_depth": inter_depth,
-        "augment": DinoAugmentConfig(n_local_crops=2),
+        "augment": DINOv3AugmentConfig(n_local=2),
         "model_size": "tiny",
     }
     args.update(kwargs)
@@ -390,7 +340,7 @@ def test_dino_module_losses(dataset_treesat, fusion_mode, inter_depth):
     assert all(not p.requires_grad for p in module.ema_model.parameters())
 
     batch = make_batch(dataset_treesat, batch_size=4, image_size=32)
-    out = module.forward_batch(batch, teacher_temp=0.04)
+    out = module.forward_batch(module.augment(batch), teacher_temp=0.04)
     assert torch.isfinite(out["loss"])
     for name, value in out["components"].items():
         assert torch.isfinite(value), name
@@ -431,7 +381,7 @@ def test_dino_module_param_groups(dataset_treesat):
 def test_dino_module_arch(dataset_treesat, norm):
     module = tiny_module(dataset_treesat, "mod", 0, norm=norm, n_registers=0)
     batch = make_batch(dataset_treesat, batch_size=2, image_size=32)
-    out = module.forward_batch(batch, teacher_temp=0.04)
+    out = module.forward_batch(module.augment(batch), teacher_temp=0.04)
     assert torch.isfinite(out["loss"])
 
 

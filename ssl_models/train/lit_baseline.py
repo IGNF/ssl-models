@@ -10,6 +10,7 @@ from ssl_models.baselines.dofa import DOFABaseline
 from ssl_models.baselines.prithvi import PrithviBaseline
 from ssl_models.baselines.satmae import SatMAEBaseline
 from ssl_models.baselines.terramind import TerramindBaseline
+from ssl_models.conf.augment import AugmentConfig
 from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.train.lit_base import LitBase
 
@@ -23,11 +24,11 @@ class LitBaseline(LitBase):
         self,
         # shared args
         dataset: DatasetConfig,
+        augment: AugmentConfig | None,
         model: Literal["dinov2", "dofa", "croma", "prithvi", "satmae", "terramind"],
         fusion_mode: Literal["shared", "monotemp", "mod", "late-croma", "inter-croma"],
         model_size: Literal["small", "base", "large"],
         type_head: Literal["linear", "attentive"] = "attentive",
-        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         weight_source: str = "imagenat",
         pretrained_path: str | None = None,
         freeze: bool = False,
@@ -36,7 +37,7 @@ class LitBaseline(LitBase):
         use_date_enc: bool = True,
         **kwargs,  # noqa: ANN003
     ) -> None:
-        super().__init__(dataset=dataset, interpolate=interpolate)
+        super().__init__(dataset=dataset, augment=augment)
 
         model_args = {
             "dataset": dataset,
@@ -89,7 +90,7 @@ class LitBaseline(LitBase):
 
         self.init_ema(use_ema=use_ema, ema_interval="epoch")
 
-        self.save_hyperparameters(ignore=["dataset"])
+        self.save_hyperparameters(ignore=["dataset", "augment"])
 
     def configure_optimizers(self) -> dict:
         """Configure optimizer."""

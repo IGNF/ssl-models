@@ -50,7 +50,6 @@ class MAE(BaseMIM):
             fac_date_enc=fac_date_enc,
         )
 
-
         self.encoder = nn.ModuleDict(
             {
                 name_mod: Transformer(

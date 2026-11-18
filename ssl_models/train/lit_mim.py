@@ -9,6 +9,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
+from ssl_models.conf.augment import AugmentConfig
 from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.conf.loss import MiMLossConfig
 from ssl_models.conf.mask import MiMMaskConfig
@@ -33,14 +34,14 @@ class LitMiM(LitBase):
         self,
         # shared args
         dataset: DatasetConfig,
+        augment: AugmentConfig,
         mask: MiMMaskConfig,
+        loss: MiMLossConfig,
         fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         inter_depth: int,
         model: Literal["mae", "mixmae"],
         model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
         type_head: Literal["linear", "attentive"] = "attentive",
-        interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
-        loss: MiMLossConfig | None = None,
         condition: bool = False,
         max_condition: int | None = None,
         use_date_enc: bool = True,
@@ -51,7 +52,7 @@ class LitMiM(LitBase):
         v2_attn: bool = True,
         swin_abs_enc: bool = False,
     ) -> None:
-        super().__init__(dataset=dataset, interpolate=interpolate)
+        super().__init__(dataset=dataset, augment=augment)
 
         loss = loss or MiMLossConfig()
         match loss.name:
@@ -168,7 +169,7 @@ class LitMiM(LitBase):
 
         self.init_ema(use_ema=use_ema, ema_interval="epoch")
 
-        self.save_hyperparameters(ignore=["dataset", "mask", "loss"])
+        self.save_hyperparameters(ignore=["dataset", "augment", "mask", "loss"])
 
     def configure_optimizers(self) -> dict:
         """Configure optimizer."""
@@ -409,7 +410,7 @@ class LitMiM(LitBase):
         with torch.no_grad():
             for batch in data_loader:
                 batch = self.trainer.strategy.batch_to_device(batch, self.device)  # noqa: PLW2901
-                batch = self.resize_and_rescale(batch)  # noqa: PLW2901
+                batch = self.augment(batch, random=False)  # noqa: PLW2901
 
                 for name_mod in self.dataset.inputs:
                     H = self.model.out_grid_size[name_mod]  # noqa: N806

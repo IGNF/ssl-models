@@ -18,7 +18,6 @@ class S2NAIPDataset(GenericDataset):
         dataset: DatasetConfig,
         root_dir: Path,
         stage: Literal["train", "val", "test"],
-        use_transform: bool,
         random_dates: bool,
         ssl_phase: Literal["pretrain", "probe", "finetune"],
         random_crop: bool,
@@ -27,7 +26,6 @@ class S2NAIPDataset(GenericDataset):
         super().__init__(
             dataset=dataset,
             stage=stage,
-            use_transform=use_transform,
             random_dates=random_dates,
             random_crop=random_crop,
         )

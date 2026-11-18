@@ -8,11 +8,10 @@ from tests import TEST_DATA_DIR
 
 
 @pytest.mark.parametrize(
-    "stage, ssl_phase, use_transform, random_dates, random_crop",
+    "stage, ssl_phase, random_dates, random_crop",
     itertools.product(
         ("fit", "validate"),
         ("pretrain", "probe", "finetune"),
-        (True, False),
         (True, False),
         (True, False),
     ),
@@ -22,7 +21,6 @@ def test_data(
     opt_finetune,
     stage,
     ssl_phase,
-    use_transform,
     random_dates,
     random_crop,
 ):
@@ -32,7 +30,6 @@ def test_data(
         ssl_phase=ssl_phase,
         opt=opt_finetune,
         num_workers=1,
-        use_transform=use_transform,
         random_dates=random_dates,
         random_crop=random_crop,
     )
