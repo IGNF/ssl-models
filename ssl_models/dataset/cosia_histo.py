@@ -1,5 +1,6 @@
 """COSIA-Histo dataset module."""
 
+from copy import copy
 from pathlib import Path
 from typing import Literal
 
@@ -33,7 +34,7 @@ class COSIAHistoDataset(GenericDataset):
         use_transform: bool,
         random_dates: bool,
         random_crop: bool,
-        ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
         **kwargs,  # noqa: ARG002, ANN003
     ) -> None:
         super().__init__(
@@ -43,6 +44,16 @@ class COSIAHistoDataset(GenericDataset):
             random_dates=random_dates,
             random_crop=random_crop,
         )
+
+        self.use_targets = ssl_phase != "pretrain"
+        if not self.use_targets:
+            # Targets are unused in pretraining and may be missing for some patches.
+            self.dataset = copy(dataset)
+            self.dataset.rasters = {
+                name_mod: mod
+                for name_mod, mod in dataset.rasters.items()
+                if name_mod not in dataset.targets
+            }
 
         self.root_dir = Path(root_dir)
         self.gpkg_dir = (
@@ -102,10 +113,13 @@ class COSIAHistoDataset(GenericDataset):
             "aerial_path": self._resolve_raster_path(self.aerial_paths[idx]),
             "aerial_dates": self.default_dates,
         }
-        target_path = self._resolve_raster_path(self.target_paths[idx])
-        for name_target in self.dataset.targets:
-            meta[f"{name_target}_path"] = target_path
-            meta[f"{name_target}_dates"] = self.default_dates
+        target_path = self.target_paths[idx]
+        # Unannotated patches have no label path.
+        if self.use_targets and isinstance(target_path, str):
+            target_path = self._resolve_raster_path(target_path)
+            for name_target in self.dataset.targets:
+                meta[f"{name_target}_path"] = target_path
+                meta[f"{name_target}_dates"] = self.default_dates
 
         return meta
 
@@ -117,6 +131,8 @@ class COSIAHistoDataset(GenericDataset):
     ) -> dict[str, np.ndarray]:
         """Remap classes and set reference date."""
         for name_target, lut in self.class_remap_luts.items():
+            if name_target not in inputs:
+                continue
             mask = inputs[name_target]
             valid = mask != self.label_missing
             mask[valid] = lut[mask[valid].astype(np.int64)]
