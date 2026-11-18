@@ -52,26 +52,28 @@ def test_tempetes_custom_remap_needs_matching_class_names():
 def test_cosia_histo_targets():
     config = COSIAHistoConfig()
     assert list(config.targets) == ["cosia"]
-    assert len(config.cosia.class_names) == config.cosia.num_classes == 19
+    assert len(config.cosia.class_names) == config.cosia.num_classes == 18
+    assert config.class_remaps["cosia"] == [*range(18), -1]
 
     names = list(NOMENCLATURES)
     config = COSIAHistoConfig(filter_targets=["cosia", *names])
     assert list(config.targets) == ["cosia", *names]
-    for name, num_classes in zip(names, [8, 7, 5]):
+    for name, num_classes in zip(names, [7, 6, 4]):
         target = config.targets[name]
         assert len(target.class_names) == target.num_classes == num_classes
         assert len(config.class_remaps[name]) == 19
         assert max(config.class_remaps[name]) == num_classes - 1
+        assert config.class_remaps[name][18] == -1
 
 
 def test_cosia_histo_remap_to_others():
     config = COSIAHistoConfig(remap_to_others_after_class=2)
     assert config.cosia.num_classes == 3
     assert config.cosia.class_names == ["building", "greenhouse", "other"]
-    assert config.class_remaps["cosia"] == [0, 1, *[2] * 17]
+    assert config.class_remaps["cosia"] == [0, 1, *[2] * 16, -1]
 
 
-@pytest.mark.parametrize("n_kept", [0, 19])
+@pytest.mark.parametrize("n_kept", [0, 18])
 def test_cosia_histo_remap_to_others_out_of_range(n_kept: int):
     with pytest.raises(ValueError, match="remap_to_others_after_class"):
         COSIAHistoConfig(remap_to_others_after_class=n_kept)

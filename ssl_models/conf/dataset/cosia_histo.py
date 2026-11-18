@@ -30,12 +30,14 @@ CLASS_NAMES = [
     "clear-cut",
     "woody",
     "mixed",
-    "unannotated",
 ]
 
 NUM_CLASSES = len(CLASS_NAMES)
 
-# Coarser nomenclatures: (class names, new class id of each COSIA class).
+# The raw label also has an "unannotated" class, mapped to `MISSING_VAL`.
+MISSING_VAL = -1
+
+# Coarser nomenclatures: (class names, new class id of each raw COSIA label).
 NOMENCLATURES = {
     "cosia_artif_large": (
         [
@@ -46,9 +48,8 @@ NOMENCLATURES = {
             "naturel_sol_vegetation",
             "agricole",
             "ligneux",
-            "non_annote",
         ],
-        [0, 0, 1, 1, 1, 2, 3, 2, 4, 5, 5, 5, 6, 6, 4, 6, 6, 6, 7],
+        [0, 0, 1, 1, 1, 2, 3, 2, 4, 5, 5, 5, 6, 6, 4, 6, 6, 6, MISSING_VAL],
     ),
     "cosia_artif_medium": (
         [
@@ -58,9 +59,8 @@ NOMENCLATURES = {
             "naturel_eau",
             "agricole",
             "ligneux",
-            "non_annote",
         ],
-        [0, 0, 1, 1, 1, 2, 3, 2, 2, 4, 4, 4, 5, 5, 2, 5, 5, 5, 6],
+        [0, 0, 1, 1, 1, 2, 3, 2, 2, 4, 4, 4, 5, 5, 2, 5, 5, 5, MISSING_VAL],
     ),
     "cosia_artif_small": (
         [
@@ -68,9 +68,8 @@ NOMENCLATURES = {
             "naturel",
             "agricole",
             "ligneux",
-            "non_annote",
         ],
-        [0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 3, 3, 1, 3, 3, 3, 4],
+        [0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 3, 3, 1, 3, 3, 3, MISSING_VAL],
     ),
 }
 
@@ -81,7 +80,7 @@ def nomenclature_target(name: str) -> TargetRasterConfig:
     return TargetRasterConfig(
         type_target="segment",
         num_classes=len(class_names),
-        missing_val=-1,
+        missing_val=MISSING_VAL,
         bands=1,
         class_names=list(class_names),
     )
@@ -132,7 +131,7 @@ class COSIAHistoConfig(DatasetConfig):  # noqa: D101
         default_factory=lambda: TargetRasterConfig(
             type_target="segment",
             num_classes=NUM_CLASSES,
-            missing_val=-1,
+            missing_val=MISSING_VAL,
             bands=1,
             class_names=list(CLASS_NAMES),
         ),
@@ -152,20 +151,23 @@ class COSIAHistoConfig(DatasetConfig):  # noqa: D101
         self.dataset_class = COSIAHistoDataset
         self.total_meters = 102.4
 
-        # New class id of each COSIA class, for the targets that are remapped.
+        # New class id of each raw COSIA label, for each target.
         self.class_remaps = {
             name: list(remap) for name, (_, remap) in NOMENCLATURES.items()
         }
 
         n_kept = self.remap_to_others_after_class
+        if n_kept is not None and not 1 <= n_kept < NUM_CLASSES:
+            msg = (
+                f"remap_to_others_after_class must be in [1, {NUM_CLASSES - 1}], "
+                f"got {n_kept}."
+            )
+            raise ValueError(msg)
+        self.class_remaps["cosia"] = [
+            *(min(c, n_kept or NUM_CLASSES) for c in range(NUM_CLASSES)),
+            MISSING_VAL,
+        ]
         if n_kept is not None:
-            if not 1 <= n_kept < NUM_CLASSES:
-                msg = (
-                    f"remap_to_others_after_class must be in [1, {NUM_CLASSES - 1}], "
-                    f"got {n_kept}."
-                )
-                raise ValueError(msg)
-            self.class_remaps["cosia"] = [min(c, n_kept) for c in range(NUM_CLASSES)]
             self.cosia.num_classes = n_kept + 1
             self.cosia.class_names = [*CLASS_NAMES[:n_kept], "other"]
             self.cosia.check_class_names()
