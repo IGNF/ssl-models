@@ -44,9 +44,9 @@ class COSIAHistoDataset(GenericDataset):
             random_dates=random_dates,
             random_crop=random_crop,
         )
+        self.ssl_phase = ssl_phase
 
-        self.use_targets = ssl_phase != "pretrain"
-        if not self.use_targets:
+        if self.ssl_phase == "pretrain":
             # Targets are unused in pretraining and may be missing for some patches.
             self.dataset = copy(dataset)
             self.dataset.rasters = {
@@ -108,14 +108,21 @@ class COSIAHistoDataset(GenericDataset):
         }
 
     def build_meta(self, idx: int) -> dict:
-        """Return paths and dates of each modality."""
+        """Return paths and dates of each modality.
+
+        Args:
+            idx: Index of the sample.
+
+        Returns:
+            A dictionary containing paths and dates of each modality.
+        """
         meta = {
             "aerial_path": self._resolve_raster_path(self.aerial_paths[idx]),
             "aerial_dates": self.default_dates,
         }
         target_path = self.target_paths[idx]
         # Unannotated patches have no label path.
-        if self.use_targets and isinstance(target_path, str):
+        if self.ssl_phase != "pretrain" and isinstance(target_path, str):
             target_path = self._resolve_raster_path(target_path)
             for name_target in self.dataset.targets:
                 meta[f"{name_target}_path"] = target_path
