@@ -33,6 +33,9 @@ class LitBaseline(LitBase):
         pretrained_path: str | None = None,
         freeze: bool = False,
         use_ema: bool = False,
+        ema_interval: Literal["epoch", "step"] = "epoch",
+        ema_momentum: float | None = None,
+        ema_momentum_end: float | None = None,
         keep_norm: bool = True,
         use_date_enc: bool = True,
         **kwargs,  # noqa: ANN003
@@ -88,57 +91,18 @@ class LitBaseline(LitBase):
                 model_args = {**model_args, "version": kwargs.get("version", "v2")}
                 self.model = TerramindBaseline(**model_args)
 
-        self.init_ema(use_ema=use_ema, ema_interval="epoch")
+        self.init_ema(
+            use_ema=use_ema,
+            ema_interval=ema_interval,
+            ema_momentum=ema_momentum,
+            ema_momentum_end=ema_momentum_end,
+        )
 
         self.save_hyperparameters(ignore=["dataset", "augment"])
 
-    def configure_optimizers(self) -> dict:
-        """Configure optimizer."""
-        total_steps = self.trainer.estimated_stepping_batches
-        total_batch_size = (
-            self.trainer.train_dataloader.batch_size
-            * self.trainer.accumulate_grad_batches
-            * self.trainer.num_nodes
-            * self.trainer.num_devices
-            / 3.0  # remain iso with existing runs on Jean Zellou
-        )
-
-        lr = (
-            # use sqrt scaling rule with Adam
-            self.trainer.base_lr * total_batch_size**0.5
-        )
-        match self.trainer.lw_decay:
-            case None:
-                grouped_params = self.model.parameters()
-                max_lr = lr
-            case _:
-                grouped_params = self.model.grouped_parameters(
-                    lr,
-                    rate_decay=self.trainer.lw_decay,
-                )
-
-                max_lr = [param["lr"] for param in grouped_params]
-
-        optimizer = torch.optim.AdamW(
-            grouped_params,
-            lr=lr,
-            weight_decay=self.trainer.wd,
-            betas=(self.trainer.b1, self.trainer.b2),
-        )
-        scheduler = torch.optim.lr_scheduler.OneCycleLR(
-            optimizer,
-            max_lr=max_lr,
-            total_steps=total_steps,
-            pct_start=0.2,
-            cycle_momentum=False,
-            div_factor=1000,
-            final_div_factor=self.trainer.final_factor / 1000.0,
-        )
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "step",
-                "name": f"{self.trainer.ssl_phase}_AdamW_lr",
-            },
-        }
+    def base_param_groups(self, lr: float) -> list[dict]:
+        """Param groups with layer-wise lr decay, if `lw_decay` is set."""
+        lw_decay = self.trainer.opt.lw_decay
+        if lw_decay is None:
+            return super().base_param_groups(lr)
+        return self.model.grouped_parameters(lr, rate_decay=lw_decay)

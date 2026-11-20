@@ -1,4 +1,4 @@
-"""Step-based schedules for DINO pretraining."""
+"""Step-based schedules (lr, weight decay, DINO teacher temperature and momentum)."""
 
 import math
 from typing import Literal
@@ -22,11 +22,19 @@ def linear_warmup(start: float, end: float, step: int, warmup: int) -> float:
 def lr_factor(
     step: int,
     total: int,
-    warmup: int,
+    warmup_pct: float,
     schedule: Literal["cosine", "constant"],
     final_ratio: float,
+    freeze_pct: float = 0.0,
 ) -> float:
-    """Learning rate multiplier: linear warmup, then cosine decay or constant."""
+    """Learning rate multiplier: linear warmup, then cosine decay or constant.
+
+    The multiplier is 0 over the first `freeze_pct` steps (frozen params).
+    """
+    warmup = round(warmup_pct * total)
+
+    if step < round(freeze_pct * total):
+        return 0.0
     if step < warmup:
         return (step + 1) / warmup
     match schedule:

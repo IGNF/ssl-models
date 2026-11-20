@@ -11,9 +11,19 @@ from ssl_models.conf.mask import DINOv3MaskConfig, MiMMaskConfig
 
 @dataclass
 class ModelConfig:
+    """Shared model config.
+
+    The EMA model (if any) is updated at each step or epoch (`ema_interval`),
+    with a momentum following a cosine from `ema_momentum` (default
+    `1 - 1 / (0.2 * nb of updates)`) to `ema_momentum_end` (constant if None).
+    """
+
     fusion_mode: str = "group"
     type_head: str = "attentive"
     use_date_enc: bool = True
+    ema_interval: str = "epoch"
+    ema_momentum: float | None = None
+    ema_momentum_end: float | None = None
 
 
 @store(group="model", name="baseline_model")
@@ -65,19 +75,10 @@ class DINOv3Config(ModelConfig):
     rope_shift: float | None = None
     rope_jitter: float | None = None
     rope_rescale: float | None = 2.0
-    # optimization
-    base_lr: float = 2e-3  # scaled by sqrt(total batch size / 1024)
-    b1: float = 0.9
-    b2: float = 0.999
-    lr_warmup_pct: float = 0.1
-    lr_schedule: str = "cosine"
-    final_lr_ratio: float = 1e-3
-    wd_start: float = 0.04
-    wd_end: float = 0.2
-    momentum_start: float = 0.994
-    patch_embed_lr_mult: float = 0.2
-    freeze_last_layer_pct: float = 0.01
-    clip_grad: float | None = 3.0
+    # teacher, always used (optimization: see the `dinov3_pretrain` optimizer config)
+    ema_interval: str = "step"
+    ema_momentum: float | None = 0.994
+    ema_momentum_end: float | None = 1.0
 
     augment: DINOv3AugmentConfig = field(default_factory=DINOv3AugmentConfig)
     mask: DINOv3MaskConfig = field(default_factory=DINOv3MaskConfig)

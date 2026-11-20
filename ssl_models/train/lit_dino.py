@@ -4,9 +4,9 @@ The student is trained on masked global views and local views, against an EMA
 teacher that sees the unmasked global views. Views come from the shared
 augmentation (`ssl_models.train.augment.Augment`, with `DINOv3AugmentConfig`),
 at all stages (`augment_eval`) so that the val/test losses are comparable.
-Optimizer hyperparameters (lr, betas, weight decay schedule, gradient clipping)
-are DINO specific and set here; the optimizer config only provides epochs,
-batch size and gradient accumulation.
+The optimization is the shared one of `LitBase`, with the DINOv3 defaults of the
+`dinov3_pretrain` optimizer config, and the teacher is the shared EMA model,
+updated at each step; the teacher temperature schedule is set here.
 """
 
 from functools import partial
@@ -14,7 +14,6 @@ from typing import Literal
 
 import torch
 from torch import Tensor, nn
-from torch.optim import Optimizer
 
 from ssl_models.conf.augment import DINOv3AugmentConfig
 from ssl_models.conf.dataset.utils import DatasetConfig
@@ -36,10 +35,8 @@ from ssl_models.dino.loss import (
     teacher_stats,
 )
 from ssl_models.dino.masking import ibot_masks, view_keep
-from ssl_models.dino.schedule import cosine, linear_warmup, lr_factor
 from ssl_models.train.lit_base import LitBase
-
-NO_WD_PARAMS = ("cls_token", "register_tokens", "mask_token")
+from ssl_models.train.schedule import linear_warmup
 
 
 class LitDINOv3(LitBase):
@@ -69,19 +66,10 @@ class LitDINOv3(LitBase):
         rope_jitter: float | None = None,
         rope_rescale: float | None = 2.0,
         use_date_enc: bool = True,
-        # optimization
-        base_lr: float = 2e-3,
-        b1: float = 0.9,
-        b2: float = 0.999,
-        lr_warmup_pct: float = 0.1,
-        lr_schedule: Literal["cosine", "constant"] = "cosine",
-        final_lr_ratio: float = 1e-3,
-        wd_start: float = 0.04,
-        wd_end: float = 0.2,
-        momentum_start: float = 0.994,
-        patch_embed_lr_mult: float = 0.2,
-        freeze_last_layer_pct: float = 0.01,
-        clip_grad: float | None = 3.0,
+        # teacher
+        ema_interval: Literal["epoch", "step"] = "step",
+        ema_momentum: float | None = 0.994,
+        ema_momentum_end: float | None = 1.0,
     ) -> None:
         super().__init__(dataset=dataset, augment=augment)
         if self.augment.n_global < 2 and not self.augment.n_local:  # noqa: PLR2004
@@ -135,7 +123,12 @@ class LitDINOv3(LitBase):
                 "ibot_head": head(n_prototypes=loss.ibot_n_prototypes),
             },
         )
-        self.init_ema(use_ema=True, ema_interval="step")
+        self.init_ema(
+            use_ema=True,
+            ema_interval=ema_interval,
+            ema_momentum=ema_momentum,
+            ema_momentum_end=ema_momentum_end,
+        )
 
         self.view_drop_mod = mask.view_drop_mod
         self.view_drop_dates = mask.view_drop_dates
@@ -150,37 +143,14 @@ class LitDINOv3(LitBase):
         self.teacher_temp_warmup_pct = loss.teacher_temp_warmup_pct
         self.w_dino, self.w_ibot, self.w_koleo = loss.w_dino, loss.w_ibot, loss.w_koleo
 
-        self.base_lr = base_lr
-        self.betas = (b1, b2)
-        self.lr_warmup_pct = lr_warmup_pct
-        self.lr_schedule = lr_schedule
-        self.final_lr_ratio = final_lr_ratio
-        self.wd_start, self.wd_end = wd_start, wd_end
-        self.momentum_start = momentum_start
-        self.patch_embed_lr_mult = patch_embed_lr_mult
-        self.freeze_last_layer_pct = freeze_last_layer_pct
-        self.clip_grad = clip_grad
-
-        self.total_steps = None
-
         self.save_hyperparameters(ignore=["dataset", "mask", "loss", "augment"])
-
-    def get_total_steps(self) -> int:
-        if self.total_steps is None:
-            self.total_steps = max(int(self.trainer.estimated_stepping_batches), 1)
-        return self.total_steps
 
     def teacher_temp(self) -> float:
         return linear_warmup(
             self.teacher_temp_start,
             self.teacher_temp_end,
             self.global_step,
-            round(self.teacher_temp_warmup_pct * self.get_total_steps()),
-        )
-
-    def weight_decay(self) -> float:
-        return cosine(
-            self.wd_start, self.wd_end, self.global_step, self.get_total_steps()
+            round(self.teacher_temp_warmup_pct * self.total_steps()),
         )
 
     def forward_batch(  # noqa: PLR0915
@@ -348,10 +318,6 @@ class LitDINOv3(LitBase):
 
         if stage == "train":
             self.log(f"{ssl_phase}_dino/teacher_temp", teacher_temp, on_step=True)
-            self.log(f"{ssl_phase}_dino/momentum", self.momentum, on_step=True)
-            self.log(
-                f"{ssl_phase}_dino/weight_decay", self.weight_decay(), on_step=True
-            )
         return {
             "loss": out["loss"],
             "log_inputs": logs_inputs,
@@ -368,90 +334,3 @@ class LitDINOv3(LitBase):
             msg = "DINO module only supports pretraining for now."
             raise NotImplementedError(msg)
         return super().shared_step(batch, stage)
-
-    def configure_optimizers(self) -> dict:
-        """AdamW with no weight decay on biases/norms/tokens, warmup + schedule."""
-        total_steps = self.get_total_steps()
-        total_batch_size = (
-            self.trainer.batch_size
-            * self.trainer.accumulate_grad_batches
-            * self.trainer.num_nodes
-            * self.trainer.num_devices
-        )
-        lr = self.base_lr * (total_batch_size / 1024) ** 0.5
-
-        groups = {}
-        for name, param in self.model.named_parameters():
-            if not param.requires_grad:
-                continue
-            no_wd = param.ndim <= 1 or any(key in name for key in NO_WD_PARAMS)
-            lr_mult = (
-                self.patch_embed_lr_mult
-                if name.startswith("backbone.patch_embed")
-                else 1.0
-            )
-            key = (no_wd, lr_mult)
-            if key not in groups:
-                groups[key] = {
-                    "params": [],
-                    "lr": lr * lr_mult,
-                    "wd_mult": 0.0 if no_wd else 1.0,
-                    "weight_decay": 0.0 if no_wd else self.wd_start,
-                }
-            groups[key]["params"].append(param)
-
-        optimizer = torch.optim.AdamW(list(groups.values()), lr=lr, betas=self.betas)
-        scheduler = torch.optim.lr_scheduler.LambdaLR(
-            optimizer,
-            lr_lambda=partial(
-                lr_factor,
-                total=total_steps,
-                warmup=round(self.lr_warmup_pct * total_steps),
-                schedule=self.lr_schedule,
-                final_ratio=self.final_lr_ratio,
-            ),
-        )
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "step",
-                "name": f"{self.trainer.ssl_phase}_AdamW_lr",
-            },
-        }
-
-    def configure_gradient_clipping(
-        self,
-        optimizer: Optimizer,
-        gradient_clip_val: float | None = None,
-        gradient_clip_algorithm: str | None = None,
-    ) -> None:
-        """Clip gradient norm to clip_grad unless set on the trainer."""
-        clip_val = (
-            gradient_clip_val if gradient_clip_val is not None else self.clip_grad
-        )
-        if clip_val:
-            self.clip_gradients(
-                optimizer,
-                gradient_clip_val=clip_val,
-                gradient_clip_algorithm=gradient_clip_algorithm or "norm",
-            )
-
-    def on_train_batch_start(self, batch: dict, batch_idx: int) -> None:  # noqa: ARG002
-        """Apply weight decay and teacher momentum schedules."""
-        weight_decay = self.weight_decay()
-        for optimizer in self.trainer.optimizers:
-            for group in optimizer.param_groups:
-                group["weight_decay"] = weight_decay * group.get("wd_mult", 1.0)
-        # cosine schedule from `momentum_start` to 1, used by `update_ema`
-        self.momentum = cosine(
-            self.momentum_start, 1.0, self.global_step, self.get_total_steps()
-        )
-
-    def on_after_backward(self) -> None:
-        """Freeze the prototypes at the beginning of training."""
-        if self.global_step < round(
-            self.freeze_last_layer_pct * self.get_total_steps()
-        ):
-            for name in ("dino_head", "ibot_head"):
-                self.model[name].prototypes.grad = None

@@ -40,22 +40,8 @@ class SSLTrainer(pl.Trainer):
 
         self.logged_images_per_epoch = run.logged_images_per_epoch
 
-        self.base_lr = opt.base_lr
-        if isinstance(opt, OptFinetuneConfig):
-            self.lw_decay = opt.lw_decay
-            self.final_factor = opt.final_factor
-            self.monitor = opt.monitor
-            self.patience = opt.patience
-        else:
-            self.lw_decay = None
-            self.final_factor = 1e7
-            self.monitor = None
-            self.patience = None
-
-        self.wd = opt.wd
-        self.b1 = opt.b1
-        self.b2 = opt.b2
-        self.batch_size = opt.batch_size
+        # read by the lightning module to configure the optimization
+        self.opt = opt
 
         self.loggers = self.configure_loggers()
         self.callbacks = self.configure_callbacks()
@@ -69,6 +55,7 @@ class SSLTrainer(pl.Trainer):
             precision=precision,
             num_nodes=num_nodes,
             accumulate_grad_batches=opt.accumulate_grad_batches,
+            gradient_clip_val=opt.clip_grad,  # by norm (Lightning's default)
         )
 
     def configure_loggers(self) -> list[Logger]:
@@ -97,19 +84,19 @@ class SSLTrainer(pl.Trainer):
             ModelCheckpoint(
                 filename=self.ssl_phase + "-{epoch}",
                 monitor=(
-                    f"{self.ssl_phase}_{self.monitor}"
-                    if self.monitor is not None
+                    f"{self.ssl_phase}_{self.opt.monitor}"
+                    if self.opt.monitor is not None
                     else None
                 ),
                 mode="max",
                 save_weights_only=self.save_weights_only,
             ),
         )
-        if self.monitor is not None:
+        if self.opt.monitor is not None:
             callbacks.append(
                 EarlyStopping(
-                    monitor=f"{self.ssl_phase}_{self.monitor}",
-                    patience=self.patience,
+                    monitor=f"{self.ssl_phase}_{self.opt.monitor}",
+                    patience=self.opt.patience,
                     mode="max",
                 ),
             )

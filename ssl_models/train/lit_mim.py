@@ -46,6 +46,9 @@ class LitMiM(LitBase):
         max_condition: int | None = None,
         use_date_enc: bool = True,
         use_ema: bool = False,
+        ema_interval: Literal["epoch", "step"] = "epoch",
+        ema_momentum: float | None = None,
+        ema_momentum_end: float | None = None,
         # mixmae args
         num_levels: Literal[3, 4] = 3,
         swin_version: Literal[1, 2] = 1,
@@ -167,49 +170,14 @@ class LitMiM(LitBase):
             msg = f"Invalid model size {model_size}. Expected one of {model_map.keys()}"
             raise ValueError(msg)
 
-        self.init_ema(use_ema=use_ema, ema_interval="epoch")
+        self.init_ema(
+            use_ema=use_ema,
+            ema_interval=ema_interval,
+            ema_momentum=ema_momentum,
+            ema_momentum_end=ema_momentum_end,
+        )
 
         self.save_hyperparameters(ignore=["dataset", "augment", "mask", "loss"])
-
-    def configure_optimizers(self) -> dict:
-        """Configure optimizer."""
-        total_steps = self.trainer.estimated_stepping_batches
-        total_batch_size = (
-            self.trainer.batch_size
-            * self.trainer.accumulate_grad_batches
-            * self.trainer.num_nodes
-            * self.trainer.num_devices
-            / 3.0  # remain iso with past runs
-        )
-        lr = (
-            # use sqrt scaling rule with Adam
-            self.trainer.base_lr * total_batch_size**0.5
-        )
-
-        optimizer = torch.optim.AdamW(
-            self.model.parameters(),
-            lr=lr,
-            weight_decay=self.trainer.wd,
-            betas=(self.trainer.b1, self.trainer.b2),
-        )
-        scheduler = torch.optim.lr_scheduler.OneCycleLR(
-            optimizer,
-            max_lr=lr,
-            total_steps=total_steps,
-            pct_start=0.2,
-            cycle_momentum=False,
-            div_factor=1000,
-            final_div_factor=self.trainer.final_factor / 1000.0,
-        )
-
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "step",
-                "name": f"{self.trainer.ssl_phase}_AdamW_lr",
-            },
-        }
 
     def compute_logs_rec(
         self,

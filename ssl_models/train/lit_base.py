@@ -22,6 +22,7 @@ from ssl_models.layers.overlay import (
 )
 from ssl_models.train.augment import Augment
 from ssl_models.train.metric import MonoLabelMetric, MultiLabelMetric
+from ssl_models.train.schedule import cosine, lr_factor
 
 RGB_BANDS = 3
 
@@ -43,8 +44,9 @@ class LitBase(LightningModule, ABC):
 
         # EMA of `self.model`, set with `init_ema` by subclasses that use it
         self.ema_model = None
-        self.ema_interval: Literal["epoch", "step"] = "epoch"
-        self.momentum: float | None = None
+        self.ema_interval = "epoch"
+        self.ema_momentum = None
+        self.ema_momentum_end = None
         self._last_ema_step = 0
 
         self.metrics = nn.ModuleDict()
@@ -80,6 +82,193 @@ class LitBase(LightningModule, ABC):
                 self.metrics[f"{name_loss}_{stage}"] = MeanMetric(
                     dist_sync_on_step=False,
                 )
+
+    def init_ema(
+        self,
+        use_ema: bool,
+        ema_interval: Literal["epoch", "step"],
+        ema_momentum: float | None,
+        ema_momentum_end: float | None,
+    ) -> None:
+        """Create the EMA model as a frozen copy of `self.model` (see `ModelConfig`)."""
+        if use_ema:
+            self.ema_model = copy.deepcopy(self.model)
+            for param in self.ema_model.parameters():
+                param.requires_grad = False
+            self.ema_model.eval()
+        self.ema_interval = ema_interval
+        self.ema_momentum = ema_momentum
+        self.ema_momentum_end = ema_momentum_end
+
+    def total_batch_size(self) -> int:
+        """Batch size per optimizer step, over accumulation and devices."""
+        trainer = self.trainer
+        return (
+            trainer.opt.batch_size
+            * trainer.accumulate_grad_batches
+            * trainer.num_nodes
+            * trainer.num_devices
+        )
+
+    def total_steps(self) -> int:
+        """Total number of steps for a fit."""
+        return max(int(self.trainer.estimated_stepping_batches), 1)
+
+    def base_param_groups(self, lr: float) -> list[dict]:
+        """Param groups before lr multipliers and weight decay exclusions."""
+        return [{"params": self.model.parameters(), "lr": lr}]
+
+    def param_groups(self, lr: float) -> list[dict]:
+        """Optimizer param groups, with the opt config's lr multipliers and no wd.
+
+        Each group of `base_param_groups` is split by lr multiplier (the
+        `lr_mults` entry matching the param name, if any), weight decay exclusion
+        (`no_wd_1d`, `no_wd_params`) and `freeze_params` match. Params without
+        grad are left out. `wd_mult` (0 or 1) is used by the weight decay
+        schedule to set the group's `weight_decay`, and `frozen` by the lr
+        schedule to set the group's lr to 0 over the first `freeze_pct` steps.
+        """
+        opt = self.trainer.opt
+        names = {id(param): name for name, param in self.model.named_parameters()}
+        groups = {}
+        for idx, base_group in enumerate(self.base_param_groups(lr)):
+            for param in base_group["params"]:
+                if not param.requires_grad:
+                    continue
+                name = names[id(param)]
+                lr_mults = [mult for key, mult in opt.lr_mults.items() if key in name]
+                if len(lr_mults) > 1:
+                    msg = f"Parameter {name} matches several `lr_mults` keys."
+                    raise ValueError(msg)
+                lr_mult = lr_mults[0] if lr_mults else 1.0
+                no_wd = (opt.no_wd_1d and param.ndim <= 1) or any(
+                    key in name for key in opt.no_wd_params
+                )
+                frozen = any(key in name for key in opt.freeze_params)
+                key = (idx, lr_mult, no_wd, frozen)
+                if key not in groups:
+                    wd_mult = 0.0 if no_wd else 1.0
+                    groups[key] = {
+                        "params": [],
+                        "lr": base_group["lr"] * lr_mult,
+                        "weight_decay": opt.wd * wd_mult,
+                        "wd_mult": wd_mult,
+                        "frozen": frozen,
+                    }
+                    if "name" in base_group:  # unique names for LearningRateMonitor
+                        groups[key]["name"] = (
+                            base_group["name"]
+                            + (f"_lr_mult{lr_mult:g}" if lr_mult != 1 else "")
+                            + ("_no_wd" if no_wd else "")
+                            + ("_frozen" if frozen else "")
+                        )
+                groups[key]["params"].append(param)
+        return list(groups.values())
+
+    def configure_optimizers(self) -> dict:
+        """AdamW with sqrt lr scaling, lr warmup + schedule (see `OptConfig`)."""
+        opt = self.trainer.opt
+        # sqrt scaling rule with Adam
+        lr = opt.base_lr * (self.total_batch_size() / opt.lr_ref_batch_size) ** 0.5
+        optimizer = torch.optim.AdamW(
+            self.param_groups(lr),
+            lr=lr,
+            betas=(opt.b1, opt.b2),
+        )
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lr_lambda=[
+                partial(
+                    lr_factor,
+                    total=self.total_steps(),
+                    warmup_pct=opt.lr_warmup_pct,
+                    schedule=opt.lr_schedule,
+                    final_ratio=opt.final_lr_ratio,
+                    freeze_pct=opt.freeze_pct if group["frozen"] else 0.0,
+                )
+                for group in optimizer.param_groups
+            ],
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+                "name": f"{self.trainer.ssl_phase}_AdamW_lr",
+            },
+        }
+
+    def train(self, mode: bool = True) -> "LitBase":
+        """Keep the EMA model in eval mode (no dropout / drop path)."""
+        super().train(mode)
+        if self.ema_model is not None:
+            self.ema_model.eval()
+        return self
+
+    def on_train_epoch_start(self) -> None:
+        self.trainer.datamodule.set_epoch(self.trainer.current_epoch)
+
+    def on_train_batch_start(self, batch: dict, batch_idx: int) -> None:  # noqa: ARG002
+        """Apply the weight decay schedule."""
+        opt = self.trainer.opt
+        wd_end = opt.wd if opt.wd_end is None else opt.wd_end
+        weight_decay = cosine(opt.wd, wd_end, self.global_step, self.total_steps())
+
+        for optimizer in self.trainer.optimizers:
+            for group in optimizer.param_groups:
+                group["weight_decay"] = weight_decay * group["wd_mult"]
+        self.log(
+            f"{self.trainer.ssl_phase}_AdamW_weight_decay", weight_decay, on_step=True
+        )
+
+    def on_train_batch_end(
+        self,
+        outputs: dict,  # noqa: ARG002
+        batch: dict,  # noqa: ARG002
+        batch_idx: int,  # noqa: ARG002
+    ) -> None:
+        """EMA update after each optimizer step, if `ema_interval == "step"`."""
+        if (
+            self.ema_model is not None
+            and self.ema_interval == "step"
+            and self.global_step != self._last_ema_step  # skip accumulation steps
+        ):
+            self._last_ema_step = self.global_step
+            self.update_ema()
+
+    def on_train_epoch_end(self) -> None:
+        """EMA update after each epoch, if `ema_interval == "epoch"`."""
+        if self.ema_model is not None and self.ema_interval == "epoch":
+            self.update_ema()
+
+    def momentum(self) -> float:
+        """EMA momentum of the current update, with a cosine schedule over the fit.
+
+        From `ema_momentum` (default `1 - 1 / (0.2 * nb of updates)`) to
+        `ema_momentum_end` (constant if None), with an update at each step or
+        epoch (`ema_interval`). Computed at each fit: the number of updates
+        differs between phases (pretrain / probe / finetune).
+        """
+        if self.ema_interval == "step":
+            # called after the optimizer step, which increments `global_step`
+            update, n_updates = self.global_step - 1, self.total_steps()
+        else:
+            update, n_updates = self.current_epoch, self.trainer.max_epochs
+        start = self.ema_momentum
+        if start is None:
+            start = 1 - 1 / (0.2 * n_updates)
+        end = start if self.ema_momentum_end is None else self.ema_momentum_end
+        return cosine(start, end, update, n_updates)
+
+    @torch.no_grad()
+    def update_ema(self) -> None:
+        """EMA update of `self.ema_model` from `self.model`, with `self.momentum()`."""
+        momentum = self.momentum()
+        self.log(f"{self.trainer.ssl_phase}_ema_momentum", momentum)
+        params_ema = list(self.ema_model.parameters())
+        params = list(self.model.parameters())
+        torch._foreach_mul_(params_ema, momentum)  # noqa: SLF001
+        torch._foreach_add_(params_ema, params, alpha=1.0 - momentum)  # noqa: SLF001
 
     def compute_logs_pred(
         self,
@@ -274,61 +463,3 @@ class LitBase(LightningModule, ABC):
         batch_idx: int,  # noqa: ARG002
     ) -> dict[str, torch.Tensor]:
         return self.shared_step(batch, stage="test")
-
-    def on_train_epoch_start(self) -> None:
-        self.trainer.datamodule.set_epoch(self.trainer.current_epoch)
-
-    def init_ema(self, use_ema: bool, ema_interval: Literal["epoch", "step"]) -> None:
-        """Create the EMA model as a frozen copy of `self.model`."""
-        if use_ema:
-            self.ema_model = copy.deepcopy(self.model)
-            for param in self.ema_model.parameters():
-                param.requires_grad = False
-            self.ema_model.eval()
-            self.ema_interval = ema_interval
-
-    def on_train_start(self) -> None:
-        """Set the epoch-wise EMA momentum from the number of epochs of this phase.
-
-        Not done in `init_ema`: the trainer is not attached yet at init, and the
-        number of epochs differs between phases (pretrain / probe / finetune).
-        Step-wise modules (DINOv3) set `self.momentum` at each step instead.
-        """
-        if self.ema_interval == "epoch":
-            self.momentum = 1 - 1 / (self.trainer.max_epochs * 0.2)
-
-    def train(self, mode: bool = True) -> "LitBase":
-        """Keep the EMA model in eval mode (no dropout / drop path)."""
-        super().train(mode)
-        if self.ema_model is not None:
-            self.ema_model.eval()
-        return self
-
-    def on_train_batch_end(
-        self,
-        outputs: dict,  # noqa: ARG002
-        batch: dict,  # noqa: ARG002
-        batch_idx: int,  # noqa: ARG002
-    ) -> None:
-        """EMA update after each optimizer step, if `ema_interval == "step"`."""
-        if (
-            self.ema_model is not None
-            and self.ema_interval == "step"
-            and self.global_step != self._last_ema_step  # skip accumulation steps
-        ):
-            self._last_ema_step = self.global_step
-            self.update_ema()
-
-    def on_train_epoch_end(self) -> None:
-        """EMA update after each epoch, if `ema_interval == "epoch"`."""
-        if self.ema_model is not None and self.ema_interval == "epoch":
-            self.update_ema()
-
-    @torch.no_grad()
-    def update_ema(self) -> None:
-        """EMA update of `self.ema_model` from `self.model`, with `self.momentum`."""
-        momentum = self.momentum
-        params_ema = list(self.ema_model.parameters())
-        params = list(self.model.parameters())
-        torch._foreach_mul_(params_ema, momentum)  # noqa: SLF001
-        torch._foreach_add_(params_ema, params, alpha=1.0 - momentum)  # noqa: SLF001
