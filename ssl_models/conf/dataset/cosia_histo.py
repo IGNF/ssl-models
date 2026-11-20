@@ -104,7 +104,6 @@ class COSIAHistoConfig(DatasetConfig):  # noqa: D101
     default_date_fmt: str = "%Y%m%d"
     # Merges the `cosia` classes from this id onwards into a single "other" class.
     remap_to_others_after_class: int | None = None
-    aerial_bands: list[int] = field(default_factory=lambda: [0, 1, 2, 3])
 
     ref_input: str | None = "aerial"  # defines grid for raster targets
     log_inputs: list[str] = field(
@@ -171,9 +170,6 @@ class COSIAHistoConfig(DatasetConfig):  # noqa: D101
             self.cosia.num_classes = n_kept + 1
             self.cosia.class_names = [*CLASS_NAMES[:n_kept], "other"]
             self.cosia.check_class_names()
-
-        # Keep band-selection user-facing as a flat list while using internal format.
-        self.aerial.bands = [self.aerial_bands]
 
         super().__post_init__(
             resolutions_meters={

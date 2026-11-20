@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from ssl_models.conf.dataset.cosia_histo import NOMENCLATURES, COSIAHistoConfig
@@ -47,6 +49,15 @@ def test_tempetes_custom_remap_needs_matching_class_names():
         ),
     )
     assert config.tempetes_remap.num_classes == 8
+
+
+def test_cosia_histo_aerial_bands():
+    default_aerial = COSIAHistoConfig().aerial
+    assert default_aerial.bands == [[0, 1, 2, 3]]
+
+    bands = [[3, 0, 1, 2]]
+    config = COSIAHistoConfig(aerial=replace(default_aerial, bands=bands))
+    assert config.inputs["aerial"].bands == bands
 
 
 def test_cosia_histo_targets():
