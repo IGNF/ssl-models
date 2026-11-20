@@ -35,7 +35,7 @@ class GuyaneConfig(DatasetConfig):  # noqa: D101
         ],
     )  # selected input modalities
     filter_targets: list[str] = field(
-        default_factory=lambda: [],
+        default_factory=list,
     )  # selected target modalities
 
     s2: InputRasterConfig = field(

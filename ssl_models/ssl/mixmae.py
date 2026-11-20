@@ -50,7 +50,7 @@ class MixMAE(BaseMIM):
         drop_path_rate: float = 0.0,
         pretrained_window_sizes: tuple[int, int, int, int] = [0, 0, 0, 0],
         use_checkpoint: bool = False,
-        **kwargs,  # noqa: ANN003, ARG002
+        **kwargs,  # noqa: ANN003
     ) -> None:
         init_kwargs = {
             name_arg: val_arg

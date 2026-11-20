@@ -39,7 +39,7 @@ class MAE(BaseMIM):
         interpolate: Literal["nearest", "bilinear", "bicubic"] = "nearest",
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
-        **kwargs,  # noqa: ANN003, ARG002
+        **kwargs,  # noqa: ANN003
     ) -> None:
         init_kwargs = {
             name_arg: val_arg

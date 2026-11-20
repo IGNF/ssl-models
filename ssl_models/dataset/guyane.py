@@ -55,8 +55,7 @@ class GuyaneDataset(GenericDataset):
         dates_path = root_dir / "GLOBAL_ALL_MTD" / "GLOBAL_S2_MTD_DATES.gpkg"
         dates_mod = gpd.read_file(dates_path, engine="pyogrio", use_arrow=True)
         self.dates_s2 = {
-            row["patch_id"]: row["acquisition_dates"]
-            for _, row in dates_mod.iterrows()
+            row["patch_id"]: row["acquisition_dates"] for _, row in dates_mod.iterrows()
         }
 
     def build_meta(self, idx: int) -> dict:
@@ -72,10 +71,7 @@ class GuyaneDataset(GenericDataset):
             / f"{domain}_ALOS2_{area}_{pos}.tif"
         )
         meta["s2_path"] = (
-            self.root_dir
-            / f"{domain}_S2"
-            / area
-            / f"{domain}_S2_{area}_{pos}.tif"
+            self.root_dir / f"{domain}_S2" / area / f"{domain}_S2_{area}_{pos}.tif"
         )
         meta["alos2_dates"] = strs_datetimes(
             [self.dates_alos2[patch_id]],
