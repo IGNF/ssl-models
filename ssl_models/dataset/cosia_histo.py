@@ -57,7 +57,8 @@ class COSIAHistoDataset(GenericDataset):
 
         self.root_dir = Path(root_dir)
         self.gpkg_dir = (
-            self.root_dir / dataset.gpkg_dir if dataset.gpkg_dir else self.root_dir
+            self.root_dir / dataset.rel_dir / dataset.gpkg_dir \
+            if dataset.gpkg_dir else self.root_dir
         )
 
         modalities = gpd.read_file(

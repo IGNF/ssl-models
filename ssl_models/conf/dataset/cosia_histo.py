@@ -93,10 +93,10 @@ class COSIAHistoConfig(DatasetConfig):  # noqa: D101
     gpkg_dir: str | None = None
     modalities_gpkg: str = "GLOBAL_ALL_MTD_MODALITIES.gpkg"
     split_gpkg: str = "GLOBAL_ALL_MTD_SPLIT.gpkg"
-    fid_col: str = "fid"
-    split_col: str = "split"
-    aerial_path_col: str = "aerial_rgbi"
-    target_path_col: str = "ground_truth"
+    fid_col: str = "patch_id"
+    split_col: str = "split_1"
+    aerial_path_col: str = "AERIAL_RGBI"
+    target_path_col: str = "AERIAL_LABEL-COSIA"
     repeats: int = 1
     crop_meters: float = 102.4
     grid_pos_enc: int | None = 160
