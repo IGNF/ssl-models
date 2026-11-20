@@ -1,8 +1,8 @@
-"""ViT building blocks for DINOv3-style models.
+"""ViT building blocks, shared by the MAE and DINOv3 models.
 
-Own implementation (no external DINOv3 code): 2D axial RoPE with coordinate
-augmentations, attention with optional key padding mask, GELU MLP / SwiGLU
-feed-forward, LayerNorm / RMSNorm, LayerScale and stochastic depth.
+Own implementation: 2D axial RoPE with coordinate augmentations, attention with
+optional key padding mask, GELU MLP / SwiGLU feed-forward, LayerNorm / RMSNorm,
+LayerScale and stochastic depth.
 
 RoPE is computed from explicit patch coordinates normalized to [-1, 1] within
 a view, so that tokens of different modalities covering the same location get
@@ -306,11 +306,15 @@ class Block(nn.Module):
 
 
 class Transformer(nn.Module):
-    """Stack of blocks, without final norm (owned by the backbone).
+    """Stack of blocks, with an optional final norm (`final_norm`).
 
     `drop_path` is either a float (uniform rate) or a list with one rate per
     block, so that a backbone split into several stacks can apply a single
     linear drop path schedule across all of them.
+
+    With `trunc_normal_init`, linear weights are initialized with a truncated
+    normal of std 0.02 and zero biases; otherwise the PyTorch default init is
+    kept (as in `vit_pytorch`).
     """
 
     def __init__(
@@ -326,6 +330,8 @@ class Transformer(nn.Module):
         qkv_bias: bool = True,
         proj_bias: bool = True,
         ffn_bias: bool = True,
+        final_norm: bool = False,
+        trunc_normal_init: bool = True,
     ) -> None:
         super().__init__()
         if isinstance(drop_path, float | int):
@@ -350,7 +356,9 @@ class Transformer(nn.Module):
                 for idx in range(depth)
             ],
         )
-        self.apply(init_weights)
+        self.norm = build_norm(norm, dim) if final_norm else nn.Identity()
+        if trunc_normal_init:
+            self.apply(init_weights)
 
     def forward(
         self,
@@ -360,7 +368,7 @@ class Transformer(nn.Module):
     ) -> Tensor:
         for block in self.blocks:
             x = block(x, rope, attn_mask)
-        return x
+        return self.norm(x)
 
 
 def init_weights(module: nn.Module) -> None:

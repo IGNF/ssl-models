@@ -1,19 +1,29 @@
 """MAE module. Adapted from clay foundation model: https://github.com/Clay-foundation/model."""
 
+from functools import partial
 from typing import Literal
 
 import torch
 from einops import rearrange
 from torch import Tensor, nn
-from vit_pytorch.vit import Transformer
 
 from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.conf.mask import MiMMaskConfig
+from ssl_models.layers.vit import Transformer
 from ssl_models.mim.mim import BaseMIM
 
 
 class MAE(BaseMIM):
-    """Masked Auto Encoder (MAE)."""
+    """Masked Auto Encoder (MAE).
+
+    The encoder (one stack per model name, then an optional shared stack of
+    `inter_depth` blocks) and the decoder are `Transformer` stacks. The encoder
+    and decoder outputs are normalized, as well as the outputs of the stacks per
+    model name before the shared stack if `inter_norm`. The defaults of the backbone options (no qkv bias, no
+    LayerScale, no drop path, PyTorch init) match the former `vit_pytorch`
+    implementation, except for the decoder MLP, now sized from `decoder_dim`
+    (formerly from `embed_dim`).
+    """
 
     def __init__(  # noqa: PLR0913
         self,
@@ -26,16 +36,22 @@ class MAE(BaseMIM):
         embed_dim: int,
         depth: int,
         heads: int,
-        dim_head: int,
         mlp_ratio: float,
         decoder_dim: int,
         decoder_depth: int,
         decoder_heads: int,
-        decoder_dim_head: int,
         decoder_mlp_ratio: float,
         type_head: Literal["linear", "attentive"] = "attentive",
         fac_abs_enc: float = 1.0,
         fac_date_enc: float = 1.0,
+        # backbone options
+        norm: Literal["layernorm", "rmsnorm"] = "layernorm",
+        ffn: Literal["mlp", "swiglu"] = "mlp",
+        layerscale_init: float | None = None,
+        drop_path: float = 0.0,
+        qkv_bias: bool = False,
+        inter_norm: bool = True,
+        trunc_normal_init: bool = False,
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         super().__init__(
@@ -50,52 +66,7 @@ class MAE(BaseMIM):
             fac_date_enc=fac_date_enc,
         )
 
-        self.encoder = nn.ModuleDict(
-            {
-                name_mod: Transformer(
-                    dim=embed_dim,
-                    depth=depth - inter_depth,
-                    heads=heads,
-                    dim_head=dim_head,
-                    mlp_dim=embed_dim * mlp_ratio,
-                )
-                for name_mod in self.name_models
-            },
-        )
-        self.enc_to_dec = nn.ModuleDict(
-            {
-                name_mod: (
-                    nn.Linear(embed_dim, decoder_dim)
-                    if embed_dim != decoder_dim
-                    else nn.Identity()
-                )
-                for name_mod in self.name_models
-            },
-        )
-        self.decoder = nn.ModuleDict(
-            {
-                name_mod: Transformer(
-                    dim=decoder_dim,
-                    depth=decoder_depth,
-                    heads=decoder_heads,
-                    dim_head=decoder_dim_head,
-                    mlp_dim=embed_dim * decoder_mlp_ratio,
-                )
-                for name_mod in self.name_models
-            },
-        )
-        if inter_depth:
-            self.encoder_inter = Transformer(
-                dim=embed_dim,
-                depth=inter_depth,
-                heads=heads,
-                dim_head=dim_head,
-                mlp_dim=embed_dim * mlp_ratio,
-            )
-        else:
-            self.encoder_inter = None
-
-        # masking parameters, and one encoder/decoder per model name
+        # masking parameters and model names (one encoder/decoder per name)
         num_dates_mod, num_dates_group = {}, {}
         for name_mod, name_group in dataset.groups:
             num_dates = dataset.inputs[name_mod].num_dates * self.len_bands[name_mod]
@@ -152,6 +123,64 @@ class MAE(BaseMIM):
             case _:
                 msg = f"Invalid fusion mode {fusion_mode}."
                 raise ValueError(msg)
+
+        # encoder stacks (uniform drop path rate over all blocks), and decoder
+        # stacks with the same block options
+        transformer = partial(
+            Transformer,
+            norm=norm,
+            ffn=ffn,
+            layerscale_init=layerscale_init,
+            drop_path=drop_path,
+            qkv_bias=qkv_bias,
+            trunc_normal_init=trunc_normal_init,
+        )
+        self.encoder = nn.ModuleDict(
+            {
+                name_mod: transformer(
+                    dim=embed_dim,
+                    heads=heads,
+                    mlp_ratio=mlp_ratio,
+                    depth=depth - inter_depth,
+                    final_norm=inter_norm or not inter_depth,
+                )
+                for name_mod in self.name_models
+            },
+        )
+        self.encoder_inter = (
+            transformer(
+                dim=embed_dim,
+                depth=inter_depth,
+                heads=heads,
+                mlp_ratio=mlp_ratio,
+                final_norm=True,
+            )
+            if inter_depth
+            else None
+        )
+        self.enc_to_dec = nn.ModuleDict(
+            {
+                name_mod: (
+                    nn.Linear(embed_dim, decoder_dim)
+                    if embed_dim != decoder_dim
+                    else nn.Identity()
+                )
+                for name_mod in self.name_models
+            },
+        )
+        self.decoder = nn.ModuleDict(
+            {
+                name_mod: transformer(
+                    dim=decoder_dim,
+                    depth=decoder_depth,
+                    heads=decoder_heads,
+                    mlp_ratio=decoder_mlp_ratio,
+                    drop_path=0.0,
+                    final_norm=True,
+                )
+                for name_mod in self.name_models
+            },
+        )
 
     def mask_struct(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         """Structural masking of modalities, band groups, dates."""
@@ -290,12 +319,10 @@ def mae_tiny(**kwargs) -> MAE:  # noqa: ANN003
         "embed_dim": 192,
         "depth": 12,
         "heads": 3,
-        "dim_head": 64,
         "mlp_ratio": 2,
         "decoder_dim": 512,
         "decoder_depth": 1,
         "decoder_heads": 16,
-        "decoder_dim_head": 32,
         "decoder_mlp_ratio": 4,
     }
     args.update(kwargs)
@@ -308,12 +335,10 @@ def mae_small(**kwargs) -> MAE:  # noqa: ANN003
         "embed_dim": 384,
         "depth": 12,
         "heads": 6,
-        "dim_head": 64,
         "mlp_ratio": 2,
         "decoder_dim": 512,
         "decoder_depth": 2,
         "decoder_heads": 16,
-        "decoder_dim_head": 32,
         "decoder_mlp_ratio": 4,
     }
     args.update(kwargs)
@@ -326,12 +351,10 @@ def mae_medium(**kwargs) -> MAE:  # noqa: ANN003
         "embed_dim": 768,
         "depth": 12,
         "heads": 12,
-        "dim_head": 64,
         "mlp_ratio": 4,
         "decoder_dim": 512,
         "decoder_depth": 3,
         "decoder_heads": 16,
-        "decoder_dim_head": 32,
         "decoder_mlp_ratio": 4,
     }
     args.update(kwargs)
@@ -344,12 +367,10 @@ def mae_large(**kwargs) -> MAE:  # noqa: ANN003
         "embed_dim": 1024,
         "depth": 24,
         "heads": 16,
-        "dim_head": 64,
         "mlp_ratio": 4,
         "decoder_dim": 512,
         "decoder_depth": 4,
         "decoder_heads": 16,
-        "decoder_dim_head": 32,
         "decoder_mlp_ratio": 4,
     }
     args.update(kwargs)

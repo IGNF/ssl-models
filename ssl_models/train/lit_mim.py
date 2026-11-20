@@ -49,6 +49,14 @@ class LitMiM(LitBase):
         ema_interval: Literal["epoch", "step"] = "epoch",
         ema_momentum: float | None = None,
         ema_momentum_end: float | None = None,
+        # mae args
+        norm: Literal["layernorm", "rmsnorm"] = "layernorm",
+        ffn: Literal["mlp", "swiglu"] = "mlp",
+        layerscale_init: float | None = None,
+        drop_path: float = 0.0,
+        qkv_bias: bool = False,
+        inter_norm: bool = True,
+        trunc_normal_init: bool = False,
         # mixmae args
         num_levels: Literal[3, 4] = 3,
         swin_version: Literal[1, 2] = 1,
@@ -116,6 +124,15 @@ class LitMiM(LitBase):
                 num_levels = 1
                 fac_abs_enc = 1.0  # abs pos encodings are necessary for MAE
                 fac_date_enc = 1.0 if use_date_enc else 0.0
+                backbone_args = {
+                    "norm": norm,
+                    "ffn": ffn,
+                    "layerscale_init": layerscale_init,
+                    "drop_path": drop_path,
+                    "qkv_bias": qkv_bias,
+                    "inter_norm": inter_norm,
+                    "trunc_normal_init": trunc_normal_init,
+                }
 
                 model_map = {
                     "tiny": mae_tiny,
@@ -132,6 +149,10 @@ class LitMiM(LitBase):
                     raise ValueError(msg)
                 fac_abs_enc = 1.0 if swin_abs_enc else 0.0  # optional abs pos encodings
                 fac_date_enc = 1.0 if use_date_enc else 0.0
+                backbone_args = {
+                    "swin_version": swin_version,
+                    "v2_attn": v2_attn,
+                }
 
                 model_map = {
                     "tiny": mixmae_tiny,
@@ -159,11 +180,10 @@ class LitMiM(LitBase):
                 "inter_depth": inter_depth,
                 "model": model,
                 "num_levels": num_levels,
-                "swin_version": swin_version,
-                "v2_attn": v2_attn,
                 "type_head": type_head,
                 "fac_abs_enc": fac_abs_enc,
                 "fac_date_enc": fac_date_enc,
+                **backbone_args,
             }
             self.model = model_map[model_size](**model_args)
         else:

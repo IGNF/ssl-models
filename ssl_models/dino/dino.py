@@ -56,7 +56,13 @@ def local_view_size(
 
 
 class DINOv3(nn.Module):
-    """Multi-modal RoPE ViT with CLS and register tokens."""
+    """Multi-modal RoPE ViT with CLS and register tokens.
+
+    The encoder is one stack per model name, then an optional shared stack of
+    `inter_depth` blocks, with a final norm on the encoder output. With
+    `inter_norm`, the outputs of the stacks per model name are also normalized
+    before the shared stack.
+    """
 
     def __init__(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         self,
@@ -73,6 +79,7 @@ class DINOv3(nn.Module):
         layerscale_init: float | None = 1e-5,
         drop_path: float = 0.3,
         patch_norm: bool = False,
+        inter_norm: bool = False,
         rope_base: float = 100.0,
         rope_shift: float | None = None,
         rope_jitter: float | None = None,
@@ -133,7 +140,13 @@ class DINOv3(nn.Module):
             drop_path=drop_path,
         )
         self.encoder = nn.ModuleDict(
-            {name: transformer(depth=depth - inter_depth) for name in name_models},
+            {
+                name: transformer(
+                    depth=depth - inter_depth,
+                    final_norm=inter_norm and bool(inter_depth),
+                )
+                for name in name_models
+            },
         )
         self.encoder_inter = transformer(depth=inter_depth) if inter_depth else None
 

@@ -54,6 +54,15 @@ class MiMConfig(ModelConfig):  # noqa: D101
     use_ema: bool = True
     condition: bool = False
     max_condition: int | None = None
+    # MAE backbone (see `ssl_models.mim.mae.MAE`), defaults match the former
+    # `vit_pytorch` implementation (except for the decoder MLP width)
+    norm: str = "layernorm"
+    ffn: str = "mlp"
+    layerscale_init: float | None = None
+    drop_path: float = 0.0
+    qkv_bias: bool = False
+    inter_norm: bool = True  # norm before the inter encoder
+    trunc_normal_init: bool = False
 
     augment: AugmentConfig = field(default_factory=AugmentConfig)
     mask: MiMMaskConfig = field(default_factory=MiMMaskConfig)
@@ -71,6 +80,7 @@ class DINOv3Config(ModelConfig):
     layerscale_init: float | None = 1e-5
     drop_path: float = 0.3
     patch_norm: bool = False
+    inter_norm: bool = False  # norm before the inter encoder
     rope_base: float = 100.0
     rope_shift: float | None = None
     rope_jitter: float | None = None
