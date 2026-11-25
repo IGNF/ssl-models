@@ -21,6 +21,7 @@ SPLIT_ALIASES = {
     "test": "test",
     "testing": "test",
 }
+RGB_NUM_BANDS = 3
 
 
 class COSIAHistoDataset(GenericDataset):
@@ -137,7 +138,19 @@ class COSIAHistoDataset(GenericDataset):
             meta["rgb_path"] = self._resolve_raster_path(self.rgb_paths[idx])
             meta["rgb_dates"] = self.default_dates
         if self.pan_paths is not None:
-            meta["pan_path"] = self._resolve_raster_path(self.pan_paths[idx])
+            pan_path = self.pan_paths[idx]
+            try:
+                pan_path = self._resolve_raster_path(pan_path)
+                meta["pan_fallback"] = False
+            except ValueError:
+                # Keep RGB-only patches usable by reading the RGB raster as a
+                # temporary PAN input, then synthesizing luminance in postprocess.
+                if self.rgb_paths is None:
+                    msg = "A PAN fallback requires RGB data."
+                    raise ValueError(msg) from None
+                pan_path = self._resolve_raster_path(self.rgb_paths[idx])
+                meta["pan_fallback"] = True
+            meta["pan_path"] = pan_path
             meta["pan_dates"] = self.default_dates
 
         target_path = self.target_paths[idx]
@@ -168,6 +181,14 @@ class COSIAHistoDataset(GenericDataset):
             "rgb_dates",
             meta.get("pan_dates", self.default_dates),
         )
+
+        if meta.get("pan_fallback", False) and "pan" in inputs:
+            rgb = inputs["rgb"]
+            if rgb.shape[1] != RGB_NUM_BANDS:
+                msg = f"PAN RGB fallback expects {RGB_NUM_BANDS} RGB bands, got {rgb.shape[1]}."
+                raise ValueError(msg)
+            weights = np.array([0.2126, 0.7152, 0.0722], dtype=rgb.dtype)
+            inputs["pan"] = np.average(rgb, axis=1, weights=weights)[:, None]
 
         return inputs
 
