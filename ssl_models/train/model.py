@@ -1,11 +1,14 @@
 """Code adapted from Clay Foundation Model: https://github.com/Clay-foundation/model."""
 
 import copy
+import json
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
 import torch
 from einops import rearrange
+from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from torch import Tensor
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
@@ -13,6 +16,8 @@ from torch.utils.data.distributed import DistributedSampler
 from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.conf.datasets import DatasetsConfig
 from ssl_models.conf.mask import MaskConfig
+from ssl_models.conf.utils import datasets_to_dict, json_default, mask_to_dict
+from ssl_models.hydra_utils import get_hydra_dir
 from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.ssl.mixmae import (
     mixmae_base,
@@ -54,6 +59,7 @@ class SSLModule(BaseModule):
     ) -> None:
         super().__init__(datasets)
         self.datasets = datasets
+        self.mask = mask
 
         match loss:
             case "l1":
@@ -188,6 +194,27 @@ class SSLModule(BaseModule):
             self.ema_model = None
 
         self.save_hyperparameters(ignore=["datasets", "mask"])
+
+    @rank_zero_only
+    def export(self, out_dir: Path | None = None) -> None:
+        """Export config and weights of model."""
+        if out_dir is None:
+            out_dir = get_hydra_dir() / "export"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        cfg = {
+            **self.model.init_kwargs,
+            "datasets": datasets_to_dict(self.datasets),
+            "mask": mask_to_dict(self.mask),
+        }
+        with (out_dir / "config.json").open("w") as file:
+            json.dump(cfg, file, indent=4, default=json_default)
+
+        state_dict = {
+            name_param: param.detach().cpu()
+            for name_param, param in self.model.state_dict().items()
+        }
+        torch.save(state_dict, out_dir / f"{self.hparams.model}.pth")
 
     def configure_optimizers(self) -> dict:
         """Configure optimizer."""

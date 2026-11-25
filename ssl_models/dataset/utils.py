@@ -8,6 +8,8 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+DATE_FORMAT_LEN = 8
+
 
 def dates_numpy(dates: list[datetime]) -> np.ndarray:
     """Convert list of dates to (year, day of year, hour) numpy array."""
@@ -35,7 +37,7 @@ def products_datetimes(products: list[str] | list[bytes], idx: int) -> np.ndarra
     if isinstance(products[0], str):
         datetimes = [
             datetime.strptime(  # noqa: DTZ007
-                product.split("_")[-idx][:8],
+                product.split("_")[-idx][:DATE_FORMAT_LEN],
                 "%Y%m%d",
             )
             for product in products
@@ -43,7 +45,7 @@ def products_datetimes(products: list[str] | list[bytes], idx: int) -> np.ndarra
     else:
         datetimes = [
             datetime.strptime(  # noqa: DTZ007
-                product.decode().split("_")[-idx][:8],
+                product.decode().split("_")[-idx][:DATE_FORMAT_LEN],
                 "%Y%m%d",
             )
             for product in products
@@ -55,7 +57,7 @@ def naip_datetimes(datetime_str: str) -> np.ndarray:
     """Convert naip string to list of datetime."""
     datetimes = [
         datetime.strptime(  # noqa: DTZ007
-            datetime_str.split("_")[-1][:8],
+            datetime_str.split("_")[-1][:DATE_FORMAT_LEN],
             "%Y%m%d",
         ),
     ]
@@ -67,11 +69,14 @@ def dict_datetimes(datetime_dict: dict | str, start: int = 0) -> np.ndarray:
     if not isinstance(datetime_dict, dict):
         datetime_dict = json.loads(datetime_dict.replace("'", '"'))
     datetimes = [
+        str(datetime_dict[str(idx)]) for idx in range(start, len(datetime_dict) + start)
+    ]
+    datetimes = [
         datetime.strptime(  # noqa: DTZ007
-            str(datetime_dict[str(idx)]),
-            "%Y%m%d",
+            datetime_str,
+            "%Y%m%d" if len(datetime_str) == DATE_FORMAT_LEN else "%Y%m%d %H:%M:%S",
         )
-        for idx in range(start, len(datetime_dict) + start)
+        for datetime_str in datetimes
     ]
     return dates_numpy(datetimes)
 
