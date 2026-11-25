@@ -96,6 +96,7 @@ class COSIAHistoConfig(DatasetConfig):  # noqa: D101
     fid_col: str = "patch_id"
     split_col: str = "split_1"
     aerial_path_col: str = "AERIAL_RGBI"
+    rgb_path_col: str | None = None
     target_path_col: str = "AERIAL_LABEL-COSIA"
     repeats: int = 1
     crop_meters: float = 102.4
@@ -105,23 +106,31 @@ class COSIAHistoConfig(DatasetConfig):  # noqa: D101
     # Merges the `cosia` classes from this id onwards into a single "other" class.
     remap_to_others_after_class: int | None = None
 
-    ref_input: str | None = "aerial"  # defines grid for raster targets
+    ref_input: str | None = "rgb"  # defines grid for raster targets
     log_inputs: list[str] = field(
-        default_factory=lambda: ["aerial"],
+        default_factory=lambda: ["rgb", "pan"],
     )  # logged input modalities
     filter_inputs: list[str] = field(
-        default_factory=lambda: ["aerial"],
+        default_factory=lambda: ["rgb", "pan"],
     )  # selected input modalities
     filter_targets: list[str] = field(
         default_factory=lambda: ["cosia"],
     )  # selected target modalities
 
-    aerial: InputRasterConfig = field(
+    rgb: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=512,
             patch_size=PatchSizeConfig(mae=16, mixmae=4),
-            bands=[[0, 1, 2, 3]],
-            norm_bands=[1, 3],
+            bands=[[0, 1, 2]],
+            norm_bands=[1, 1, 1],
+            norm_fac=255.0,
+        ),
+    )
+    pan: InputRasterConfig = field(
+        default_factory=lambda: InputRasterConfig(
+            image_size=512,
+            patch_size=PatchSizeConfig(mae=16, mixmae=4),
+            bands=1,
             norm_fac=255.0,
         ),
     )
@@ -155,6 +164,9 @@ class COSIAHistoConfig(DatasetConfig):  # noqa: D101
             name: list(remap) for name, (_, remap) in NOMENCLATURES.items()
         }
 
+        if "rgb" not in self.filter_inputs:
+            self.ref_input = "pan" if "pan" in self.filter_inputs else None
+
         n_kept = self.remap_to_others_after_class
         if n_kept is not None and not 1 <= n_kept < NUM_CLASSES:
             msg = (
@@ -173,7 +185,8 @@ class COSIAHistoConfig(DatasetConfig):  # noqa: D101
 
         super().__post_init__(
             resolutions_meters={
-                "aerial": 0.2,
+                "rgb": 0.2,
+                "pan": 0.2,
                 "cosia": 0.2,
                 "cosia_artif_large": 0.2,
                 "cosia_artif_medium": 0.2,

@@ -51,14 +51,20 @@ def test_tempetes_custom_remap_needs_matching_class_names():
     assert config.tempetes_remap.num_classes == 8
 
 
-def test_cosia_histo_aerial_bands():
-    default_aerial = COSIAHistoConfig().aerial
-    assert default_aerial.bands == [[0, 1, 2, 3]]
+def test_cosia_histo_modalities():
+    both = COSIAHistoConfig()
+    assert list(both.inputs) == ["rgb", "pan"]
+    assert both.ref_input == "rgb"
+    assert both.rgb.bands == [[0, 1, 2]]
+    assert both.pan.bands == 1
 
-    bands = [[3, 0, 1, 2]]
-    config = COSIAHistoConfig(aerial=replace(default_aerial, bands=bands))
-    assert config.inputs["aerial"].bands == bands
+    rgb = COSIAHistoConfig(filter_inputs=["rgb"])
+    assert list(rgb.inputs) == ["rgb"]
+    assert rgb.ref_input == "rgb"
 
+    pan = COSIAHistoConfig(filter_inputs=["pan"])
+    assert list(pan.inputs) == ["pan"]
+    assert pan.ref_input == "pan"
 
 def test_cosia_histo_targets():
     config = COSIAHistoConfig()

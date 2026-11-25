@@ -72,9 +72,13 @@ class COSIAHistoDataset(GenericDataset):
             use_arrow=True,
         )
 
+        required_cols = [dataset.fid_col, dataset.target_path_col]
+        rgb_col = dataset.rgb_path_col or dataset.aerial_path_col
+        if "rgb" in dataset.filter_inputs or "pan" in dataset.filter_inputs:
+            required_cols.append(rgb_col)
         self._check_required_cols(
             modalities,
-            [dataset.fid_col, dataset.aerial_path_col, dataset.target_path_col],
+            list(dict.fromkeys(required_cols)),
             table_name="modalities",
         )
         self._check_required_cols(
@@ -92,6 +96,14 @@ class COSIAHistoDataset(GenericDataset):
         data = data.loc[splits.replace(SPLIT_ALIASES) == stage]
 
         self.aerial_paths = data[dataset.aerial_path_col].tolist()
+        rgb_col = dataset.rgb_path_col or dataset.aerial_path_col
+        rgb_paths = data[rgb_col].tolist()
+        self.rgb_paths = rgb_paths if "rgb" in dataset.filter_inputs else None
+        self.pan_paths = (
+            [str(path).replace("RGB", "PAN") for path in rgb_paths]
+            if "pan" in dataset.filter_inputs
+            else None
+        )
         self.target_paths = data[dataset.target_path_col].tolist()
         self.base_length = len(data)
         self.repeats = dataset.repeats
@@ -120,10 +132,14 @@ class COSIAHistoDataset(GenericDataset):
             A dictionary containing paths and dates of each modality.
 
         """
-        meta = {
-            "aerial_path": self._resolve_raster_path(self.aerial_paths[idx]),
-            "aerial_dates": self.default_dates,
-        }
+        meta = {}
+        if self.rgb_paths is not None:
+            meta["rgb_path"] = self._resolve_raster_path(self.rgb_paths[idx])
+            meta["rgb_dates"] = self.default_dates
+        if self.pan_paths is not None:
+            meta["pan_path"] = self._resolve_raster_path(self.pan_paths[idx])
+            meta["pan_dates"] = self.default_dates
+
         target_path = self.target_paths[idx]
         # Unannotated patches have no label path.
         if self.ssl_phase != "pretrain" and isinstance(target_path, str):
@@ -148,7 +164,10 @@ class COSIAHistoDataset(GenericDataset):
             valid = mask != self.label_missing
             mask[valid] = lut[mask[valid].astype(np.int64)]
 
-        inputs["ref_date"] = meta["aerial_dates"]
+        inputs["ref_date"] = meta.get(
+            "rgb_dates",
+            meta.get("pan_dates", self.default_dates),
+        )
 
         return inputs
 
