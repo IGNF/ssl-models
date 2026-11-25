@@ -1,5 +1,8 @@
+from dataclasses import replace
+
 import pytest
 
+from ssl_models.conf.dataset.cosia_histo import NOMENCLATURES, COSIAHistoConfig
 from ssl_models.conf.dataset.flair import FLAIRConfig
 from ssl_models.conf.dataset.hi_ucd import HiUCDConfig
 from ssl_models.conf.dataset.pastis_hd import PASTISHDConfig
@@ -46,6 +49,51 @@ def test_tempetes_custom_remap_needs_matching_class_names():
         ),
     )
     assert config.tempetes_remap.num_classes == 8
+
+
+def test_cosia_histo_modalities():
+    both = COSIAHistoConfig()
+    assert list(both.inputs) == ["rgb", "pan"]
+    assert both.ref_input == "rgb"
+    assert both.rgb.bands == [[0, 1, 2]]
+    assert both.pan.bands == 1
+
+    rgb = COSIAHistoConfig(filter_inputs=["rgb"])
+    assert list(rgb.inputs) == ["rgb"]
+    assert rgb.ref_input == "rgb"
+
+    pan = COSIAHistoConfig(filter_inputs=["pan"])
+    assert list(pan.inputs) == ["pan"]
+    assert pan.ref_input == "pan"
+
+def test_cosia_histo_targets():
+    config = COSIAHistoConfig()
+    assert list(config.targets) == ["cosia"]
+    assert len(config.cosia.class_names) == config.cosia.num_classes == 18
+    assert config.class_remaps["cosia"] == [*range(18), -1]
+
+    names = list(NOMENCLATURES)
+    config = COSIAHistoConfig(filter_targets=["cosia", *names])
+    assert list(config.targets) == ["cosia", *names]
+    for name, num_classes in zip(names, [7, 6, 4]):
+        target = config.targets[name]
+        assert len(target.class_names) == target.num_classes == num_classes
+        assert len(config.class_remaps[name]) == 19
+        assert max(config.class_remaps[name]) == num_classes - 1
+        assert config.class_remaps[name][18] == -1
+
+
+def test_cosia_histo_remap_to_others():
+    config = COSIAHistoConfig(remap_to_others_after_class=2)
+    assert config.cosia.num_classes == 3
+    assert config.cosia.class_names == ["building", "greenhouse", "other"]
+    assert config.class_remaps["cosia"] == [0, 1, *[2] * 16, -1]
+
+
+@pytest.mark.parametrize("n_kept", [0, 18])
+def test_cosia_histo_remap_to_others_out_of_range(n_kept: int):
+    with pytest.raises(ValueError, match="remap_to_others_after_class"):
+        COSIAHistoConfig(remap_to_others_after_class=n_kept)
 
 
 def test_segmentation_datasets_have_class_names():

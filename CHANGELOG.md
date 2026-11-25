@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - add `average_precision` and `average_recall` for `segment` and `change_detect` targets.
 - log per-class IoU, F1, precision and recall, enabled with `run.log_per_class_metrics` (options: `per_class_metrics`, `per_class_stages`).
 - add optional `class_names` to target configs, set for FLAIR (cosia), Hi-UCD, PASTIS-HD, S2-NAIP and Tempetes.
+- add the COSIA-Histo dataset (`cosia_histo`) with the `cosia` target, its `remap_to_others_after_class` option, and the coarser `cosia_artif_{large,medium,small}` nomenclature targets.
 - label confusion matrix axes with class names, save one `.npy` per epoch, and allow disabling it with `run.log_confusion_matrix`.
 
 <!-- insertion marker -->
