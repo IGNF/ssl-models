@@ -6,18 +6,38 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 <!-- insertion marker -->
-## Unreleased
+## [v1.5.0](https://github.com/IGNF/ssl-models/releases/tag/v1.5.0) - 2026-11-25
 
-<small>[Compare with latest](https://github.com/IGNF/ssl-models/compare/v1.3.0...HEAD)</small>
+<small>[Compare with v1.4.0](https://github.com/IGNF/ssl-models/compare/v1.4.0...v1.5.0)</small>
 
 ### Features
 
-- add `average_precision` and `average_recall` for `segment` and `change_detect` targets.
-- log per-class IoU, F1, precision and recall, enabled with `run.log_per_class_metrics` (options: `per_class_metrics`, `per_class_stages`).
-- add optional `class_names` to target configs, set for FLAIR (cosia), Hi-UCD, PASTIS-HD, S2-NAIP and Tempetes.
-- label confusion matrix axes with class names, save one `.npy` per epoch, and allow disabling it with `run.log_confusion_matrix`.
+- label confusion matrix axes with class names and keep per-epoch npy ([57b1318](https://github.com/IGNF/ssl-models/commit/57b1318bb6e53e89302e8108da847d67154b0b7c) by Michael Vaccaro).
+- log per-class metrics with class names ([bd01963](https://github.com/IGNF/ssl-models/commit/bd01963a637ad38d545aebf530f47513b73d817b) by Michael Vaccaro).
+- add options to control per-class metric logging ([d26e41f](https://github.com/IGNF/ssl-models/commit/d26e41ff74468e63d59856b19425ec8523bc28ce) by Michael Vaccaro).
+- set class names for segmentation datasets ([e6ecdf4](https://github.com/IGNF/ssl-models/commit/e6ecdf4c36d636264b9855367bc0701bb7aa90b6) by Michael Vaccaro).
+- add optional class_names to TargetConfig ([d6cdd7e](https://github.com/IGNF/ssl-models/commit/d6cdd7e6e789febf651967c9bfd404d749d92d53) by Michael Vaccaro).
+- add per-class and macro precision/recall for segmentation ([7e3a678](https://github.com/IGNF/ssl-models/commit/7e3a678e27eabf3ee369da0d5ff37d8869eada31) by Michael Vaccaro).
+- add tempetes dataset (class and config) ([fb97a4a](https://github.com/IGNF/ssl-models/commit/fb97a4a95b49c4a4ea4486cb647ff6e39c056851) by Michael Vaccaro).
+- csv_dir for pastis hd ([9eb9d83](https://github.com/IGNF/ssl-models/commit/9eb9d836b47f9a8aa2a7a123b3cc8430c8e54013) by Michael Vaccaro).
 
-<!-- insertion marker -->
+### Bug Fixes
+
+- refresh generated class names after remap overrides ([c6cf11c](https://github.com/IGNF/ssl-models/commit/c6cf11c1f21e93e05ffa82bd2519184a7bf1746b) by michavcr).
+- show class names on the confusion matrix image, perpendicular to the axes ([71683bd](https://github.com/IGNF/ssl-models/commit/71683bd31b2de8c57988f92d84e8ee98b872f3b4) by Michael Vaccaro).
+- no tempetes label modality required for pretraining on tempetes dataset ([2cd4da5](https://github.com/IGNF/ssl-models/commit/2cd4da5816dfc77abe71e59b26f23aca3503a34d) by Michael Vaccaro).
+- signature aligment baseline's forward on mim's forward ([50a32d8](https://github.com/IGNF/ssl-models/commit/50a32d86e3f374b5553318c62927583215e4a7d8) by Michael Vaccaro).
+
+### Code Refactoring
+
+- drop redundant list casts of per-class options ([cda457e](https://github.com/IGNF/ssl-models/commit/cda457e4a4c7bad81162619a38002d3d3e1ca156) by Michael Vaccaro).
+- register dataset configs in a registry ([5c42579](https://github.com/IGNF/ssl-models/commit/5c425796a9774b63ee6e8dab992f53f20fbaf00a) by Michael Vaccaro).
+- move __getitem__ skeleton to GenericDataset ([6585fa5](https://github.com/IGNF/ssl-models/commit/6585fa55de25a634ad1bb2186ca3b91bd86c11f7) by Michael Vaccaro).
+
+## [v1.4.0](https://github.com/IGNF/ssl-models/releases/tag/v1.4.0) - 2026-10-16
+
+<small>[Compare with v1.3.0](https://github.com/IGNF/ssl-models/compare/v1.3.0...v1.4.0)</small>
+
 ## [v1.3.0](https://github.com/IGNF/ssl-models/releases/tag/v1.3.0) - 2025-12-04
 
 <small>[Compare with v1.2.0](https://github.com/IGNF/ssl-models/compare/v1.2.0...v1.3.0)</small>
