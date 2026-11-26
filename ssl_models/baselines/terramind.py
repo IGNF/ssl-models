@@ -227,14 +227,8 @@ class TerramindBaseline(BaseBaseline):
         self,
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
-    ) -> tuple[
-        dict[str, Tensor] | None,
-        None,
-        None,
-        dict[str, Tensor] | None,
-        dict[str, Tensor] | None,
-    ]:
-        """Terramind v1 forward pass.
+    ) -> dict[str, dict[str, Tensor]]:
+        """Terramind logits of the heads (probing / finetuning).
 
         Parameters
         ----------
@@ -246,7 +240,7 @@ class TerramindBaseline(BaseBaseline):
 
         Returns
         -------
-        tuple: Terramind's outputs.
+        dict: "logits", the logits of the heads, per target.
 
         """
         x_smashed = self._smash_dates(batch)
@@ -266,4 +260,4 @@ class TerramindBaseline(BaseBaseline):
             x_enc = self._add_date_encodings(x_enc, dates, ref_date)
 
         logits = self.compute_logits(x_enc)
-        return batch, None, None, x_enc, logits
+        return {"logits": logits}

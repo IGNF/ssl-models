@@ -209,14 +209,8 @@ class SatMAEBaseline(BaseBaseline):
         self,
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
-    ) -> tuple[
-        dict[str, Tensor] | None,
-        None,
-        None,
-        dict[str, Tensor] | None,
-        dict[str, Tensor] | None,
-    ]:
-        """SatMAE forward pass.
+    ) -> dict[str, dict[str, Tensor]]:
+        """SatMAE logits of the heads (probing / finetuning).
 
         Parameters
         ----------
@@ -228,7 +222,7 @@ class SatMAEBaseline(BaseBaseline):
 
         Returns
         -------
-        tuple: SatMAE's outputs.
+        dict: "logits", the logits of the heads, per target.
 
         """
         output_satmae = self.encoder.forward_encoder(
@@ -240,7 +234,7 @@ class SatMAEBaseline(BaseBaseline):
         x_enc["s2"] = output_satmae
 
         logits = self.compute_logits(x_enc)
-        return batch, None, None, x_enc, logits
+        return {"logits": logits}
 
 
 class MaskedAutoencoderViT(nn.Module):

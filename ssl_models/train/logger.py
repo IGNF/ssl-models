@@ -258,22 +258,30 @@ class MetricsLogger(Callback):
         batch_idx: int,  # noqa: ARG002
         dataloader_idx: int = 0,  # noqa: ARG002
     ) -> None:
-        """Log train loss."""
+        """Log train loss, and the other scalar outputs (e.g. its components)."""
         match trainer.ssl_phase:
             case "pretrain":
-                name = "loss_rec"
+                name_loss = "loss_rec"
             case "probe" | "finetune":
-                name = "loss_pred"
+                name_loss = "loss_pred"
 
-        pl_module.log(
-            name=f"{trainer.ssl_phase}_{name}/step_train",
-            value=outputs["loss"] * trainer.accumulate_grad_batches,
-            on_step=True,
-            on_epoch=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
+        scalars = {
+            name: value
+            for name, value in outputs.items()
+            if isinstance(value, Tensor | float)
+        }
+        # only the loss is divided by the accumulation steps in Lightning
+        scalars[name_loss] = scalars.pop("loss") * trainer.accumulate_grad_batches
+        for name, value in scalars.items():
+            pl_module.log(
+                name=f"{trainer.ssl_phase}_{name}/step_train",
+                value=value,
+                on_step=True,
+                on_epoch=False,
+                prog_bar=True,
+                logger=True,
+                sync_dist=True,
+            )
 
     @rank_zero_only
     def log_confmat(
@@ -291,9 +299,9 @@ class MetricsLogger(Callback):
         self,
         pl_module: LightningModule,
         name: str,
-        value: Tensor,
+        value: Tensor | float,
     ) -> None:
-        """Log accuracy metric."""
+        """Log epoch metric."""
         pl_module.log(
             name=name,
             value=value,

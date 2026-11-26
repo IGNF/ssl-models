@@ -5,10 +5,12 @@ from functools import partial
 from typing import Literal
 
 import torch
+import torch.nn.functional as F  # noqa: N812
 from einops import rearrange
 from torch import Tensor, nn
 
 from ssl_models.layers.embed import PixelifyBands
+from ssl_models.layers.vit import init_weights
 
 
 class Head(nn.Module, ABC):
@@ -47,7 +49,10 @@ class AttentiveReduce(nn.Module):
     def forward(
         self,
         x: Tensor,
+        mask: Tensor | None = None,
     ) -> Tensor:
+        """Reduce x [B, L, C] to [B, C], over the tokens with mask [B, L] True
+        (all of them if None)."""
         out = self.norm(x)
 
         q = rearrange(self.query, "(h d) -> 1 h 1 d", h=self.heads)
@@ -56,6 +61,8 @@ class AttentiveReduce(nn.Module):
         v = rearrange(v, "b l (h d) -> b h l d", h=self.heads)
 
         dots = torch.matmul(q, k.transpose(-1, -2)) * self.scale
+        if mask is not None:
+            dots = dots.masked_fill(~mask[:, None, None, :], float("-inf"))
         attn = self.softmax(dots)
 
         out = torch.matmul(attn, v)
@@ -128,3 +135,38 @@ class PixelifyHead(PixelifyBands, Head):
         return super().forward(  # method used is from the first listed inherited class
             out,
         )
+
+
+class DINOHead(nn.Module):
+    """MLP projection, L2-normalized bottleneck, then cosine to prototypes.
+
+    The prototypes are L2-normalized in the forward pass, which is equivalent
+    to a weight-normalized last layer with fixed unit norm. Logits are thus
+    cosine similarities in [-1, 1].
+    """
+
+    def __init__(
+        self,
+        in_dim: int,
+        num_prototypes: int,
+        hidden_dim: int = 2048,
+        bottleneck_dim: int = 256,
+        num_layers: int = 3,
+    ) -> None:
+        super().__init__()
+        if num_layers == 1:
+            layers = [nn.Linear(in_dim, bottleneck_dim)]
+        else:
+            layers = [nn.Linear(in_dim, hidden_dim), nn.GELU()]
+            for _ in range(num_layers - 2):
+                layers += [nn.Linear(hidden_dim, hidden_dim), nn.GELU()]
+            layers.append(nn.Linear(hidden_dim, bottleneck_dim))
+        self.mlp = nn.Sequential(*layers)
+        self.mlp.apply(init_weights)
+
+        self.prototypes = nn.Parameter(torch.empty(num_prototypes, bottleneck_dim))
+        nn.init.trunc_normal_(self.prototypes, std=0.02)
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = F.normalize(self.mlp(x), dim=-1, eps=1e-6)
+        return F.linear(x, F.normalize(self.prototypes, dim=-1, eps=1e-6))

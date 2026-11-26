@@ -41,9 +41,9 @@ def test_crops_aligned_across_modalities():
     torch.manual_seed(0)
     augment = Augment(
         fake_dataset({"high": 150, "low": 6}, local_sizes={"high": 60, "low": 4}),
-        n_global=2,
+        num_global=2,
         global_scale=[0.32, 1.0],
-        n_local=2,
+        num_local=2,
         local_scale=[0.05, 0.32],
     )
     out = augment(coordinate_batch({"high": 300, "low": 30}))
@@ -61,7 +61,7 @@ def test_crops_aligned_across_modalities():
 def test_views_stacked_sample_major():
     """Views are stacked sample-major, other entries repeated per view."""
     torch.manual_seed(0)
-    augment = Augment(fake_dataset({"a": 16}), n_global=3, global_scale=[0.3, 1])
+    augment = Augment(fake_dataset({"a": 16}), num_global=3, global_scale=[0.3, 1])
     batch = coordinate_batch({"a": 32}, batch_size=2)
     batch["a_dates"] = torch.arange(2 * 2 * 3).reshape(2, 2, 3)
     out = augment(batch)
@@ -156,8 +156,8 @@ def test_local_views_keys():
     """Local views at `{key}_local` (dates and raster targets included)."""
     augment = Augment(
         fake_dataset({"img": 16}, targets=("seg",), local_sizes={"img": 8}),
-        n_global=2,
-        n_local=3,
+        num_global=2,
+        num_local=3,
     )
     batch = coordinate_batch({"img": 32, "seg": 32}, batch_size=2, num_dates=1)
     batch["img_dates"] = torch.zeros(2, 1, 3)

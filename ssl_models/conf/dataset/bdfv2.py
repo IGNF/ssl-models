@@ -45,7 +45,7 @@ class BDFV2Config(DatasetConfig):  # noqa: D101
     aerial: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=250,
-            patch_size=PatchSizeConfig(mae=10, mixmae=2),
+            patch_size=PatchSizeConfig(mae=10),
             bands=[[0, 1, 2, 3]],
             norm_bands=[3, 1],
             norm_fac=255.0,
@@ -54,7 +54,7 @@ class BDFV2Config(DatasetConfig):  # noqa: D101
     dem: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=250,
-            patch_size=PatchSizeConfig(mae=25, mixmae=5),
+            patch_size=PatchSizeConfig(mae=25),
             bands=2,
             norm_fac=1000.0,
             rescale_elev=True,
@@ -63,7 +63,7 @@ class BDFV2Config(DatasetConfig):  # noqa: D101
     s2: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=5,
-            patch_size=PatchSizeConfig(mae=1, mixmae=1),
+            patch_size=PatchSizeConfig(mae=1),
             bands=10,
             norm_bands=[4, 4, 2],
             num_dates=12,

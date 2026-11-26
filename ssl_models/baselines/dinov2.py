@@ -371,14 +371,8 @@ class Dinov2Baseline(BaseBaseline):
         self,
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
-    ) -> tuple[
-        dict[str, Tensor] | None,
-        None,
-        None,
-        dict[str, Tensor] | None,
-        dict[str, Tensor] | None,
-    ]:
-        """Dinov2 forward pass.
+    ) -> dict[str, dict[str, Tensor]]:
+        """DinoV2 logits of the heads (probing / finetuning).
 
         Parameters
         ----------
@@ -390,7 +384,7 @@ class Dinov2Baseline(BaseBaseline):
 
         Returns
         -------
-        tuple: DinoV2's outputs.
+        dict: "logits", the logits of the heads, per target.
 
         """
         group_batch = self.group(batch)
@@ -415,4 +409,4 @@ class Dinov2Baseline(BaseBaseline):
             x_enc = self._add_date_encodings(x_enc, dates, ref_date)
 
         logits = self.compute_logits(x_enc)
-        return batch, None, None, x_enc, logits
+        return {"logits": logits}

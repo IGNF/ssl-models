@@ -100,7 +100,12 @@ class BaseBaseline(Module, ABC):
             fusion_mode=self.fusion_mode,
             groups=self.dataset.groups,
             num_dates=self.num_dates,
-            grid_size=self.grid_size,
+            num_tokens=[
+                {
+                    name_mod: self.grid_size[name_mod] ** 2
+                    for name_mod in self.grid_size
+                },
+            ],
         )
 
         self.enc_date_encoding = {

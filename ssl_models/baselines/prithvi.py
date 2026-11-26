@@ -212,14 +212,8 @@ class PrithviBaseline(BaseBaseline):
         self,
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
-    ) -> tuple[
-        dict[str, Tensor] | None,
-        None,
-        None,
-        dict[str, Tensor] | None,
-        dict[str, Tensor] | None,
-    ]:
-        """Prithvi v1/v2 forward pass.
+    ) -> dict[str, dict[str, Tensor]]:
+        """Prithvi logits of the heads (probing / finetuning).
 
         Parameters
         ----------
@@ -231,7 +225,7 @@ class PrithviBaseline(BaseBaseline):
 
         Returns
         -------
-        tuple: Prithvi's outputs.
+        dict: "logits", the logits of the heads, per target.
 
         """
         s2_input = batch["s2"].transpose(1, 2)  # (B, D, C, H, W) -> (B, C, D, H, W)
@@ -251,4 +245,4 @@ class PrithviBaseline(BaseBaseline):
         x_enc["s2"] = output_prithvi
 
         logits = self.compute_logits(x_enc)
-        return batch, None, None, x_enc, logits
+        return {"logits": logits}

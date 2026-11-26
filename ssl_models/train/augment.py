@@ -26,9 +26,19 @@ import torch.nn.functional as F  # noqa: N812
 from torch import Tensor
 
 from ssl_models.conf.dataset.utils import DatasetConfig
-from ssl_models.dino.dino import dino_patch_size, local_view_size
 
 REF_BLUR_SIZE = 224  # image size of reference for the blur sigma range
+
+
+def local_view_size(
+    image_size: int,
+    patch_size: int,
+    local_ratio: float,
+    min_patches: int = 2,
+) -> int:
+    """Local view size: image_size * local_ratio, as a multiple of patch_size."""
+    local_size = round(image_size * local_ratio / patch_size) * patch_size
+    return min(max(local_size, min_patches * patch_size), image_size)
 
 
 class Augment:
@@ -45,10 +55,10 @@ class Augment:
         contrast: float = 0.0,
         blur_sigma: Sequence[float] = (0.1, 2.0),
         blur_min_size: int = 32,
-        n_global: int = 1,
+        num_global: int = 1,
         global_scale: Sequence[float] = (1.0, 1.0),
         global_blur_probs: Sequence[float] = (0.0,),
-        n_local: int = 0,
+        num_local: int = 0,
         local_scale: Sequence[float] = (0.05, 0.32),
         local_blur_probs: Sequence[float] = (0.0,),
         local_size_ratio: float = 0.4375,
@@ -68,11 +78,11 @@ class Augment:
             contrast: contrast jitter amplitude.
             blur_sigma: blur sigma range, for a view size of `REF_BLUR_SIZE`.
             blur_min_size: no blur below this view size.
-            n_global: number of global views.
+            num_global: number of global views.
             global_scale: area fraction range of the global crops ([1, 1]: no crop).
             global_blur_probs: blur probability of each global view (the last value
                 is used for the remaining views).
-            n_local: number of local views.
+            num_local: number of local views.
             local_scale: area fraction range of the local crops.
             local_blur_probs: blur probability of each local view.
             local_size_ratio: local view size / image size, for the modalities
@@ -89,10 +99,10 @@ class Augment:
         self.contrast = contrast
         self.blur_sigma = tuple(blur_sigma)
         self.blur_min_size = blur_min_size
-        self.n_global = n_global
+        self.num_global = num_global
         self.global_scale = tuple(global_scale)
         self.global_blur_probs = tuple(global_blur_probs)
-        self.n_local = n_local
+        self.num_local = num_local
         self.local_scale = tuple(local_scale)
         self.local_blur_probs = tuple(local_blur_probs)
         self.local_size_ratio = local_size_ratio
@@ -104,11 +114,11 @@ class Augment:
                 {
                     name_mod: mod.local_size
                     or local_view_size(
-                        mod.image_size, dino_patch_size(mod), local_size_ratio
+                        mod.image_size, mod.patch_size.dino, local_size_ratio
                     )
                     for name_mod, mod in dataset.inputs.items()
                 }
-                if n_local
+                if num_local
                 else {}
             ),
         }
@@ -141,15 +151,15 @@ class Augment:
         size: tuple[int, int],
         mode: str,
     ) -> Tensor:
-        """Crop [B, T, C, H, W] with boxes theta (None: full extent) to size."""
-        B, T, C = x.shape[:3]  # noqa: N806
+        """Crop [B, D, C, H, W] with boxes theta (None: full extent) to size."""
+        B, D, C, _, _ = x.shape
         x = x.flatten(1, 2)
         if theta is None:
             if tuple(x.shape[-2:]) != tuple(size):
                 x = F.interpolate(x, size=size, mode=mode)
-            return x.unflatten(1, (T, C))
+            return x.unflatten(1, (D, C))
 
-        grid = F.affine_grid(theta, (B, T * C, *size), align_corners=False)
+        grid = F.affine_grid(theta, (B, D * C, *size), align_corners=False)
         x = F.grid_sample(
             x.float(),
             grid,
@@ -157,7 +167,7 @@ class Augment:
             padding_mode="border",
             align_corners=False,
         )
-        return x.unflatten(1, (T, C))
+        return x.unflatten(1, (D, C))
 
     @staticmethod
     def apply_flips(x: Tensor, flips: Tensor) -> Tensor:
@@ -200,7 +210,7 @@ class Augment:
 
         `prob` is a float or a per-sample [B] tensor.
         """
-        B, T, C, H, W = x.shape  # noqa: N806
+        B, D, C, H, W = x.shape
         device = x.device
         blur_sigma = self.blur_sigma
         sigma_fac = H / REF_BLUR_SIZE
@@ -217,14 +227,14 @@ class Augment:
         kernel = kernel / kernel.sum(dim=1, keepdim=True)
         identity = (pos == 0).to(x.dtype).expand(B, -1)
         kernel = torch.where(active[:, None], kernel, identity)  # [B, k]
-        kernel = kernel.repeat_interleave(T * C, dim=0)  # [B * T * C, k]
+        kernel = kernel.repeat_interleave(D * C, dim=0)  # [B * D * C, k]
 
-        y = x.reshape(1, B * T * C, H, W)
+        y = x.reshape(1, B * D * C, H, W)
         y = F.pad(y, (half, half, 0, 0), mode="reflect")
-        y = F.conv2d(y, kernel[:, None, None, :], groups=B * T * C)
+        y = F.conv2d(y, kernel[:, None, None, :], groups=B * D * C)
         y = F.pad(y, (0, 0, half, half), mode="reflect")
-        y = F.conv2d(y, kernel[:, None, :, None], groups=B * T * C)
-        return y.reshape(B, T, C, H, W)
+        y = F.conv2d(y, kernel[:, None, :, None], groups=B * D * C)
+        return y.reshape(B, D, C, H, W)
 
     def make_views(  # noqa: PLR0913
         self,
@@ -310,37 +320,40 @@ class Augment:
         self,
         batch: dict[str, Tensor],
         random: bool = True,
+        multi_view: bool = True,
     ) -> dict[str, Tensor]:
         """Augment a batch into global (and local) views.
 
         Args:
-            batch: modalities [B, T, C, H, W], all covering the same extent, and
+            batch: modalities [B, D, C, H, W], all covering the same extent, and
                 other entries (dates, targets, ...) with a leading batch dim.
             random: apply random crops, jitter and blur.
+            multi_view: make the `num_global` global and `num_local` local views,
+                otherwise a single global view.
 
         Returns:
-            Batch with the same keys as the input one, holding the `n_global` global
-            views stacked sample-major (`out[k].unflatten(0, (B, n_global))`):
-            modalities [B * n_global, T, C, size, size] at the image sizes, raster
-            targets transformed, other entries repeated. With `n_local` > 0, the
+            Batch with the same keys as the input one, holding the `num_global` global
+            views stacked sample-major (`out[k].unflatten(0, (B, num_global))`):
+            modalities [B * num_global, D, C, size, size] at the image sizes, raster
+            targets transformed, other entries repeated. With `num_local` > 0, the
             local views are added likewise at `{key}_local` for all entries
             (modalities at the local sizes, e.g. `{name_mod}_dates_local`), stacked
-            sample-major ([B * n_local, ...]). With a single global view and
+            sample-major ([B * num_local, ...]). With a single global view and
             no local view (default), a batch like the input one.
 
         """
         views = self.make_views(
             batch,
-            self.n_global,
+            self.num_global if multi_view else 1,
             self.global_scale,
             self.global_blur_probs,
             is_global=True,
             random=random,
         )
-        if self.n_local > 0:
+        if multi_view and self.num_local > 0:
             local = self.make_views(
                 batch,
-                self.n_local,
+                self.num_local,
                 self.local_scale,
                 self.local_blur_probs,
                 is_global=False,

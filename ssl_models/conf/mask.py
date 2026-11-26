@@ -4,11 +4,10 @@ from dataclasses import dataclass, field
 
 
 @dataclass
-class MiMMaskConfig:
-    """MiM masking, see `ssl_models.train.lit_mim.LitMiM`."""
+class MAEMaskConfig:
+    """MAE masking, see `ssl_models.ssl.mae.MAE`."""
 
     mask_ratio: float = 0.75
-    nb_mix_images: int = 4
     mask_scale: float = 0.0
     mask_mod: float | None = 0.25
     mask_bands: float | None = None
@@ -20,7 +19,7 @@ class MiMMaskConfig:
 class DINOv3MaskConfig:
     """iBOT masking and per-view drop of modalities / dates.
 
-    See `ssl_models.train.lit_dino.LitDINOv3`.
+    See `ssl_models.ssl.dino.DINOv3`.
     """
 
     ibot_mask_prob: float = 0.5

@@ -343,14 +343,8 @@ class DOFABaseline(BaseBaseline):
         self,
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
-    ) -> tuple[
-        dict[str, Tensor] | None,
-        None,
-        None,
-        dict[str, Tensor] | None,
-        dict[str, Tensor] | None,
-    ]:
-        """DOFA forward pass.
+    ) -> dict[str, dict[str, Tensor]]:
+        """DOFA logits of the heads (probing / finetuning).
 
         Parameters
         ----------
@@ -362,7 +356,7 @@ class DOFABaseline(BaseBaseline):
 
         Returns
         -------
-        tuple: DOFA's outputs.
+        dict: "logits", the logits of the heads, per target.
 
         """
         group_batch = self.group(batch)
@@ -410,7 +404,7 @@ class DOFABaseline(BaseBaseline):
             x_enc = self._add_date_encodings(x_enc, dates, ref_date)
 
         logits = self.compute_logits(x_enc)
-        return batch, None, None, x_enc, logits
+        return {"logits": logits}
 
 
 # Copyright (c) Microsoft Corporation. All rights reserved.

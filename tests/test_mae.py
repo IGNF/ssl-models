@@ -2,7 +2,7 @@ import itertools
 
 import pytest
 
-from ssl_models.mim.mae import mae_large, mae_medium, mae_small, mae_tiny
+from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
 
 
 @pytest.fixture()
@@ -27,9 +27,7 @@ def test_mae(dataset_treesat, mask, model_map, model_size, fusion_mode):
         "dataset": dataset_treesat,
         "mask": mask,
         "fusion_mode": fusion_mode,
-        "model": "mae",
         "inter_depth": 0,
-        "num_levels": 1,
         "type_head": "attentive",
         "fac_abs_enc": 1.0,
         "fac_date_enc": 1.0,
@@ -59,9 +57,7 @@ def test_mae_arch(
         "dataset": dataset_treesat,
         "mask": mask,
         "fusion_mode": "mod",
-        "model": "mae",
         "inter_depth": 0,
-        "num_levels": 1,
         "type_head": type_head,
         "fac_abs_enc": fac_abs_enc,
         "fac_date_enc": fac_date_enc,

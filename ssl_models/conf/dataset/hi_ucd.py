@@ -39,7 +39,7 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
     image_1: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=512,
-            patch_size=PatchSizeConfig(mae=32, mixmae=8),
+            patch_size=PatchSizeConfig(mae=32),
             bands=3,
             norm_fac=255.0,
         ),
@@ -47,7 +47,7 @@ class HiUCDConfig(DatasetConfig):  # noqa: D101
     image_2: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=512,
-            patch_size=PatchSizeConfig(mae=32, mixmae=8),
+            patch_size=PatchSizeConfig(mae=32),
             bands=3,
             norm_fac=255.0,
         ),

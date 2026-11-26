@@ -8,7 +8,7 @@ from clearml import Task
 from ssl_models import LOGGER
 from ssl_models.conf.data import DataConfig
 from ssl_models.conf.dataset.utils import DatasetConfig
-from ssl_models.conf.model import BaselineConfig, DINOv3Config, MiMConfig
+from ssl_models.conf.model import BaselineConfig, DINOv3Config, MAEConfig
 from ssl_models.conf.opt import OptFinetuneConfig, OptPretrainConfig, OptProbeConfig
 from ssl_models.conf.run import RunConfig
 from ssl_models.conf.trainer import TrainerConfig
@@ -24,7 +24,7 @@ def run_experiment(
     opt_finetune: OptFinetuneConfig,
     dataset: DatasetConfig,
     data: DataConfig,
-    model: MiMConfig | DINOv3Config | BaselineConfig,
+    model: MAEConfig | DINOv3Config | BaselineConfig,
     trainer: TrainerConfig,
 ) -> None:
     """Run experiment, with arguments set up using hydra zen."""

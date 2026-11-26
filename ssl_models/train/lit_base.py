@@ -30,9 +30,6 @@ RGB_BANDS = 3
 class LitBase(LightningModule, ABC):
     """Lightning base module."""
 
-    # random augmentations (crops, jitter, blur) also at val/test
-    augment_eval: bool = False
-
     def __init__(
         self, dataset: DatasetConfig, augment: AugmentConfig | DINOv3AugmentConfig
     ) -> None:
@@ -251,14 +248,14 @@ class LitBase(LightningModule, ABC):
         """
         if self.ema_interval == "step":
             # called after the optimizer step, which increments `global_step`
-            update, n_updates = self.global_step - 1, self.total_steps()
+            update, num_updates = self.global_step - 1, self.total_steps()
         else:
-            update, n_updates = self.current_epoch, self.trainer.max_epochs
+            update, num_updates = self.current_epoch, self.trainer.max_epochs
         start = self.ema_momentum
         if start is None:
-            start = 1 - 1 / (0.2 * n_updates)
+            start = 1 - 1 / (0.2 * num_updates)
         end = start if self.ema_momentum_end is None else self.ema_momentum_end
-        return cosine(start, end, update, n_updates)
+        return cosine(start, end, update, num_updates)
 
     @torch.no_grad()
     def update_ema(self) -> None:
@@ -406,7 +403,7 @@ class LitBase(LightningModule, ABC):
         else:
             model = self.model
 
-        batch, _, _, _, logits = model(batch, ssl_phase=self.trainer.ssl_phase)
+        logits = model(batch, ssl_phase=self.trainer.ssl_phase)["logits"]
         loss_pred = self.compute_loss_pred(batch, logits, stage=stage)
         log_inputs, log_preds, log_targets = self.compute_logs_pred(
             batch,
@@ -428,8 +425,14 @@ class LitBase(LightningModule, ABC):
     ) -> dict[str, torch.Tensor]:
         """Shared step for training/validation."""
         # augment (resize and rescale included) for all models here: global views
-        # at the keys of the batch, local views (if any) at `{key}_local`
-        batch = self.augment(batch, random=stage == "train" or self.augment_eval)
+        # at the keys of the batch, local views (if any) at `{key}_local`, only
+        # for pretraining (a single global view for probing/finetuning); random
+        # crops, jitter and blur at train only (flips at all stages)
+        batch = self.augment(
+            batch,
+            random=stage == "train",
+            multi_view=self.trainer.ssl_phase == "pretrain",
+        )
 
         match self.trainer.ssl_phase:
             case "pretrain":

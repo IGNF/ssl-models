@@ -11,23 +11,16 @@ from torch.utils.data.distributed import DistributedSampler
 
 from ssl_models.conf.augment import AugmentConfig
 from ssl_models.conf.dataset.utils import DatasetConfig
-from ssl_models.conf.loss import MiMLossConfig
-from ssl_models.conf.mask import MiMMaskConfig
-from ssl_models.mim.mae import mae_large, mae_medium, mae_small, mae_tiny
-from ssl_models.mim.mixmae import (
-    mixmae_base,
-    mixmae_huge,
-    mixmae_large,
-    mixmae_small,
-    mixmae_tiny,
-)
+from ssl_models.conf.loss import MAELossConfig
+from ssl_models.conf.mask import MAEMaskConfig
+from ssl_models.ssl.mae import mae_large, mae_medium, mae_small, mae_tiny
 from ssl_models.train.condition_metric import ConditionMetric
 from ssl_models.train.lit_base import LitBase
 
 torch.set_float32_matmul_precision(precision="medium")
 
 
-class LitMiM(LitBase):
+class LitMAE(LitBase):
     """Lightning SSL module."""
 
     def __init__(  # noqa: PLR0913, PLR0915, C901, PLR0912
@@ -35,12 +28,11 @@ class LitMiM(LitBase):
         # shared args
         dataset: DatasetConfig,
         augment: AugmentConfig,
-        mask: MiMMaskConfig,
-        loss: MiMLossConfig,
+        mask: MAEMaskConfig,
+        loss: MAELossConfig,
         fusion_mode: Literal["msgfm", "shared", "monotemp", "mod", "group"],
         inter_depth: int,
-        model: Literal["mae", "mixmae"],
-        model_size: Literal["tiny", "small", "base", "medium", "large", "huge"],
+        model_size: Literal["tiny", "small", "medium", "large"],
         type_head: Literal["linear", "attentive"] = "attentive",
         condition: bool = False,
         max_condition: int | None = None,
@@ -49,7 +41,7 @@ class LitMiM(LitBase):
         ema_interval: Literal["epoch", "step"] = "epoch",
         ema_momentum: float | None = None,
         ema_momentum_end: float | None = None,
-        # mae args
+        # backbone args
         norm: Literal["layernorm", "rmsnorm"] = "layernorm",
         ffn: Literal["mlp", "swiglu"] = "mlp",
         layerscale_init: float | None = None,
@@ -57,15 +49,18 @@ class LitMiM(LitBase):
         qkv_bias: bool = False,
         inter_norm: bool = True,
         trunc_normal_init: bool = False,
-        # mixmae args
-        num_levels: Literal[3, 4] = 3,
-        swin_version: Literal[1, 2] = 1,
-        v2_attn: bool = True,
-        swin_abs_enc: bool = False,
+        patch_norm: bool = True,
+        pos_enc: Literal["abs", "rope"] = "abs",
+        use_cls: bool = False,
+        num_registers: int = 0,
+        rope_base: float = 100.0,
+        rope_shift: float | None = None,
+        rope_jitter: float | None = None,
+        rope_rescale: float | None = None,
     ) -> None:
         super().__init__(dataset=dataset, augment=augment)
 
-        loss = loss or MiMLossConfig()
+        loss = loss or MAELossConfig()
         match loss.name:
             case "l1":
                 self.norm_pix_loss = None
@@ -119,76 +114,38 @@ class LitMiM(LitBase):
             for name_mod, mod in self.dataset.inputs.items()
         }
 
-        match model:
-            case "mae":
-                num_levels = 1
-                fac_abs_enc = 1.0  # abs pos encodings are necessary for MAE
-                fac_date_enc = 1.0 if use_date_enc else 0.0
-                backbone_args = {
-                    "norm": norm,
-                    "ffn": ffn,
-                    "layerscale_init": layerscale_init,
-                    "drop_path": drop_path,
-                    "qkv_bias": qkv_bias,
-                    "inter_norm": inter_norm,
-                    "trunc_normal_init": trunc_normal_init,
-                }
-
-                model_map = {
-                    "tiny": mae_tiny,
-                    "small": mae_small,
-                    "medium": mae_medium,
-                    "large": mae_large,
-                }
-            case "mixmae":
-                if num_levels not in (3, 4):
-                    msg = f"Invalid number of levels {num_levels}. Expected '3' or '4'."
-                    raise ValueError(msg)
-                if swin_version not in (1, 2):
-                    msg = f"Invalid swin version {swin_version}. Expected '1' or '2'"
-                    raise ValueError(msg)
-                fac_abs_enc = 1.0 if swin_abs_enc else 0.0  # optional abs pos encodings
-                fac_date_enc = 1.0 if use_date_enc else 0.0
-                backbone_args = {
-                    "swin_version": swin_version,
-                    "v2_attn": v2_attn,
-                }
-
-                model_map = {
-                    "tiny": mixmae_tiny,
-                    "small": mixmae_small,
-                    "base": mixmae_base,
-                    "large": mixmae_large,
-                    "huge": mixmae_huge,
-                }
-            case _:
-                msg = f"Invalid model name {model}. Not implemented"
-                raise ValueError(msg)
-
-        if inter_depth and fusion_mode not in ("mod", "group"):
-            msg = (
-                "Intermediate fusion"
-                f" not yet compatible with fusion mode {fusion_mode}."
-            )
-            raise NotImplementedError(msg)
-
-        if model_size in model_map:
-            model_args = {
-                "dataset": dataset,
-                "mask": mask,
-                "fusion_mode": fusion_mode,
-                "inter_depth": inter_depth,
-                "model": model,
-                "num_levels": num_levels,
-                "type_head": type_head,
-                "fac_abs_enc": fac_abs_enc,
-                "fac_date_enc": fac_date_enc,
-                **backbone_args,
-            }
-            self.model = model_map[model_size](**model_args)
-        else:
+        model_map = {
+            "tiny": mae_tiny,
+            "small": mae_small,
+            "medium": mae_medium,
+            "large": mae_large,
+        }
+        if model_size not in model_map:
             msg = f"Invalid model size {model_size}. Expected one of {model_map.keys()}"
             raise ValueError(msg)
+        self.model = model_map[model_size](
+            dataset=dataset,
+            mask=mask,
+            fusion_mode=fusion_mode,
+            inter_depth=inter_depth,
+            type_head=type_head,
+            fac_date_enc=1.0 if use_date_enc else 0.0,
+            norm=norm,
+            ffn=ffn,
+            layerscale_init=layerscale_init,
+            drop_path=drop_path,
+            qkv_bias=qkv_bias,
+            inter_norm=inter_norm,
+            trunc_normal_init=trunc_normal_init,
+            patch_norm=patch_norm,
+            pos_enc=pos_enc,
+            use_cls=use_cls,
+            num_registers=num_registers,
+            rope_base=rope_base,
+            rope_shift=rope_shift,
+            rope_jitter=rope_jitter,
+            rope_rescale=rope_rescale,
+        )
 
         self.init_ema(
             use_ema=use_ema,
@@ -249,10 +206,10 @@ class LitMiM(LitBase):
         losses_rec = []
         weights = []
         for name_mod in pixels_rec:
-            B, D = batch[name_mod].shape[:2]  # noqa: N806
+            _, D = batch[name_mod].shape[:2]  # noqa: N806
             H, W = (  # noqa: N806
-                self.model.out_grid_size[name_mod],
-                self.model.out_grid_size[name_mod],
+                self.model.grid_size[name_mod],
+                self.model.grid_size[name_mod],
             )
             P = batch[name_mod].shape[3] // H  # noqa: N806
 
@@ -314,13 +271,12 @@ class LitMiM(LitBase):
                 p2=P,
             )
 
-            weight = B * D * H * W
-            weights.append(weight)
+            # sum over the masked pixels, then mean over those of all modalities
             loss_rec = self.loss_fn(target - pixels_rec[name_mod])
-            loss_rec = torch.masked_select(loss_rec, mask_rec[name_mod]).mean()
-            losses_rec.append(weight * loss_rec)
+            weights.append(mask_rec[name_mod].sum())
+            losses_rec.append((loss_rec * mask_rec[name_mod]).sum())
 
-        weight = sum(weights)
+        weight = torch.stack(weights).sum().clamp(min=1)
         loss_rec = torch.stack(losses_rec).sum() / weight
         self.metrics[f"loss_rec_{stage}"].update(loss_rec)
         return loss_rec
@@ -331,15 +287,14 @@ class LitMiM(LitBase):
         stage: Literal["train", "val", "test"],
     ) -> dict[str, torch.Tensor]:
         """Pretraining step."""
-        batch, pixels_rec, mask_rec, _, _ = self.model(
-            batch,
-            ssl_phase=self.trainer.ssl_phase,
+        out = self.model(batch, ssl_phase="pretrain")
+        loss_rec = self.compute_loss_rec(
+            batch, out["pixels_rec"], out["mask_rec"], stage=stage
         )
-        loss_rec = self.compute_loss_rec(batch, pixels_rec, mask_rec, stage=stage)
         log_inputs, log_preds, log_targets = self.compute_logs_rec(
             batch,
-            pixels_rec,
-            mask_rec,
+            out["pixels_rec"],
+            out["mask_rec"],
             ssl_phase=self.trainer.ssl_phase,
             stage=stage,
         )
@@ -350,6 +305,7 @@ class LitMiM(LitBase):
             "log_targets": log_targets,
         }
 
+    @torch.no_grad()
     def on_fit_start(self) -> None:
         super().on_fit_start()
 
@@ -378,6 +334,7 @@ class LitMiM(LitBase):
             self.mu[name_mod] = mu
             self.cov_inv_sqrt[name_mod] = cov_inv_sqrt
 
+    @torch.no_grad()
     def condition_dataset(self) -> None:
         """Accumulate pixel statistics of the train dataset for conditioning."""
         sampler = DistributedSampler(
@@ -395,29 +352,28 @@ class LitMiM(LitBase):
             drop_last=False,
         )
 
-        with torch.no_grad():
-            for batch in data_loader:
-                batch = self.trainer.strategy.batch_to_device(batch, self.device)  # noqa: PLW2901
-                batch = self.augment(batch, random=False)  # noqa: PLW2901
+        for batch in data_loader:
+            batch = self.trainer.strategy.batch_to_device(batch, self.device)  # noqa: PLW2901
+            batch = self.augment(batch, random=False)  # noqa: PLW2901
 
-                for name_mod in self.dataset.inputs:
-                    H = self.model.out_grid_size[name_mod]  # noqa: N806
-                    P = batch[name_mod].shape[3] // H  # noqa: N806
+            for name_mod in self.dataset.inputs:
+                H = self.model.grid_size[name_mod]  # noqa: N806
+                P = batch[name_mod].shape[3] // H  # noqa: N806
 
-                    target = rearrange(
-                        batch[name_mod],
-                        "b d c (h p1) (w p2) -> (b d h w) (p1 p2 c)",
-                        p1=P,
-                        p2=P,
-                    )
-                    mu = target.mean(dim=0)
-                    gram = (
-                        torch.matmul(torch.transpose(target, 0, 1), target)
-                        / target.shape[0]
-                    )
-                    count = target.shape[0]
-                    self.metrics[f"condition_{name_mod}"].update(
-                        mu=mu,
-                        gram=gram,
-                        count=count,
-                    )
+                target = rearrange(
+                    batch[name_mod],
+                    "b d c (h p1) (w p2) -> (b d h w) (p1 p2 c)",
+                    p1=P,
+                    p2=P,
+                )
+                mu = target.mean(dim=0)
+                gram = (
+                    torch.matmul(torch.transpose(target, 0, 1), target)
+                    / target.shape[0]
+                )
+                count = target.shape[0]
+                self.metrics[f"condition_{name_mod}"].update(
+                    mu=mu,
+                    gram=gram,
+                    count=count,
+                )

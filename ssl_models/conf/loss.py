@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 
 @dataclass
-class MiMLossConfig:
-    """MiM reconstruction loss, see `ssl_models.train.lit_mim.LitMiM`.
+class MAELossConfig:
+    """MAE reconstruction loss, see `ssl_models.train.lit_mae.LitMAE`.
 
     `name` is one of "l1", "l2", "l1_norm", "l2_norm", "l1_ls", "l2_ls".
     """
@@ -21,11 +21,11 @@ class DINOv3LossConfig:
     """
 
     # heads
-    dino_n_prototypes: int = 65536
-    ibot_n_prototypes: int = 65536
+    dino_prototypes: int = 65536
+    ibot_prototypes: int = 65536
     head_hidden_dim: int = 2048
     head_bottleneck_dim: int = 256
-    head_n_layers: int = 3
+    head_layers: int = 3
     # losses
     student_temp: float = 0.1
     teacher_temp_start: float = 0.04

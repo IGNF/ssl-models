@@ -82,7 +82,7 @@ def group_mods(
     return x
 
 
-def ungroup_mods(
+def ungroup_mods(  # noqa: PLR0912
     x_group: dict[str, Tensor],
     fusion_mode: Literal[
         "msgfm",
@@ -95,9 +95,14 @@ def ungroup_mods(
     ],
     groups: list[tuple],
     num_dates: dict[str, int],
-    grid_size: dict[str, int],
+    num_tokens: list[dict[str, int]],
 ) -> dict[str, Tensor]:
-    """Ungroup modality sequences."""
+    """Ungroup modality sequences.
+
+    The sequences of a group are split according to the numbers of tokens per date
+    of the modalities, those of `num_tokens` (e.g. of the patch tokens of the global
+    and local views, and of the CLS tokens) matching the length of the group sequence.
+    """
     match fusion_mode:
         case "msgfm" | "shared" | "monotemp" | "late-croma" | "inter-croma":
             dim = 0
@@ -118,9 +123,19 @@ def ungroup_mods(
         x = {}
         for name_group in x_group:
             name_mods = group_to_mods[name_group]
-            splits = [
-                num_dates[name_mod] * grid_size[name_mod] ** 2 for name_mod in name_mods
-            ]
+            for idx, _ in enumerate(num_tokens):
+                splits = [
+                    num_dates[name_mod] * num_tokens[idx][name_mod]
+                    for name_mod in name_mods
+                ]
+                if sum(splits) == x_group[name_group].shape[1]:
+                    break
+            else:
+                msg = (
+                    f"No numbers of tokens match the {x_group[name_group].shape[1]} "
+                    f"tokens of group {name_group}."
+                )
+                raise ValueError(msg)
             x_mods = torch.split(x_group[name_group], splits, dim=1)
             for name_mod, x_mod in zip(name_mods, x_mods):
                 x[name_mod] = x_mod

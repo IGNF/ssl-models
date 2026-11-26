@@ -20,7 +20,7 @@ torch.set_float32_matmul_precision(precision="medium")
 class LitBaseline(LitBase):
     """Baseline module for fine-tuning."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         # shared args
         dataset: DatasetConfig,

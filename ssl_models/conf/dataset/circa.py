@@ -48,7 +48,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s1_asc_global: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2),
             bands=4,
             num_dates=4,
             norm_fac=1.0,
@@ -58,7 +58,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s1_des_global: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2),
             bands=4,
             num_dates=4,
             norm_fac=1.0,
@@ -68,7 +68,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s2_global: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2),
             bands=10,
             norm_bands=[4, 6],
             num_dates=4,
@@ -79,7 +79,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s2_cloud_mask_global: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2),
             bands=[[11]],
             num_dates=4,
             mask_threshold=0.0,
@@ -88,7 +88,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s1_asc_zoom: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2),
             bands=4,
             num_dates=4,
             norm_fac=1.0,
@@ -98,7 +98,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s1_des_zoom: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2),
             bands=4,
             num_dates=4,
             norm_fac=1.0,
@@ -108,7 +108,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s2_zoom: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2),
             bands=10,
             num_dates=4,
             norm_bands=[4, 6],
@@ -118,7 +118,7 @@ class CircaConfig(DatasetConfig):  # noqa: D101
     s2_cloud_mask_zoom: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=16,
-            patch_size=PatchSizeConfig(mae=2, mixmae=1),
+            patch_size=PatchSizeConfig(mae=2),
             bands=[[11]],
             num_dates=4,
         ),

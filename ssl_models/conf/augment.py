@@ -40,11 +40,11 @@ class DINOv3AugmentConfig:
     blur_sigma: list[float] = field(default_factory=lambda: [0.1, 2.0])
     blur_min_size: int = 32
     # global views
-    n_global: int = 2
+    num_global: int = 2
     global_scale: list[float] = field(default_factory=lambda: [0.32, 1.0])
     global_blur_probs: list[float] = field(default_factory=lambda: [1.0, 0.1])
     # local views
-    n_local: int = 8
+    num_local: int = 8
     local_scale: list[float] = field(default_factory=lambda: [0.05, 0.32])
     local_blur_probs: list[float] = field(default_factory=lambda: [0.5])
     local_size_ratio: float = 0.4375  # local view size / image size

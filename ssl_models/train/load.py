@@ -6,15 +6,15 @@ from hydra_zen import instantiate
 from omegaconf import OmegaConf
 
 from ssl_models.conf.dataset.utils import DatasetConfig
-from ssl_models.conf.model import BaselineConfig, DINOv3Config, MiMConfig
+from ssl_models.conf.model import BaselineConfig, DINOv3Config, MAEConfig
 from ssl_models.train.lit_base import LitBase
 from ssl_models.train.lit_baseline import LitBaseline
 from ssl_models.train.lit_dino import LitDINOv3
-from ssl_models.train.lit_mim import LitMiM
+from ssl_models.train.lit_mae import LitMAE
 
 
 def build_module(
-    model: MiMConfig | DINOv3Config | BaselineConfig,
+    model: MAEConfig | DINOv3Config | BaselineConfig,
     dataset: DatasetConfig,
     ckpt_path: str | Path | None = None,
 ) -> LitBase:
@@ -25,8 +25,8 @@ def build_module(
     are taken from the arguments.
     """
     match model:
-        case MiMConfig():
-            module_class = LitMiM
+        case MAEConfig():
+            module_class = LitMAE
             kwargs = {
                 "dataset": dataset,
                 "augment": model.augment,
@@ -67,7 +67,7 @@ def load_module(ckpt_path: str | Path) -> LitBase:
     """Reload a trained module from a checkpoint, using its run's resolved config.
 
     The bare torch model is `load_module(path).model` (and its EMA `.ema_model`,
-    the teacher for DINOv3, where the backbone is `.model["backbone"]`).
+    the teacher for DINOv3).
     """
     ckpt_path = Path(ckpt_path)
     cfg = OmegaConf.load(ckpt_path.parent.parent / ".hydra" / "config_resolved.yaml")

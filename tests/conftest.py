@@ -8,7 +8,7 @@ from ssl_models.conf.dataset.hi_ucd import HiUCDConfig
 from ssl_models.conf.dataset.pastis_hd import PASTISHDConfig
 from ssl_models.conf.dataset.s2_naip import S2NAIPConfig
 from ssl_models.conf.dataset.treesatai_ts import TreeSatAITSConfig
-from ssl_models.conf.mask import MiMMaskConfig
+from ssl_models.conf.mask import MAEMaskConfig
 from ssl_models.conf.opt import OptFinetuneConfig
 from tests import TEST_DATA_DIR
 
@@ -20,7 +20,7 @@ def dataset_treesat():
 
 @pytest.fixture()
 def mask():
-    return MiMMaskConfig()
+    return MAEMaskConfig()
 
 
 @pytest.fixture()

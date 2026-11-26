@@ -15,7 +15,7 @@ class OptConfig:
     The weight decay follows a cosine from `wd` to `wd_end` (constant if None).
 
     Parameters are matched by substring of their name in the lightning module's
-    `model` (e.g. "patch_embed" matches "backbone.patch_embed.s2.proj.weight").
+    `model` (e.g. "patch_embed" matches "patch_embed.s2.proj.weight").
     """
 
     lr_ref_batch_size: float = 3.0  # remain iso with past runs

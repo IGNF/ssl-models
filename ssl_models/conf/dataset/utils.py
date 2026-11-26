@@ -18,8 +18,7 @@ class PatchSizeConfig:
     """Patch size config."""
 
     mae: int = MISSING
-    mixmae: int = MISSING
-    dino: int | None = None  # defaults to the mae patch size
+    dino: int | None = None  # defaults to the mae patch size (see `DatasetConfig`)
     dinov2_imagenat: int = 14
     dinov2_sat: int = 16
     dofa: int = 16
@@ -142,6 +141,12 @@ class DatasetConfig:
                 msg = f"Invalid modality name {name_mod}. Not an attribute."
                 raise ValueError(msg)
             self.inputs[name_mod] = getattr(self, name_mod)
+
+        # not in `PatchSizeConfig`: its default instances are stored in the config, so
+        # `dino` would be fixed before the overrides of `mae`
+        for mod in self.inputs.values():
+            if mod.patch_size.dino is None:
+                mod.patch_size.dino = mod.patch_size.mae
 
         self.targets = {}
         for name_mod in self.filter_targets:

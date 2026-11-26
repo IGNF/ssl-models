@@ -3,47 +3,56 @@
 The student is trained on masked global views and local views, against an EMA
 teacher that sees the unmasked global views. Views come from the shared
 augmentation (`ssl_models.train.augment.Augment`, with `DINOv3AugmentConfig`),
-at all stages (`augment_eval`) so that the val/test losses are comparable.
+with random crops, jitter and blur at train only (flips at all stages). The
+DINOv3 module (`self.model`) samples the masks and applies the DINO and iBOT
+heads; this module computes the losses from its outputs. Probing and finetuning
+use its probing/finetuning heads, on a single global view.
 The optimization is the shared one of `LitBase`, with the DINOv3 defaults of the
 `dinov3_pretrain` optimizer config, and the teacher is the shared EMA model,
-updated at each step; the teacher temperature schedule is set here.
+updated at each step; the teacher temperature schedule is set here. The DINO,
+iBOT and KoLeo losses, with distributed Sinkhorn-Knopp centering, come from
+`ssl_models.layers.loss`.
 """
 
 from functools import partial
 from typing import Literal
 
 import torch
-from torch import Tensor, nn
+from torch import Tensor
 
 from ssl_models.conf.augment import DINOv3AugmentConfig
 from ssl_models.conf.dataset.utils import DatasetConfig
 from ssl_models.conf.loss import DINOv3LossConfig
 from ssl_models.conf.mask import DINOv3MaskConfig
-from ssl_models.dino.dino import (
+from ssl_models.layers.loss import dino_loss, ibot_loss, koleo_loss, sinkhorn_knopp
+from ssl_models.ssl.dino import (
     dinov3_base,
     dinov3_huge_plus,
     dinov3_large,
     dinov3_small,
     dinov3_tiny,
 )
-from ssl_models.dino.head import DINOHead
-from ssl_models.dino.loss import (
-    dino_loss,
-    ibot_loss,
-    koleo_loss,
-    sinkhorn_knopp,
-    teacher_stats,
-)
-from ssl_models.dino.masking import ibot_masks, view_keep
 from ssl_models.train.lit_base import LitBase
 from ssl_models.train.schedule import linear_warmup
 
 
+@torch.no_grad()
+def teacher_stats(probs: Tensor) -> dict[str, Tensor]:
+    """Collapse diagnostics of teacher targets [N, K].
+
+    "teacher_entropy": mean entropy of targets (0 = one-hot, log K = uniform),
+    "teacher_kl_uniform": KL of the mean target to uniform (0 = all prototypes used).
+    """
+    probs = probs.float()
+    K = probs.shape[1]  # noqa: N806
+    entropy = -(probs * probs.clamp(min=1e-12).log()).sum(dim=-1).mean()
+    mean = probs.mean(dim=0)
+    kl_uniform = (mean * (mean.clamp(min=1e-12) * K).log()).sum()
+    return {"teacher_entropy": entropy, "teacher_kl_uniform": kl_uniform}
+
+
 class LitDINOv3(LitBase):
     """Lightning DINOv3-style pretraining module."""
-
-    # random views at all stages, so that the val/test losses are comparable
-    augment_eval = True
 
     def __init__(  # noqa: PLR0913
         self,
@@ -53,15 +62,16 @@ class LitDINOv3(LitBase):
         loss: DINOv3LossConfig,
         # backbone
         fusion_mode: Literal["shared", "monotemp", "mod", "group"] = "group",
-        type_head: Literal["linear", "attentive"] = "attentive",  # noqa: ARG002, no probing yet
+        type_head: Literal["linear", "attentive"] = "attentive",
         inter_depth: int = 3,
         model_size: Literal["tiny", "small", "base", "large", "huge_plus"] = "small",
         norm: Literal["layernorm", "rmsnorm"] = "layernorm",
-        n_registers: int = 4,
+        num_registers: int = 4,
         layerscale_init: float | None = 1e-5,
         drop_path: float = 0.3,
         patch_norm: bool = False,
         inter_norm: bool = False,
+        pos_enc: Literal["abs", "rope"] = "rope",
         rope_base: float = 100.0,
         rope_shift: float | None = None,
         rope_jitter: float | None = None,
@@ -73,10 +83,10 @@ class LitDINOv3(LitBase):
         ema_momentum_end: float | None = 1.0,
     ) -> None:
         super().__init__(dataset=dataset, augment=augment)
-        if self.augment.n_global < 2 and not self.augment.n_local:  # noqa: PLR2004
+        if self.augment.num_global < 2 and not self.augment.num_local:  # noqa: PLR2004
             msg = (
                 "DINO needs at least 2 views to compare, "
-                f"got {self.augment.n_global} global and no local view."
+                f"got {self.augment.num_global} global and no local view."
             )
             raise ValueError(msg)
 
@@ -93,38 +103,31 @@ class LitDINOv3(LitBase):
 
         model_args = {
             "dataset": dataset,
+            "mask": mask,
             "fusion_mode": fusion_mode,
             "inter_depth": inter_depth,
             "norm": norm,
-            "n_registers": n_registers,
+            "num_registers": num_registers,
             "layerscale_init": layerscale_init,
             "drop_path": drop_path,
             "patch_norm": patch_norm,
             "inter_norm": inter_norm,
+            "type_head": type_head,
+            "pos_enc": pos_enc,
             "rope_base": rope_base,
             "rope_shift": rope_shift,
             "rope_jitter": rope_jitter,
             "rope_rescale": rope_rescale,
             "local_ratio": self.augment.local_size_ratio,
             "fac_date_enc": 1.0 if use_date_enc else 0.0,
+            "dino_prototypes": loss.dino_prototypes,
+            "ibot_prototypes": loss.ibot_prototypes,
+            "head_hidden_dim": loss.head_hidden_dim,
+            "head_bottleneck_dim": loss.head_bottleneck_dim,
+            "head_layers": loss.head_layers,
         }
-        backbone = model_map[model_size](**model_args)
-
-        head = partial(
-            DINOHead,
-            in_dim=backbone.embed_dim,
-            hidden_dim=loss.head_hidden_dim,
-            bottleneck_dim=loss.head_bottleneck_dim,
-            n_layers=loss.head_n_layers,
-        )
         # self.model is student, self.ema_model is teacher
-        self.model = nn.ModuleDict(
-            {
-                "backbone": backbone,
-                "dino_head": head(n_prototypes=loss.dino_n_prototypes),
-                "ibot_head": head(n_prototypes=loss.ibot_n_prototypes),
-            },
-        )
+        self.model = model_map[model_size](**model_args)
         self.init_ema(
             use_ema=True,
             ema_interval=ema_interval,
@@ -132,207 +135,144 @@ class LitDINOv3(LitBase):
             ema_momentum_end=ema_momentum_end,
         )
 
-        self.view_drop_mod = mask.view_drop_mod
-        self.view_drop_dates = mask.view_drop_dates
-        self.ibot_mask_prob = mask.ibot_mask_prob
-        self.ibot_mask_ratio = tuple(float(v) for v in mask.ibot_mask_ratio)
-        self.ibot_blob_grid = mask.ibot_blob_grid
-        self.ibot_mask_shared = mask.ibot_mask_shared
-
         self.student_temp = loss.student_temp
         self.teacher_temp_start = loss.teacher_temp_start
         self.teacher_temp_end = loss.teacher_temp_end
         self.teacher_temp_warmup_pct = loss.teacher_temp_warmup_pct
+        self.teacher_temp = loss.teacher_temp_start  # set at each train batch start
         self.w_dino, self.w_ibot, self.w_koleo = loss.w_dino, loss.w_ibot, loss.w_koleo
+        # losses on the views of the augmentation, stacked sample-major
+        self.dino_loss = partial(
+            dino_loss,
+            num_global=self.augment.num_global,
+            num_local=self.augment.num_local,
+        )
+        self.ibot_loss = ibot_loss
+        self.koleo_loss = partial(koleo_loss, num_global=self.augment.num_global)
 
         self.save_hyperparameters(ignore=["dataset", "mask", "loss", "augment"])
 
-    def teacher_temp(self) -> float:
-        return linear_warmup(
-            self.teacher_temp_start,
-            self.teacher_temp_end,
-            self.global_step,
-            round(self.teacher_temp_warmup_pct * self.total_steps()),
-        )
+    def on_train_batch_start(self, batch: dict, batch_idx: int) -> None:
+        """Apply the parent schedules and, in pretraining, the teacher temperature."""
+        super().on_train_batch_start(batch, batch_idx)
 
-    def forward_batch(  # noqa: PLR0915
+        if self.trainer.ssl_phase == "pretrain":
+            self.teacher_temp = linear_warmup(
+                self.teacher_temp_start,
+                self.teacher_temp_end,
+                self.global_step,
+                round(self.teacher_temp_warmup_pct * self.total_steps()),
+            )
+
+    def compute_logs_dino(
         self,
         batch: dict[str, Tensor],
-        teacher_temp: float,
-    ) -> dict:
-        """Compute DINO / iBOT / KoLeo losses for an augmented batch.
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        stage: Literal["train", "val", "test"],
+    ) -> tuple[dict[str, Tensor], dict[str, Tensor], dict[str, Tensor]]:
+        """Visu of the views: first sample (rows 0, 1, ...: its views), first date."""
+        log_inputs, log_preds, log_targets = {}, {}, {}
+        for name_mod in self.dataset.log_inputs:
+            prefix = f"{ssl_phase}_{stage}/_{name_mod}"
+            log_inputs[f"{prefix}_global"] = batch[name_mod][0, 0]
+            if self.augment.num_global > 1:
+                log_targets[f"{prefix}_global_2"] = batch[name_mod][1, 0]
+            if self.augment.num_local:
+                log_preds[f"{prefix}_local"] = batch[f"{name_mod}_local"][0, 0]
+        return log_inputs, log_preds, log_targets
 
-        Global views are at the keys of the batch, local views at `{key}_local`,
-        both stacked sample-major along the batch dim ([B * n, ...]).
+    def compute_loss_dino(
+        self,
+        student_global: dict[str, Tensor | None],
+        student_local: dict[str, Tensor | None] | None,
+        teacher_global: dict[str, Tensor | None],
+        ssl_phase: Literal["pretrain", "probe", "finetune"],
+        stage: Literal["train", "val", "test"],
+    ) -> dict[str, Tensor | float]:
+        """Compute DINO / iBOT / KoLeo losses from the outputs of the student on
+        the global (`student_global`) and local (`student_local`, None if no local
+        view) views, and of the teacher on the global views (`teacher_global`),
+        stacked sample-major ([B * n, ...]).
+
+        Returns the total loss ("loss") and, to be logged, its components, the
+        teacher temperature and the stats of the teacher targets.
         """
-        dataset = self.dataset
-        backbone_s = self.model["backbone"]
-        backbone_t = self.ema_model["backbone"]
-        mods = list(dataset.inputs)
+        teacher_dino = sinkhorn_knopp(teacher_global["dino"], self.teacher_temp)
+        teacher_ibot = sinkhorn_knopp(teacher_global["ibot"], self.teacher_temp)
 
-        n_global, n_local = self.augment.n_global, self.augment.n_local
-        B = batch[mods[0]].shape[0] // n_global  # noqa: N806
-        device = batch[mods[0]].device
-
-        globals_ = {k: v for k, v in batch.items() if not k.endswith("_local")}
-        locals_ = (
-            {
-                k.removesuffix("_local"): v
-                for k, v in batch.items()
-                if k.endswith("_local")
-            }
-            if n_local
-            else None
-        )
-
-        num_dates = {m: dataset.inputs[m].num_dates for m in mods}
-        ibot_mask = ibot_masks(
-            backbone_s.token_shapes("global"),
-            n_global * B,
-            self.ibot_mask_prob,
-            self.ibot_mask_ratio,
-            self.ibot_blob_grid,
-            self.ibot_mask_shared,
-            device,
-        )
-        keep_global = view_keep(
-            num_dates,
-            n_global * B,
-            self.view_drop_mod,
-            self.view_drop_dates,
-            device,
-        )
-
-        # teacher: unmasked global views
-        with torch.no_grad():
-            out_t = backbone_t(globals_, "global")
-            teacher_dino = sinkhorn_knopp(
-                self.ema_model["dino_head"](out_t["cls"]),
-                teacher_temp,
-            )
-
-        # student: masked global views, local views
-        out_s = backbone_s(
-            globals_,
-            "global",
-            ibot_mask=ibot_mask,
-            keep=keep_global,
-        )
-        student_global = self.model["dino_head"](out_s["cls"])
-        student_local = None
-        if n_local:
-            out_l = backbone_s(
-                locals_,
-                "local",
-                keep=view_keep(
-                    num_dates,
-                    n_local * B,
-                    self.view_drop_mod,
-                    self.view_drop_dates,
-                    device,
-                ),
-            )
-            student_local = self.model["dino_head"](out_l["cls"]).unflatten(
-                0,
-                (B, n_local),
-            )
-
-        losses_dino = dino_loss(
-            student_global.unflatten(0, (B, n_global)),
-            student_local,
-            teacher_dino.unflatten(0, (B, n_global)),
+        loss_dino, loss_dino_global, loss_dino_local = self.dino_loss(
+            student_global["dino"],
+            student_local["dino"] if student_local is not None else None,
+            teacher_dino,
             self.student_temp,
         )
-
-        # iBOT on masked, not dropped, patch tokens of global views
-        masked = torch.cat([ibot_mask[m].flatten(1, 2) for m in mods], dim=1)
-        masked = masked & out_s["keep_flat"]
-        num_masked = masked.sum(dim=1)
-        with torch.no_grad():
-            teacher_ibot = sinkhorn_knopp(
-                self.ema_model["ibot_head"](out_t["patch_flat"][masked]),
-                teacher_temp,
-            )
-        loss_ibot = ibot_loss(
-            self.model["ibot_head"](out_s["patch_flat"][masked]),
+        loss_ibot = self.ibot_loss(
+            student_global["ibot"],
+            student_global["ibot_weights"],
             teacher_ibot,
-            num_masked,
             self.student_temp,
         )
-
-        # KoLeo within each global view, over the batch
-        cls_global = out_s["cls"].unflatten(0, (B, n_global))
-        loss_koleo = torch.stack([koleo_loss(c) for c in cls_global.unbind(1)]).mean()
+        loss_koleo = self.koleo_loss(student_global["cls"])
 
         loss = (
-            self.w_dino * losses_dino["total"]
+            self.w_dino * loss_dino
             + self.w_ibot * loss_ibot
             + self.w_koleo * loss_koleo
         )
-        stats = teacher_stats(teacher_dino)
-        return {
+        self.metrics[f"loss_rec_{stage}"].update(loss)
+
+        losses = {
             "loss": loss,
-            "components": {
-                "dino_global": losses_dino["global"].detach(),
-                "dino_local": losses_dino["local"].detach(),
-                "ibot": loss_ibot.detach(),
-                "koleo": loss_koleo.detach(),
-                "teacher_entropy": stats["entropy"],
-                "teacher_kl_uniform": stats["kl_uniform"],
-                "masked_ratio": masked.float().mean(),
-            },
-            "views": {"global": globals_, "local": locals_},
-            "batch_size": B,
+            "loss_dino_global": loss_dino_global,
+            "loss_dino_local": loss_dino_local,
+            "loss_ibot": loss_ibot,
+            "loss_koleo": loss_koleo,
+            "teacher_temp": self.teacher_temp,
+            **teacher_stats(teacher_dino),
         }
+        return losses
 
     def pretrain_step(
         self,
         batch: dict[str, Tensor],
         stage: Literal["train", "val", "test"],
-    ) -> dict:
-        """Pretraining step."""
-        ssl_phase = self.trainer.ssl_phase
-        teacher_temp = self.teacher_temp()
+    ) -> dict[str, Tensor]:
+        """Pretraining step.
 
-        out = self.forward_batch(batch, teacher_temp)
-        self.metrics[f"loss_rec_{stage}"].update(out["loss"].detach())
-        for name, value in out["components"].items():
-            self.log(
-                f"{ssl_phase}_dino/{name}_{stage}",
-                value,
-                on_step=stage == "train",
-                on_epoch=True,
-                sync_dist=True,
-                batch_size=out["batch_size"],
-            )
+        Global views are at the keys of the batch, local views at `{key}_local`.
+        """
+        # student: masked global views, local views; teacher (frozen EMA copy, no
+        # autograd graph): unmasked global views, with the iBOT head at the masked
+        # positions of the student
+        student_global = self.model(batch, ssl_phase="pretrain", view="global")
+        student_local = (
+            self.model(batch, ssl_phase="pretrain", view="local")
+            if self.augment.num_local
+            else None
+        )
+        teacher_global = self.ema_model(
+            batch,
+            ssl_phase="pretrain",
+            view="global",
+            teacher=True,
+            mask_rec=student_global["mask_rec"],
+        )
 
-        logs_inputs, logs_preds, logs_targets = {}, {}, {}
-        for name_mod in self.dataset.log_inputs:
-            prefix = f"{ssl_phase}_{stage}/_{name_mod}"
-            # first sample (rows 0, 1, ...: its views), first date
-            logs_inputs[f"{prefix}_global"] = out["views"]["global"][name_mod][0, 0]
-            if self.augment.n_global > 1:
-                logs_targets[f"{prefix}_global_2"] = out["views"]["global"][name_mod][
-                    1, 0
-                ]
-            if out["views"]["local"] is not None:
-                logs_preds[f"{prefix}_local"] = out["views"]["local"][name_mod][0, 0]
-
-        if stage == "train":
-            self.log(f"{ssl_phase}_dino/teacher_temp", teacher_temp, on_step=True)
+        losses = self.compute_loss_dino(
+            student_global,
+            student_local,
+            teacher_global,
+            ssl_phase=self.trainer.ssl_phase,
+            stage=stage,
+        )
+        log_inputs, log_preds, log_targets = self.compute_logs_dino(
+            batch,
+            ssl_phase=self.trainer.ssl_phase,
+            stage=stage,
+        )
         return {
-            "loss": out["loss"],
-            "log_inputs": logs_inputs,
-            "log_preds": logs_preds,
-            "log_targets": logs_targets,
+            **losses,
+            "log_inputs": log_inputs,
+            "log_preds": log_preds,
+            "log_targets": log_targets,
         }
-
-    def shared_step(
-        self,
-        batch: dict[str, Tensor],
-        stage: Literal["train", "val", "test"],
-    ) -> dict:
-        if self.trainer.ssl_phase != "pretrain":
-            msg = "DINO module only supports pretraining for now."
-            raise NotImplementedError(msg)
-        return super().shared_step(batch, stage)

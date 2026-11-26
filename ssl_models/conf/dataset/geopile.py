@@ -34,7 +34,7 @@ class GeoPileConfig(DatasetConfig):  # noqa: D101
     rgb: InputRasterConfig = field(
         default_factory=lambda: InputRasterConfig(
             image_size=256,
-            patch_size=PatchSizeConfig(mae=16, mixmae=4),
+            patch_size=PatchSizeConfig(mae=16),
             bands=3,
             norm_fac=255.0,
         ),

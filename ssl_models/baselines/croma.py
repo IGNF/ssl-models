@@ -240,11 +240,11 @@ class CROMABaseline(BaseBaseline):
         return torch.cat((tensor_to_expand, s), dim=1)
 
     def _ungroup_s1(self, outputs: Tensor) -> tuple[Tensor, Tensor]:
-        n_asc, n_des = self.num_dates["s1_asc"], self.num_dates["s1_des"]
-        outputs = outputs.unflatten(0, (-1, n_asc + n_des))
+        num_asc, num_des = self.num_dates["s1_asc"], self.num_dates["s1_des"]
+        outputs = outputs.unflatten(0, (-1, num_asc + num_des))
         x_s1 = {}
-        x_s1["s1_asc"] = outputs[:, :n_asc]
-        x_s1["s1_des"] = outputs[:, n_asc : n_asc + n_des]
+        x_s1["s1_asc"] = outputs[:, :num_asc]
+        x_s1["s1_des"] = outputs[:, num_asc : num_asc + num_des]
         x_s1 = self.group(x_s1)
 
         return x_s1["s1_asc"], x_s1["s1_des"]
@@ -253,14 +253,8 @@ class CROMABaseline(BaseBaseline):
         self,
         batch: dict[str, Tensor],
         ssl_phase: Literal["pretrain", "probe", "finetune"],  # noqa: ARG002
-    ) -> tuple[
-        dict[str, Tensor] | None,
-        None,
-        None,
-        dict[str, Tensor] | None,
-        dict[str, Tensor] | None,
-    ]:
-        """CROMA forward pass.
+    ) -> dict[str, dict[str, Tensor]]:
+        """CROMA logits of the heads (probing / finetuning).
 
         Parameters
         ----------
@@ -272,7 +266,7 @@ class CROMABaseline(BaseBaseline):
 
         Returns
         -------
-        tuple: CROMA's outputs.
+        dict: "logits", the logits of the heads, per target.
 
         """
         batch["s1"] = torch.concat((batch["s1_asc"], batch["s1_des"]), dim=1)
@@ -303,7 +297,7 @@ class CROMABaseline(BaseBaseline):
             x_enc = self._add_date_encodings(x_enc, dates, ref_date)
 
         logits = self.compute_logits(x_enc)
-        return batch, None, None, x_enc, logits
+        return {"logits": logits}
 
 
 # The following lines are adapted from https://github.com/antofuller/CROMA

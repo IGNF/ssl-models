@@ -1,14 +1,4 @@
-"""ViT building blocks, shared by the MAE and DINOv3 models.
-
-Own implementation: 2D axial RoPE with coordinate augmentations, attention with
-optional key padding mask, GELU MLP / SwiGLU feed-forward, LayerNorm / RMSNorm,
-LayerScale and stochastic depth.
-
-RoPE is computed from explicit patch coordinates normalized to [-1, 1] within
-a view, so that tokens of different modalities covering the same location get
-the same rotation, whatever their grid size. Prefix tokens (CLS, registers)
-get the identity rotation (see `pad_rope`).
-"""
+"""ViT building blocks, shared by the MAE and DINOv3 models."""
 
 import math
 from typing import Literal
@@ -17,128 +7,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import Tensor, nn
 
-Rope = tuple[Tensor, Tensor]  # (sin, cos), each [..., N, head_dim]
-
-
-def grid_coords(
-    h: int,
-    w: int,
-    device: torch.device | None = None,
-) -> Tensor:
-    """Patch center coordinates of an h x w grid, normalized to [-1, 1].
-
-    Returns a [h * w, 2] tensor of (y, x) coordinates in row-major order.
-    """
-    y = (torch.arange(h, device=device, dtype=torch.float32) + 0.5) / h
-    x = (torch.arange(w, device=device, dtype=torch.float32) + 0.5) / w
-    yy, xx = torch.meshgrid(2 * y - 1, 2 * x - 1, indexing="ij")
-    return torch.stack([yy.flatten(), xx.flatten()], dim=-1)
-
-
-class RopePositionEmbedding(nn.Module):
-    """2D axial rotary position embedding from explicit coordinates.
-
-    Half of the head dimension rotates with the y coordinate, the other half
-    with x. At train time, coordinates can be augmented (same draw for the
-    whole forward call, hence consistent across modalities of a view):
-        - shift: uniform translation in [-shift, shift] per axis,
-        - jitter: log-uniform scaling in [1/jitter, jitter] per axis,
-        - rescale: log-uniform isotropic scaling in [1/rescale, rescale].
-    """
-
-    def __init__(
-        self,
-        head_dim: int,
-        base: float = 100.0,
-        shift_coords: float | None = None,
-        jitter_coords: float | None = None,
-        rescale_coords: float | None = None,
-    ) -> None:
-        super().__init__()
-        if head_dim % 4:
-            msg = f"RoPE head dim must be a multiple of 4, got {head_dim}."
-            raise ValueError(msg)
-        self.head_dim = head_dim
-        self.shift_coords = shift_coords
-        self.jitter_coords = jitter_coords
-        self.rescale_coords = rescale_coords
-
-        exponents = (
-            2 * torch.arange(head_dim // 4, dtype=torch.float32) / (head_dim // 2)
-        )
-        self.register_buffer("periods", base**exponents, persistent=False)
-
-    def augment(self, coords: Tensor) -> Tensor:
-        """Apply train-time coordinate augmentations."""
-        device = coords.device
-        if self.shift_coords:
-            shift = torch.empty(2, device=device).uniform_(
-                -self.shift_coords,
-                self.shift_coords,
-            )
-            coords = coords + shift
-        if self.jitter_coords:
-            log_jitter = math.log(self.jitter_coords)
-            jitter = torch.empty(2, device=device).uniform_(-log_jitter, log_jitter)
-            coords = coords * jitter.exp()
-        if self.rescale_coords:
-            log_rescale = math.log(self.rescale_coords)
-            rescale = torch.empty(1, device=device).uniform_(
-                -log_rescale,
-                log_rescale,
-            )
-            coords = coords * rescale.exp()
-        return coords
-
-    def forward(self, coords: Tensor) -> Rope:
-        """Compute (sin, cos) of shape [..., N, head_dim] from [..., N, 2] coords."""
-        coords = coords.float()
-        if self.training:
-            coords = self.augment(coords)
-        angles = 2 * math.pi * coords[..., None] / self.periods  # [..., N, 2, D/4]
-        angles = angles.flatten(-2)  # [..., N, D/2]
-        angles = torch.cat([angles, angles], dim=-1)  # [..., N, D]
-        return torch.sin(angles), torch.cos(angles)
-
-
-def pad_rope(rope: Rope, num_prefix: int) -> Rope:
-    """Prepend identity rotations (sin=0, cos=1) for `num_prefix` tokens."""
-    sin, cos = rope
-    shape = (*sin.shape[:-2], num_prefix, sin.shape[-1])
-    return (
-        torch.cat([sin.new_zeros(shape), sin], dim=-2),
-        torch.cat([cos.new_ones(shape), cos], dim=-2),
-    )
-
-
-def rotate_half(x: Tensor) -> Tensor:
-    """Rotate the two halves of the last dim: [x1, x2] -> [-x2, x1]."""
-    x1, x2 = x.chunk(2, dim=-1)
-    return torch.cat([-x2, x1], dim=-1)
-
-
-def apply_rope(x: Tensor, rope: Rope) -> Tensor:
-    """Apply RoPE to x of shape [B, heads, N, head_dim].
-
-    sin/cos have shape [N, head_dim] or [B, N, head_dim].
-    """
-    sin, cos = rope
-    if sin.ndim == 3:  # noqa: PLR2004
-        sin, cos = sin[:, None], cos[:, None]
-    sin, cos = sin.to(x.dtype), cos.to(x.dtype)
-    return x * cos + rotate_half(x) * sin
-
-
-def build_norm(norm: Literal["layernorm", "rmsnorm"], dim: int) -> nn.Module:
-    """Build normalization layer."""
-    match norm:
-        case "layernorm":
-            return nn.LayerNorm(dim, eps=1e-5)
-        case "rmsnorm":
-            return nn.RMSNorm(dim, eps=1e-5)
-        case _:
-            msg = f"Invalid norm {norm}. Expected 'layernorm' or 'rmsnorm'."
-            raise ValueError(msg)
+from ssl_models.layers.rope import apply_rope
 
 
 class Attention(nn.Module):
@@ -163,28 +32,27 @@ class Attention(nn.Module):
     def forward(
         self,
         x: Tensor,
-        rope: Rope | None = None,
+        rope: Tensor | None = None,
         attn_mask: Tensor | None = None,
     ) -> Tensor:
         """Apply attention.
 
         Args:
-            x: [B, N, C] tokens.
-            rope: (sin, cos) of shape [N, head_dim] or [B, N, head_dim],
-                identity on prefix tokens.
-            attn_mask: [B, N] bool key padding mask, True = token is attended.
-                Each sample must keep at least one token (e.g. its CLS).
+            x: [B, L, C] tokens.
+            rope: (sin, cos) of shape [L, 2 * head_dim] or [B, L, 2 * head_dim].
+            attn_mask: [B, L] bool key padding mask, True = token is attended.
+                Each sequence must keep at least one token (e.g. its CLS).
 
         """
-        B, N, C = x.shape  # noqa: N806
-        qkv = self.qkv(x).reshape(B, N, 3, self.heads, self.head_dim)
-        q, k, v = qkv.permute(2, 0, 3, 1, 4).unbind(0)  # [B, heads, N, head_dim]
+        B, L, C = x.shape  # noqa: N806
+        qkv = self.qkv(x).reshape(B, L, 3, self.heads, self.head_dim)
+        q, k, v = qkv.permute(2, 0, 3, 1, 4).unbind(0)  # [B, heads, L, head_dim]
         if rope is not None:
             q, k = apply_rope(q, rope), apply_rope(k, rope)
         if attn_mask is not None:
             attn_mask = attn_mask[:, None, None, :]
         x = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
-        x = x.transpose(1, 2).reshape(B, N, C)
+        x = x.transpose(1, 2).reshape(B, L, C)
         return self.proj(x)
 
 
@@ -298,7 +166,7 @@ class Block(nn.Module):
     def forward(
         self,
         x: Tensor,
-        rope: Rope | None = None,
+        rope: Tensor | None = None,
         attn_mask: Tensor | None = None,
     ) -> Tensor:
         x = x + self.drop_path(self.ls1(self.attn(self.norm1(x), rope, attn_mask)))
@@ -363,12 +231,24 @@ class Transformer(nn.Module):
     def forward(
         self,
         x: Tensor,
-        rope: Rope | None = None,
+        rope: Tensor | None = None,
         attn_mask: Tensor | None = None,
     ) -> Tensor:
         for block in self.blocks:
             x = block(x, rope, attn_mask)
         return self.norm(x)
+
+
+def build_norm(norm: Literal["layernorm", "rmsnorm"], dim: int) -> nn.Module:
+    """Build normalization layer."""
+    match norm:
+        case "layernorm":
+            return nn.LayerNorm(dim, eps=1e-5)
+        case "rmsnorm":
+            return nn.RMSNorm(dim, eps=1e-5)
+        case _:
+            msg = f"Invalid norm {norm}. Expected 'layernorm' or 'rmsnorm'."
+            raise ValueError(msg)
 
 
 def init_weights(module: nn.Module) -> None:

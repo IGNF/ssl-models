@@ -1,35 +1,29 @@
 import itertools
 import math
+from types import SimpleNamespace
 
 import pytest
 import torch
 import torch.nn.functional as F
 
 from ssl_models.conf.augment import DINOv3AugmentConfig
+from ssl_models.conf.dataset.treesatai_ts import TreeSatAITSConfig
 from ssl_models.conf.loss import DINOv3LossConfig
 from ssl_models.conf.mask import DINOv3MaskConfig
-from ssl_models.dino import dino as dino_module
-from ssl_models.dino.dino import (
+from ssl_models.layers.head import DINOHead
+from ssl_models.layers.loss import dino_loss, ibot_loss, koleo_loss, sinkhorn_knopp
+from ssl_models.ssl import dino as dino_module
+from ssl_models.ssl.dino import (
     DINOv3,
     dinov3_base,
     dinov3_huge_plus,
     dinov3_large,
     dinov3_small,
     dinov3_tiny,
-    local_view_size,
 )
-from ssl_models.dino.head import DINOHead
-from ssl_models.dino.loss import (
-    dino_loss,
-    ibot_loss,
-    koleo_loss,
-    sinkhorn_knopp,
-    teacher_stats,
-)
-from ssl_models.dino.masking import ibot_masks, view_keep
-from ssl_models.dino.schedule import cosine, linear_warmup, lr_factor
-from ssl_models.train.augment import Augment
-from ssl_models.train.lit_dino import LitDINOv3
+from ssl_models.train.augment import Augment, local_view_size
+from ssl_models.train.lit_dino import LitDINOv3, teacher_stats
+from ssl_models.train.schedule import cosine, linear_warmup, lr_factor
 
 FUSION_CONFIGS = [
     ("shared", 0),
@@ -60,29 +54,42 @@ def make_batch(dataset, batch_size=2, image_size=None):
     return batch
 
 
-def make_view(batch, backbone, view):
-    """One random view of a type (dates included), as in the DINO module."""
-    config = DINOv3AugmentConfig(n_global=1, n_local=1)
-    augment = Augment(backbone.dataset, **vars(config))
-    out = augment(batch)
-    if view == "global":
-        return {k: v for k, v in out.items() if not k.endswith("_local")}
-    return {k.removesuffix("_local"): v for k, v in out.items() if k.endswith("_local")}
+def make_views(batch, dataset):
+    """One random global view and one random local view per sample."""
+    config = DINOv3AugmentConfig(num_global=1, num_local=1)
+    return Augment(dataset, **vars(config))(batch)
 
 
-def small_backbone(dataset, fusion_mode, inter_depth, **kwargs):
+def make_tokens(model, batch_size):
+    """Zero tokens [B, D, L, 1] of a global view, grouped."""
+    return model.group(
+        {
+            name_mod: torch.zeros(
+                batch_size, model.num_dates[name_mod], grid_size**2, 1
+            )
+            for name_mod, grid_size in model.grid_size.items()
+        },
+    )
+
+
+def small_model(dataset, fusion_mode, inter_depth, mask=None, **kwargs):
     return DINOv3(
         dataset=dataset,
+        mask=mask or DINOv3MaskConfig(),
         fusion_mode=fusion_mode,
         inter_depth=inter_depth,
         embed_dim=64,
         depth=3,
         heads=2,
+        dino_prototypes=32,
+        ibot_prototypes=32,
+        head_hidden_dim=64,
+        head_bottleneck_dim=32,
         **kwargs,
     )
 
 
-# ---------------------------------------------------------------- backbone
+# ------------------------------------------------------------------- model
 def test_local_view_size():
     assert local_view_size(300, 20, 112 / 256) == 140
     assert local_view_size(6, 2, 112 / 256) == 4  # at least 2 patches
@@ -93,8 +100,8 @@ def test_local_view_size():
     "size_fn",
     (dinov3_tiny, dinov3_small, dinov3_base, dinov3_large, dinov3_huge_plus),
 )
-def test_backbone_sizes(monkeypatch, size_fn):
-    # capture the size arguments without building the backbone
+def test_model_sizes(monkeypatch, size_fn):
+    # capture the size arguments without building the model
     monkeypatch.setattr(dino_module, "DINOv3", lambda **kw: kw)
     args = size_fn()
     assert args["embed_dim"] % args["heads"] == 0
@@ -104,51 +111,58 @@ def test_backbone_sizes(monkeypatch, size_fn):
 
 @pytest.mark.parametrize("fusion_mode, inter_depth", FUSION_CONFIGS)
 @pytest.mark.parametrize("view", ("global", "local"))
-def test_backbone(dataset_treesat, fusion_mode, inter_depth, view):
+def test_model(dataset_treesat, fusion_mode, inter_depth, view):
     torch.manual_seed(0)
-    backbone = small_backbone(dataset_treesat, fusion_mode, inter_depth)
-    batch = make_batch(dataset_treesat)
-    inputs = make_view(batch, backbone, view)
+    mask = DINOv3MaskConfig(ibot_mask_prob=1.0)
+    model = small_model(dataset_treesat, fusion_mode, inter_depth, mask=mask)
+    batch = make_views(make_batch(dataset_treesat), dataset_treesat)
+    out = model(batch, ssl_phase="pretrain", view=view)
 
-    shapes = backbone.token_shapes(view)
-    mask = ibot_masks(shapes, 2, 1.0, (0.3, 0.5), 4, 1.0, "cpu")
-    keep = view_keep(
-        {"aerial": 1, "s2": 16, "s1_asc": 4, "s1_des": 4}, 2, 0.3, 0.3, "cpu"
-    )
-    out = backbone(inputs, view, ibot_mask=mask, keep=keep)
-
-    num_tokens = sum(s * h * w for s, h, w in shapes.values())
     assert out["cls"].shape == (2, 64)
-    assert out["patch_flat"].shape == (2, num_tokens, 64)
-    assert out["keep_flat"].shape == (2, num_tokens)
-    for name_mod, (s, h, w) in shapes.items():
-        assert out["patch"][name_mod].shape == (2, s, h * w, 64)
+    assert out["dino"].shape == (2, 32)
     assert torch.isfinite(out["cls"]).all()
-    assert torch.isfinite(out["patch_flat"]).all()
+    assert torch.isfinite(out["dino"]).all()
+    if view == "global":
+        num_masked = sum(int(m.sum()) for m in out["mask_rec"].values())
+        assert out["ibot"].shape == (num_masked, 32)
+        assert out["ibot_weights"].shape == (num_masked,)
+        assert torch.isfinite(out["ibot"]).all()
+    else:
+        assert out["ibot"] is None and out["mask_rec"] is None
 
-    out["cls"].sum().backward()
-    assert backbone.mask_token.grad is not None
+    out["dino"].sum().backward()
+    assert (model.enc_mask_token.grad is not None) == (view == "global")
 
 
 @pytest.mark.parametrize("fusion_mode, inter_depth", FUSION_CONFIGS)
-def test_backbone_dropped_tokens_ignored(dataset_treesat, fusion_mode, inter_depth):
-    """Dropped (modality, date) have no influence on the CLS embedding."""
+def test_model_dropped_tokens_ignored(
+    monkeypatch, dataset_treesat, fusion_mode, inter_depth
+):
+    """Dropped (modality, date) have no influence on the image-level embedding."""
     torch.manual_seed(0)
-    backbone = small_backbone(dataset_treesat, fusion_mode, inter_depth).eval()
-    batch = make_batch(dataset_treesat, batch_size=1)
+    mask = DINOv3MaskConfig(ibot_mask_prob=0.0)
+    model = small_model(dataset_treesat, fusion_mode, inter_depth, mask=mask).eval()
     keep = {
-        "aerial": torch.ones(1, 1, dtype=torch.bool),
-        "s2": torch.ones(1, 16, dtype=torch.bool),
-        "s1_asc": torch.zeros(1, 4, dtype=torch.bool),
-        "s1_des": torch.ones(1, 4, dtype=torch.bool),
+        name_mod: torch.ones(1, mod.num_dates, dtype=torch.bool)
+        for name_mod, mod in dataset_treesat.inputs.items()
     }
-    keep["s2"][0, :8] = False
-    out = backbone(batch, "global", keep=keep)
+    keep["s1_asc"][:] = False
+    keep["s2"][:, :8] = False
+    keep = model.group(
+        {
+            name_mod: keep[name_mod][:, :, None, None].expand(-1, -1, grid_size**2, -1)
+            for name_mod, grid_size in model.grid_size.items()
+        },
+    )
+    monkeypatch.setattr(model, "keep_view", lambda x, **kwargs: keep)
+
+    batch = make_batch(dataset_treesat, batch_size=1)
+    out = model(batch, ssl_phase="pretrain")
 
     batch_mod = {k: v.clone() for k, v in batch.items()}
     batch_mod["s1_asc"] = torch.rand_like(batch["s1_asc"])
     batch_mod["s2"][:, :8] = torch.rand_like(batch["s2"][:, :8])
-    out_mod = backbone(batch_mod, "global", keep=keep)
+    out_mod = model(batch_mod, ssl_phase="pretrain")
     assert torch.allclose(out["cls"], out_mod["cls"], atol=1e-5)
 
 
@@ -156,75 +170,95 @@ def test_backbone_dropped_tokens_ignored(dataset_treesat, fusion_mode, inter_dep
     "ffn, norm",
     itertools.product(("mlp", "swiglu"), ("layernorm", "rmsnorm")),
 )
-def test_backbone_arch(dataset_treesat, ffn, norm):
+def test_model_arch(dataset_treesat, ffn, norm):
     # ffn is fixed per model size in the Lightning module, so test it here
-    backbone = small_backbone(
-        dataset_treesat, "mod", 0, ffn=ffn, norm=norm, n_registers=0
+    model = small_model(
+        dataset_treesat, "mod", 0, ffn=ffn, norm=norm, num_registers=0
     )
-    batch = make_batch(dataset_treesat)
-    out = backbone(make_view(batch, backbone, "global"), "global")
+    batch = make_views(make_batch(dataset_treesat), dataset_treesat)
+    out = model(batch, ssl_phase="pretrain")
     assert torch.isfinite(out["cls"]).all()
 
 
-def test_backbone_invalid(dataset_treesat):
+def test_model_invalid(dataset_treesat):
     with pytest.raises(ValueError):
-        small_backbone(dataset_treesat, "msgfm", 0)
+        small_model(dataset_treesat, "msgfm", 0)
     with pytest.raises(NotImplementedError):
-        small_backbone(dataset_treesat, "shared", 2)
+        small_model(dataset_treesat, "shared", 2)
     with pytest.raises(ValueError):
-        small_backbone(dataset_treesat, "group", 4)
+        small_model(dataset_treesat, "group", 4)
 
 
-def test_backbone_wrong_grid(dataset_treesat):
-    backbone = small_backbone(dataset_treesat, "group", 0)
-    batch = make_batch(dataset_treesat)
+def test_model_wrong_size(dataset_treesat):
+    """Images that have neither the global nor the local view sizes."""
+    model = small_model(dataset_treesat, "group", 0)
+    batch = make_batch(dataset_treesat, image_size=60)
     with pytest.raises(ValueError):
-        backbone(batch, "local")
+        model(batch, ssl_phase="pretrain")
 
 
 # ----------------------------------------------------------------- masking
-def test_ibot_masks():
+def test_ibot_masks(dataset_treesat):
     torch.manual_seed(0)
-    shapes = {"a": (1, 15, 15), "b": (16, 3, 3)}
-    masks = ibot_masks(shapes, 64, 0.5, (0.1, 0.5), 4, 1.0, "cpu")
-    assert masks["a"].shape == (64, 1, 225)
-    assert masks["b"].shape == (64, 16, 9)
-    ratio = masks["a"].float().mean(dim=(1, 2))
+    mask = DINOv3MaskConfig(ibot_mask_prob=0.5, ibot_mask_ratio=[0.1, 0.5])
+    model = small_model(dataset_treesat, "group", 0, mask=mask)
+    masks = model.ungroup(model.ibot_masks(make_tokens(model, 64)))
+    assert masks["aerial"].shape == (64, 1, 225, 1)
+    assert masks["s2"].shape == (64, 16, 9, 1)
+    ratio = masks["aerial"].float().mean(dim=(1, 2, 3))
     assert ratio.max() <= 0.5 + 1e-6
     assert 0.2 < (ratio > 0).float().mean() < 0.8  # about half of the samples
     # fully shared noise: all dates of a modality get the same mask
-    assert (masks["b"] == masks["b"][:, :1]).float().mean() > 0.95
+    assert (masks["s2"] == masks["s2"][:, :1]).float().mean() > 0.95
 
 
-def test_ibot_masks_aligned():
+def test_ibot_masks_aligned(dataset_treesat):
     """Shared masks are aligned in space across modalities."""
     torch.manual_seed(0)
-    masks = ibot_masks(
-        {"a": (1, 12, 12), "b": (1, 3, 3)}, 32, 1.0, (0.5, 0.5), 2, 1.0, "cpu"
+    mask = DINOv3MaskConfig(
+        ibot_mask_prob=1.0, ibot_mask_ratio=[0.5, 0.5], ibot_blob_grid=2
     )
-    a = masks["a"].float().reshape(32, 1, 12, 12)
-    b = masks["b"].float().reshape(32, 1, 3, 3)
-    a_low = F.adaptive_avg_pool2d(a, 3)
-    agreement = ((a_low > 0.5).float() == b).float().mean()
+    model = small_model(dataset_treesat, "group", 0, mask=mask)
+    masks = model.ungroup(model.ibot_masks(make_tokens(model, 32)))
+    aerial = masks["aerial"].float().reshape(32, 1, 15, 15)
+    s2 = masks["s2"][:, :1].float().reshape(32, 1, 3, 3)
+    aerial_low = F.adaptive_avg_pool2d(aerial, 3)
+    agreement = ((aerial_low > 0.5).float() == s2).float().mean()
     assert agreement > 0.8
 
 
-def test_view_keep():
+def test_keep_view(dataset_treesat):
     torch.manual_seed(0)
-    keep = view_keep({"a": 1, "b": 16}, 1000, 0.5, 0.5, "cpu")
-    assert keep["a"].shape == (1000, 1) and keep["b"].shape == (1000, 16)
-    any_kept = keep["a"].any(dim=1) | keep["b"].any(dim=1)
-    assert any_kept.all()
-    # 0.5 kept + 0.25 restored (both modalities dropped -> all kept)
-    assert 0.7 < keep["a"].float().mean() < 0.8
-    assert view_keep({"a": 1}, 4, None, None, "cpu") is None
+    mask = DINOv3MaskConfig(view_drop_mod=0.5, view_drop_dates=0.5)
+    model = small_model(dataset_treesat, "group", 0, mask=mask)
+    x = make_tokens(model, 1000)
+    keep = model.ungroup(model.keep_view(x, ssl_phase="pretrain"))
+    assert keep["aerial"].shape == (1000, 1, 225, 1)
+    assert keep["s2"].shape == (1000, 16, 9, 1)
+    # whole (modality, date) are kept or dropped, and at least one is kept
+    assert (keep["s2"] == keep["s2"][:, :, :1]).all()
+    any_kept = torch.stack([k.flatten(1).any(dim=1) for k in keep.values()])
+    assert any_kept.any(dim=0).all()
+    # 0.5 kept + about 0.07 restored (all modalities dropped -> all kept)
+    assert 0.5 < keep["aerial"].float().mean() < 0.65
+
+    # only for the student in pretraining
+    assert model.keep_view(x, ssl_phase="pretrain", teacher=True) is None
+    assert model.keep_view(x, ssl_phase="probe") is None
+    no_drop = DINOv3MaskConfig(view_drop_mod=None, view_drop_dates=None)
+    model = small_model(dataset_treesat, "group", 0, mask=no_drop)
+    assert model.keep_view(x, ssl_phase="pretrain") is None
     # single modality, single date: never dropped
-    assert view_keep({"a": 1}, 100, 0.9, 0.9, "cpu")["a"].all()
+    dataset = TreeSatAITSConfig(rel_dir="", filter_inputs=["aerial"])
+    mask = DINOv3MaskConfig(view_drop_mod=0.9, view_drop_dates=0.9)
+    model = small_model(dataset, "group", 0, mask=mask)
+    keep = model.keep_view(make_tokens(model, 100), ssl_phase="pretrain")
+    assert keep["aerial"].all()
 
 
 # ---------------------------------------------------------- heads / losses
 def test_dino_head():
-    head = DINOHead(in_dim=32, n_prototypes=100, hidden_dim=64, bottleneck_dim=16)
+    head = DINOHead(in_dim=32, num_prototypes=100, hidden_dim=64, bottleneck_dim=16)
     logits = head(torch.randn(8, 32))
     assert logits.shape == (8, 100)
     assert logits.abs().max() <= 1 + 1e-5
@@ -239,7 +273,7 @@ def test_sinkhorn():
             dim=-1,
         ).t()
     )
-    probs = sinkhorn_knopp(logits, temp=0.1, n_iter=20)
+    probs = sinkhorn_knopp(logits, temp=0.1, num_iter=20)
     assert torch.allclose(probs.sum(dim=1), torch.ones(256), atol=1e-4)
     # equipartition over prototypes
     assert torch.allclose(probs.mean(dim=0), torch.full((64,), 1 / 64), atol=1e-3)
@@ -248,52 +282,65 @@ def test_sinkhorn():
 
 def test_dino_loss():
     torch.manual_seed(0)
-    teacher = torch.softmax(torch.randn(8, 2, 16), dim=-1)
-    student_global = torch.randn(8, 2, 16)
-    student_local = torch.randn(8, 3, 16)
-    losses = dino_loss(student_global, student_local, teacher, student_temp=1.0)
-    n_global_pairs, n_local_pairs = 2, 6
-    expected = (n_global_pairs * losses["global"] + n_local_pairs * losses["local"]) / (
-        n_global_pairs + n_local_pairs
+    teacher = torch.softmax(torch.randn(8 * 2, 16), dim=-1)
+    student_global = torch.randn(8 * 2, 16)
+    student_local = torch.randn(8 * 3, 16)
+    loss, loss_global, loss_local = dino_loss(
+        student_global,
+        student_local,
+        teacher,
+        student_temp=1.0,
+        num_global=2,
+        num_local=3,
     )
-    assert torch.allclose(losses["total"], expected)
+    num_global_pairs, num_local_pairs = 2, 6
+    expected = (num_global_pairs * loss_global + num_local_pairs * loss_local) / (
+        num_global_pairs + num_local_pairs
+    )
+    assert torch.allclose(loss, expected)
 
     # minimum = entropy of targets, reached when student matches the other view
-    teacher = torch.softmax(torch.randn(8, 1, 16), dim=-1).repeat(1, 2, 1)
-    losses = dino_loss(teacher.log(), None, teacher, student_temp=1.0)
-    entropy = -(teacher[:, 0] * teacher[:, 0].log()).sum(-1).mean()
-    assert torch.allclose(losses["global"], entropy, atol=1e-5)
-    assert losses["local"] == 0
+    teacher = torch.softmax(torch.randn(8, 16), dim=-1).repeat_interleave(2, dim=0)
+    _, loss_global, loss_local = dino_loss(
+        teacher.log(), None, teacher, student_temp=1.0, num_global=2, num_local=0
+    )
+    entropy = -(teacher * teacher.log()).sum(-1).mean()
+    assert torch.allclose(loss_global, entropy, atol=1e-5)
+    assert loss_local == 0
 
 
 def test_ibot_loss():
     torch.manual_seed(0)
     teacher = torch.softmax(torch.randn(5, 16), dim=-1)
     student = torch.randn(5, 16, requires_grad=True)
-    num_masked = torch.tensor([2, 0, 3])
-    loss = ibot_loss(student, teacher, num_masked, student_temp=1.0)
+    weights = torch.tensor([1 / 2] * 2 + [1 / 3] * 3)  # 2 and 3 masked tokens
+    loss = ibot_loss(student, weights, teacher, student_temp=1.0)
     ce = -(teacher * torch.log_softmax(student, -1)).sum(-1)
     expected = (ce[:2].mean() + ce[2:].mean()) / 2
     assert torch.allclose(loss, expected)
     loss.backward()
-    empty = ibot_loss(student[:0], teacher[:0], torch.tensor([0, 0]), 1.0)
+    empty = ibot_loss(student[:0], weights[:0], teacher[:0], student_temp=1.0)
     assert empty == 0
 
 
 def test_koleo_loss():
     spread = torch.eye(8)
     collapsed = torch.ones(8, 8) + 1e-3 * torch.randn(8, 8)
-    assert koleo_loss(spread) < koleo_loss(collapsed)
-    assert koleo_loss(torch.randn(1, 8)) == 0
+    loss = koleo_loss(spread, num_global=1)
+    assert loss < koleo_loss(collapsed, num_global=1)
+    assert koleo_loss(torch.randn(1, 8), num_global=1) == 0
+    # the neighbors are within each global crop
+    views = spread.repeat_interleave(2, dim=0)
+    assert torch.allclose(koleo_loss(views, num_global=2), loss)
 
 
 def test_teacher_stats():
     uniform = torch.full((4, 10), 0.1)
     stats = teacher_stats(uniform)
-    assert torch.allclose(stats["entropy"], torch.tensor(math.log(10)))
-    assert torch.allclose(stats["kl_uniform"], torch.tensor(0.0), atol=1e-6)
+    assert torch.allclose(stats["teacher_entropy"], torch.tensor(math.log(10)))
+    assert torch.allclose(stats["teacher_kl_uniform"], torch.tensor(0.0), atol=1e-6)
     onehot = F.one_hot(torch.zeros(4, dtype=torch.long), 10).float()
-    assert teacher_stats(onehot)["kl_uniform"] > 2
+    assert teacher_stats(onehot)["teacher_kl_uniform"] > 2
 
 
 def test_schedules():
@@ -302,10 +349,10 @@ def test_schedules():
     assert cosine(1.0, 0.0, 50, 100) == pytest.approx(0.5)
     assert linear_warmup(0.04, 0.07, 0, 10) == 0.04
     assert linear_warmup(0.04, 0.07, 20, 10) == 0.07
-    assert lr_factor(0, 100, 10, "cosine", 0.0) == pytest.approx(0.1)
-    assert lr_factor(9, 100, 10, "cosine", 0.0) == pytest.approx(1.0)
-    assert lr_factor(100, 100, 10, "cosine", 0.0) == pytest.approx(0.0)
-    assert lr_factor(60, 100, 10, "constant", 0.0) == 1.0
+    assert lr_factor(0, 100, 0.1, "cosine", 0.0) == pytest.approx(0.1)
+    assert lr_factor(9, 100, 0.1, "cosine", 0.0) == pytest.approx(1.0)
+    assert lr_factor(100, 100, 0.1, "cosine", 0.0) == pytest.approx(0.0)
+    assert lr_factor(60, 100, 0.1, "constant", 0.0) == 1.0
 
 
 # ------------------------------------------------------------------ module
@@ -314,18 +361,20 @@ def tiny_module(dataset, fusion_mode="group", inter_depth=3, **kwargs):
         "dataset": dataset,
         "mask": DINOv3MaskConfig(),
         "loss": DINOv3LossConfig(
-            dino_n_prototypes=128,
-            ibot_n_prototypes=128,
+            dino_prototypes=128,
+            ibot_prototypes=128,
             head_hidden_dim=64,
             head_bottleneck_dim=32,
         ),
         "fusion_mode": fusion_mode,
         "inter_depth": inter_depth,
-        "augment": DINOv3AugmentConfig(n_local=2),
+        "augment": DINOv3AugmentConfig(num_local=2),
         "model_size": "tiny",
     }
     args.update(kwargs)
-    return LitDINOv3(**args)
+    module = LitDINOv3(**args)
+    module._trainer = SimpleNamespace(ssl_phase="pretrain")  # no actual trainer
+    return module
 
 
 @pytest.mark.parametrize(
@@ -340,27 +389,28 @@ def test_dino_module_losses(dataset_treesat, fusion_mode, inter_depth):
     assert all(not p.requires_grad for p in module.ema_model.parameters())
 
     batch = make_batch(dataset_treesat, batch_size=4, image_size=32)
-    out = module.forward_batch(module.augment(batch), teacher_temp=0.04)
-    assert torch.isfinite(out["loss"])
-    for name, value in out["components"].items():
-        assert torch.isfinite(value), name
+    out = module.pretrain_step(module.augment(batch), stage="train")
+    for name, value in out.items():
+        if isinstance(value, torch.Tensor):
+            assert torch.isfinite(value), name
     out["loss"].backward()
 
     student = module.model
-    assert student["dino_head"].prototypes.grad is not None
-    assert student["ibot_head"].prototypes.grad is not None
-    assert student["backbone"].mask_token.grad is not None
+    assert student.dino_head.prototypes.grad is not None
+    assert student.ibot_head.prototypes.grad is not None
+    assert student.enc_mask_token.grad is not None
     assert all(p.grad is None for p in module.ema_model.parameters())
 
 
-def test_dino_module_ema_update(dataset_treesat):
+def test_dino_module_ema_update(monkeypatch, dataset_treesat):
     module = tiny_module(dataset_treesat, "shared", 0)
+    monkeypatch.setattr(module, "log", lambda *args: None)
+    monkeypatch.setattr(module, "momentum", lambda: 0.9)
     with torch.no_grad():
         for param in module.model.parameters():
             param.add_(1.0)
     student = [p.clone() for p in module.model.parameters()]
     teacher = [p.clone() for p in module.ema_model.parameters()]
-    module.momentum = 0.9
     module.update_ema()
     for p_s, p_t, p_new in zip(student, teacher, module.ema_model.parameters()):
         assert torch.allclose(p_new, 0.9 * p_t + 0.1 * p_s)
@@ -379,9 +429,9 @@ def test_dino_module_param_groups(dataset_treesat):
 
 @pytest.mark.parametrize("norm", ("layernorm", "rmsnorm"))
 def test_dino_module_arch(dataset_treesat, norm):
-    module = tiny_module(dataset_treesat, "mod", 0, norm=norm, n_registers=0)
+    module = tiny_module(dataset_treesat, "mod", 0, norm=norm, num_registers=0)
     batch = make_batch(dataset_treesat, batch_size=2, image_size=32)
-    out = module.forward_batch(module.augment(batch), teacher_temp=0.04)
+    out = module.pretrain_step(module.augment(batch), stage="train")
     assert torch.isfinite(out["loss"])
 
 
