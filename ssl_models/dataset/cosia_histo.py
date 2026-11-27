@@ -58,8 +58,9 @@ class COSIAHistoDataset(GenericDataset):
 
         self.root_dir = Path(root_dir)
         self.gpkg_dir = (
-            self.root_dir / dataset.rel_dir / dataset.gpkg_dir \
-            if dataset.gpkg_dir else self.root_dir
+            self.root_dir / dataset.rel_dir / dataset.gpkg_dir
+            if dataset.gpkg_dir
+            else self.root_dir
         )
 
         modalities = gpd.read_file(
@@ -185,7 +186,10 @@ class COSIAHistoDataset(GenericDataset):
         if meta.get("pan_fallback", False) and "pan" in inputs:
             rgb = inputs["rgb"]
             if rgb.shape[1] != RGB_NUM_BANDS:
-                msg = f"PAN RGB fallback expects {RGB_NUM_BANDS} RGB bands, got {rgb.shape[1]}."
+                msg = (
+                    f"PAN RGB fallback expects {RGB_NUM_BANDS} RGB bands, "
+                    f"got {rgb.shape[1]}."
+                )
                 raise ValueError(msg)
             weights = np.array([0.2126, 0.7152, 0.0722], dtype=rgb.dtype)
             inputs["pan"] = np.average(rgb, axis=1, weights=weights)[:, None]

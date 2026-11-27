@@ -66,6 +66,7 @@ def test_cosia_histo_modalities():
     assert list(pan.inputs) == ["pan"]
     assert pan.ref_input == "pan"
 
+
 def test_cosia_histo_targets():
     config = COSIAHistoConfig()
     assert list(config.targets) == ["cosia"]
